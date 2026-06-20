@@ -24,6 +24,8 @@ bun run alpaca:doctor
 bun run smoke:read
 # Explicitly opt in; creates and immediately cancels one $0.01 SPY paper limit order:
 SMOKE_ORDER=paper-confirm bun run smoke:order
+# To verify sell routing, choose a symbol held in the paper account:
+SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=TSLA bun run smoke:order
 ```
 
 See `FEATURES.md` for the objective map, safety model, and demo script.

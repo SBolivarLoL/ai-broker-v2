@@ -1,7 +1,7 @@
 import { Agent, run, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
-import { riskSnapshot, simulateTrade } from "./risk";
+import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 
 export const Intent = z.enum(["reduce_concentration", "balanced_growth", "preserve_capital"]);
 export type Intent = z.infer<typeof Intent>;
@@ -17,14 +17,31 @@ const Idea = z.object({
   evidence: z.array(z.string().min(1)).min(1).max(6),
 });
 
-const CopilotOutput = z.object({
+export const CopilotOutput = z.object({
   summary: z.string().min(1).max(500),
   ideas: z.array(Idea).length(3),
 });
 
 const forbiddenClaims = /\b(guaranteed|risk[- ]free|can't lose|will definitely)\b/i;
 
+export function validCopilotOutput(output: unknown, evidenceIds: Set<string>, allowedSimulations: Set<string>) {
+  const parsed = CopilotOutput.safeParse(output);
+  if (!parsed.success || forbiddenClaims.test(JSON.stringify(parsed.data))) return false;
+  return parsed.data.ideas.every(idea =>
+    idea.evidence.every(id => evidenceIds.has(id)) &&
+    (["hold", "watch"].includes(idea.action)
+      ? idea.suggestedQty === 0
+      : idea.suggestedQty > 0 && idea.evidence.some(id => allowedSimulations.has(id)))
+  );
+}
+
 export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "balanced_growth") {
+  const evidenceIds = new Set<string>();
+  const allowedSimulations = new Set<string>();
+  const evidence = <T extends object>(evidenceId: string, value: T) => {
+    evidenceIds.add(evidenceId);
+    return { evidenceId, asOf: new Date().toISOString(), ...value };
+  };
   const portfolio = tool({
     name: "get_portfolio",
     description: "Read the paper account's equity, buying power, and current positions. Never returns credentials or account identifiers.",
@@ -35,7 +52,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
         alpaca.trading.account.getAccount(),
         alpaca.trading.positions.getAllOpenPositions(),
       ]);
-      return { evidenceId: "portfolio:current", asOf: new Date().toISOString(), equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, positions: positions.map(({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc }) => ({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc })) };
+      return evidence("portfolio:current", { equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, positions: positions.map(({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc }) => ({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc })) });
     },
   });
 
@@ -47,7 +64,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     async execute({ symbol }) {
       const price = await alpaca.marketData.getLatestPrice(symbol);
       if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) throw new Error("No valid price available");
-      return { evidenceId: `price:${symbol}`, asOf: new Date().toISOString(), symbol, price };
+      return evidence(`price:${symbol}`, { symbol, price });
     },
   });
 
@@ -58,7 +75,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     async execute() {
       const [account, positions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
       if (account.equity === undefined || account.cash === undefined) throw new Error("Account risk data unavailable");
-      return { evidenceId: "risk:current", asOf: new Date().toISOString(), ...riskSnapshot(account.equity, account.cash, positions) };
+      return evidence("risk:current", riskSnapshot(account.equity, account.cash, positions));
     },
   });
 
@@ -69,7 +86,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     async execute({ symbol }) {
       const start = new Date(Date.now() - 90 * 86_400_000);
       const bars = await alpaca.marketData.getStockBarsFor(symbol, { timeframe: TimeFrame.Day, start });
-      return { evidenceId: `bars:${symbol}:90d`, asOf: new Date().toISOString(), symbol, closes: bars.map(bar => bar.close).slice(-90) };
+      return evidence(`bars:${symbol}:90d`, { symbol, closes: bars.map(bar => bar.close).slice(-90) });
     },
   });
 
@@ -79,7 +96,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     parameters: z.object({ symbol: z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/) }), timeoutMs: 10_000,
     async execute({ symbol }) {
       const articles = await alpaca.marketData.collectNews({ symbols: [symbol], limit: 5 });
-      return { evidenceId: `news:${symbol}`, asOf: new Date().toISOString(), symbol, articles: articles.slice(0, 5).map(({ headline, summary, createdAt }) => ({ headline, summary, createdAt })) };
+      return evidence(`news:${symbol}`, { symbol, articles: articles.slice(0, 5).map(({ headline, summary, createdAt }) => ({ headline, summary, createdAt })) });
     },
   });
 
@@ -89,7 +106,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     parameters: z.object({ symbol: z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/) }), timeoutMs: 10_000,
     async execute({ symbol }) {
       const [asset, clock] = await Promise.all([alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }), alpaca.trading.calendar.legacyClock()]);
-      return { evidenceId: `status:${symbol}`, asOf: new Date().toISOString(), symbol, tradable: asset.tradable, assetClass: asset._class, fractionable: asset.fractionable, marketOpen: clock.isOpen, nextOpen: clock.nextOpen };
+      return evidence(`status:${symbol}`, { symbol, tradable: asset.tradable, assetClass: asset._class, fractionable: asset.fractionable, marketOpen: clock.isOpen, nextOpen: clock.nextOpen });
     },
   });
 
@@ -98,10 +115,12 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     description: "Run deterministic pre-trade policy checks. This never places an order.",
     parameters: z.object({ symbol: z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/), side: z.enum(["buy", "sell"]), qty: z.number().positive() }), timeoutMs: 10_000,
     async execute({ symbol, side, qty }) {
-      const [account, positions, price] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions(), alpaca.marketData.getLatestPrice(symbol)]);
+      const [account, positions, price, orders] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions(), alpaca.marketData.getLatestPrice(symbol), alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 })]);
       if (account.equity === undefined || account.cash === undefined || typeof price !== "number") throw new Error("Trade simulation data unavailable");
-      const result = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price });
-      return { evidenceId: `simulation:${symbol}:${side}:${qty}`, asOf: new Date().toISOString(), symbol, side, qty, price, ...result };
+      const result = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price, dailyTurnover: rollingTurnover(orders) });
+      const id = `simulation:${symbol}:${side}:${qty}`;
+      if (result.allowed) allowedSimulations.add(id);
+      return evidence(id, { symbol, side, qty, price, ...result });
     },
   });
 
@@ -123,8 +142,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     outputGuardrails: [{
       name: "no-misleading-financial-claims",
       async execute({ agentOutput }) {
-        const text = JSON.stringify(agentOutput);
-        const safe = !forbiddenClaims.test(text);
+        const safe = validCopilotOutput(agentOutput, evidenceIds, allowedSimulations);
         return { tripwireTriggered: !safe, outputInfo: { safe } };
       },
     }],

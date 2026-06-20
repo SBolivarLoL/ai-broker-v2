@@ -21,6 +21,7 @@ This is the challenge's central explainability file. The product is an internal-
 - The agent can read portfolio, risk, price, bars, news, asset/market status and simulations.
 - The agent has no order, cancellation, credential, shell, CLI or raw HTTP tool.
 - Alpaca news is untrusted evidence; the prompt forbids following instructions inside it.
+- A deterministic output guardrail rejects invented evidence IDs, certainty claims, and actionable quantities without a successful policy simulation.
 - The server is the only order boundary. A browser confirmation alone is never sufficient.
 - `alpaca-ts-alpha` is the runtime integration. Alpaca CLI is used only for independent diagnostics and read-only smoke checks.
 
@@ -51,7 +52,7 @@ This is the challenge's central explainability file. The product is an internal-
 - CI runs type checks, unit tests and the 25+ scenario safety corpus on every push and pull request.
 - `bun run alpaca:doctor` verifies paper credentials and both Alpaca APIs through the independent CLI.
 - `bun run smoke:read` verifies account, positions and open orders without mutation.
-- `SMOKE_ORDER=paper-confirm bun run smoke:order` verifies submit, lookup and exact cancellation in paper mode only.
+- `SMOKE_ORDER=paper-confirm bun run smoke:order` verifies buy or sell submit, lookup and exact cancellation in paper mode only.
 - Live checks have verified the paper account, current price, risk endpoint, signed preview and stored evidence-backed agent plan.
 
 ## Five-minute demo
