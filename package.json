@@ -8,6 +8,7 @@
     "check": "bunx tsc --noEmit && bun test",
     "alpaca:doctor": "./scripts/alpaca.sh doctor",
     "smoke:read": "./scripts/alpaca.sh account get >/dev/null && ./scripts/alpaca.sh position list >/dev/null && ./scripts/alpaca.sh order list --status open >/dev/null",
+    "smoke:order": "bun --env-file=.env scripts/smoke-order.ts",
     "eval": "bun test src/risk.test.ts src/orders.test.ts src/eval.test.ts"
   },
   "dependencies": {

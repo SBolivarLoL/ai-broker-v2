@@ -47,8 +47,10 @@ This is the challenge's central explainability file. The product is an internal-
 
 - `bun run check` runs strict TypeScript checks and unit tests.
 - `bun run eval` runs deterministic policy and trust-boundary scenarios.
+- CI runs type checks, unit tests and the 25+ scenario safety corpus on every push and pull request.
 - `bun run alpaca:doctor` verifies paper credentials and both Alpaca APIs through the independent CLI.
 - `bun run smoke:read` verifies account, positions and open orders without mutation.
+- `SMOKE_ORDER=paper-confirm bun run smoke:order` verifies submit, lookup and exact cancellation in paper mode only.
 - Live checks have verified the paper account, current price, risk endpoint, signed preview and stored evidence-backed agent plan.
 
 ## Five-minute demo

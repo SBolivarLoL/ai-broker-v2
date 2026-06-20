@@ -21,6 +21,8 @@ bun run check
 bun run eval
 bun run alpaca:doctor
 bun run smoke:read
+# Explicitly opt in; creates and immediately cancels one $0.01 SPY paper limit order:
+SMOKE_ORDER=paper-confirm bun run smoke:order
 ```
 
 See `FEATURES.md` for the objective map, safety model, and demo script.
