@@ -5,6 +5,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 Bun.serve({
   port: Number(process.env.PORT ?? 3000),
+  idleTimeout: 60,
   async fetch(request) {
     const url = new URL(request.url);
     try {
