@@ -4,8 +4,8 @@
     "noEmit": true,
     "module": "Preserve",
     "moduleResolution": "bundler",
+    "skipLibCheck": true,
     "types": ["bun"]
   },
   "include": ["src"]
 }
-
