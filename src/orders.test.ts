@@ -17,6 +17,9 @@ test("submission idempotency and receipts persist", () => {
   expect(store.submission("key")).toBeNull();
   expect(store.reserveSubmission("key")).toBe(true);
   expect(store.reserveSubmission("key")).toBe(false);
+  store.reserveSubmission("retry-key");
+  store.releaseSubmission("retry-key");
+  expect(store.reserveSubmission("retry-key")).toBe(true);
   store.completeSubmission("key", "order-1", { id: "order-1" });
   expect(store.submission("key")).toEqual({ id: "order-1" });
   store.receipt("receipt-1", { status: "submitted" });

@@ -20,6 +20,9 @@ export function createStore(filename = "data/app.db") {
     reserveSubmission(key: string) {
       return db.query("INSERT OR IGNORE INTO submissions (idempotency_key, response) VALUES (?, ?)").run(key, JSON.stringify({ pending: true })).changes === 1;
     },
+    releaseSubmission(key: string) {
+      db.query("DELETE FROM submissions WHERE idempotency_key = ? AND order_id IS NULL").run(key);
+    },
     completeSubmission(key: string, orderId: string, response: unknown) {
       db.query("UPDATE submissions SET order_id = ?, response = ? WHERE idempotency_key = ?").run(orderId, JSON.stringify(response), key);
     },

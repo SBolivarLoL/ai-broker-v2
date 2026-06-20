@@ -112,7 +112,13 @@ Bun.serve({
         if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Order submission is already processing" }, 409);
         store.event("order.confirmed", actor, { symbol: preview.symbol, side: preview.side, qty: preview.qty, idempotencyKey });
         // Alpaca also enforces this key, covering a lost response after acceptance.
-        const order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side, clientOrderId: idempotencyKey });
+        let order;
+        try {
+          order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side, clientOrderId: idempotencyKey });
+        } catch (placementError) {
+          try { order = await alpaca.trading.orders.getOrderByClientOrderId({ clientOrderId: idempotencyKey }); }
+          catch { store.releaseSubmission(idempotencyKey); throw placementError; }
+        }
         if (!order.id) throw new Error("Alpaca returned an order without an id");
         const receiptId = crypto.randomUUID();
         const response = { ...order, receiptId };

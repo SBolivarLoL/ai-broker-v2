@@ -29,3 +29,4 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=TSLA bun run smoke:order
 ```
 
 See `FEATURES.md` for the objective map, safety model, and demo script.
+See `VALIDATION.md` for the requirement-by-requirement completion evidence and production boundary.
