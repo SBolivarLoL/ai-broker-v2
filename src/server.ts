@@ -1,7 +1,7 @@
 import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { signPreview, verifyPreview } from "./orders";
-import { riskSnapshot, simulateTrade } from "./risk";
+import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { createStore } from "./store";
 
@@ -83,16 +83,17 @@ Bun.serve({
           return json({ error: "Valid symbol, quantity, and side are required" }, 400);
         }
         if (planId !== undefined && (typeof planId !== "string" || !store.getPlan(planId))) return json({ error: "Valid stored plan id is required" }, 400);
-        const [account, positions, asset, price] = await Promise.all([
+        const [account, positions, asset, price, recentOrders] = await Promise.all([
           alpaca.trading.account.getAccount(),
           alpaca.trading.positions.getAllOpenPositions(),
           alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }),
           alpaca.marketData.getLatestPrice(symbol),
+          alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
         ]);
         if (!asset.tradable || asset._class !== "us_equity") return json({ error: "Only tradable US stocks and ETFs are supported" }, 400);
         if (typeof price !== "number") return json({ error: "No valid current price" }, 400);
         if (account.equity === undefined || account.cash === undefined) return json({ error: "Account risk data unavailable" }, 502);
-        const simulation = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price });
+        const simulation = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price, dailyTurnover: rollingTurnover(recentOrders) });
         store.event("order.preview", actor, { symbol, side, qty, simulation });
         if (!simulation.allowed) return json({ allowed: false, simulation }, 422);
         const expiresAt = Date.now() + 120_000;

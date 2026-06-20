@@ -20,11 +20,23 @@ export type TradeSimulation = {
   reasons: string[];
 };
 
+export type FilledOrder = { filledAt?: Date | string | null; filledQty?: string | number; filledAvgPrice?: string | number | null };
+
 const finite = (value: string | number) => {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error("Portfolio contains a non-finite number");
   return number;
 };
+
+export function rollingTurnover(orders: FilledOrder[], now = Date.now()) {
+  const since = now - 24 * 60 * 60 * 1_000;
+  // ponytail: rolling 24h is conservative around market-day boundaries; use Alpaca calendar sessions for multi-market accounts.
+  return orders.reduce((sum, order) => {
+    const filledAt = order.filledAt ? new Date(order.filledAt).getTime() : 0;
+    if (!Number.isFinite(filledAt) || filledAt < since || filledAt > now || order.filledQty === undefined || order.filledAvgPrice == null) return sum;
+    return sum + finite(order.filledQty) * finite(order.filledAvgPrice);
+  }, 0);
+}
 
 export function riskSnapshot(equityValue: string | number, cashValue: string | number, positions: Position[]): RiskSnapshot {
   const equity = finite(equityValue);
@@ -71,4 +83,3 @@ export function simulateTrade(input: {
   if (turnoverPercent > 10) reasons.push("Daily turnover exceeds 10% limit");
   return { allowed: reasons.length === 0, estimatedNotional, resultingCash, resultingPositionPercent, turnoverPercent, reasons };
 }
-

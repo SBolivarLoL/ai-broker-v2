@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { riskSnapshot, simulateTrade } from "./risk";
+import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 
 const positions = [
   { symbol: "AAPL", qty: "10", marketValue: "2000", unrealizedPl: "100" },
@@ -8,6 +8,14 @@ const positions = [
 const snapshot = riskSnapshot("10000", "7000", positions);
 
 describe("risk engine", () => {
+  test("counts only fills from the rolling 24 hour window", () => {
+    const now = Date.parse("2026-06-20T12:00:00Z");
+    expect(rollingTurnover([
+      { filledAt: "2026-06-20T11:00:00Z", filledQty: "2", filledAvgPrice: "100" },
+      { filledAt: "2026-06-19T11:00:00Z", filledQty: "9", filledAvgPrice: "100" },
+      { filledAt: null, filledQty: "1", filledAvgPrice: "100" },
+    ], now)).toBe(200);
+  });
   test("calculates concentration and P&L", () => {
     expect(snapshot.cashPercent).toBe(70);
     expect(snapshot.largestPositionPercent).toBe(20);

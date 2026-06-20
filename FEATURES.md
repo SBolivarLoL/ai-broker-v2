@@ -30,7 +30,7 @@ This is the challenge's central explainability file. The product is an internal-
 - No shorts: sell quantity cannot exceed the owned quantity.
 - Maximum order is the lesser of $2,500 or 2.5% of equity.
 - Resulting position concentration cannot exceed 20%.
-- Daily turnover cannot exceed 10% of equity.
+- Conservative rolling-24-hour turnover cannot exceed 10% of equity.
 - Preview tokens are HMAC-signed and expire after two minutes.
 - Submission requires a unique idempotency key; duplicates return the original result or a processing response.
 - Paper trading is hard-coded. Live mode is unavailable.
