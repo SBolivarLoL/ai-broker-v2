@@ -1,7 +1,7 @@
-import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
+import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { signPreview, verifyPreview } from "./orders";
-import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
+import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { createStore } from "./store";
 
@@ -53,7 +53,10 @@ Bun.serve({
           alpaca.trading.positions.getAllOpenPositions(),
         ]);
         if (account.equity === undefined || account.cash === undefined) return json({ error: "Account risk data unavailable" }, 502);
-        return json({ ...riskSnapshot(account.equity, account.cash, positions), asOf: new Date().toISOString() });
+        const start = new Date(Date.now() - 90 * 86_400_000);
+        const series = await Promise.all(positions.map(async position => ({ marketValue: Number(position.marketValue), closes: (await alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start })).map(bar => bar.close).slice(-90) })));
+        const history = portfolioHistory(Number(account.equity), Number(account.cash), series);
+        return json({ ...riskSnapshot(account.equity, account.cash, positions), ...historicalRisk(history), asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/copilot" && request.method === "POST") {
         if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the copilot" }, 503);

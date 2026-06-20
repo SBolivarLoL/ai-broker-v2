@@ -22,6 +22,29 @@ export type TradeSimulation = {
 
 export type FilledOrder = { filledAt?: Date | string | null; filledQty?: string | number; filledAvgPrice?: string | number | null };
 
+export function historicalRisk(closes: number[]) {
+  if (closes.length < 2 || closes.some(value => !Number.isFinite(value) || value <= 0)) return { annualizedVolatility: 0, maxDrawdown: 0 };
+  const returns = closes.slice(1).map((value, index) => value / closes[index] - 1);
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+  const variance = returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, returns.length - 1);
+  let peak = closes[0], maxDrawdown = 0;
+  for (const value of closes) {
+    peak = Math.max(peak, value);
+    maxDrawdown = Math.max(maxDrawdown, (peak - value) / peak);
+  }
+  return { annualizedVolatility: Math.sqrt(variance * 252) * 100, maxDrawdown: maxDrawdown * 100 };
+}
+
+export function portfolioHistory(equity: number, cash: number, series: { marketValue: number; closes: number[] }[]) {
+  const usable = series.filter(item => item.closes.length >= 2);
+  const length = Math.min(...usable.map(item => item.closes.length));
+  if (!Number.isFinite(length)) return [];
+  return Array.from({ length }, (_, index) => cash + usable.reduce((sum, item) => {
+    const closes = item.closes.slice(-length);
+    return sum + item.marketValue * closes[index] / closes.at(-1)!;
+  }, 0)).map(value => value / equity);
+}
+
 const finite = (value: string | number) => {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error("Portfolio contains a non-finite number");

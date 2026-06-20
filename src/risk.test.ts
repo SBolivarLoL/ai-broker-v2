@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
+import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 
 const positions = [
   { symbol: "AAPL", qty: "10", marketValue: "2000", unrealizedPl: "100" },
@@ -8,6 +8,11 @@ const positions = [
 const snapshot = riskSnapshot("10000", "7000", positions);
 
 describe("risk engine", () => {
+  test("calculates deterministic historical volatility and drawdown", () => {
+    expect(historicalRisk([100, 110, 88, 99]).maxDrawdown).toBeCloseTo(20);
+    expect(historicalRisk([100, 100, 100]).annualizedVolatility).toBe(0);
+    expect(portfolioHistory(1_000, 500, [{ marketValue: 500, closes: [50, 100] }])).toEqual([0.75, 1]);
+  });
   test("counts only fills from the rolling 24 hour window", () => {
     const now = Date.parse("2026-06-20T12:00:00Z");
     expect(rollingTurnover([

@@ -1,7 +1,7 @@
 import { Agent, run, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
-import { riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
+import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 
 export const Intent = z.enum(["reduce_concentration", "balanced_growth", "preserve_capital"]);
 export type Intent = z.infer<typeof Intent>;
@@ -86,7 +86,8 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
     async execute({ symbol }) {
       const start = new Date(Date.now() - 90 * 86_400_000);
       const bars = await alpaca.marketData.getStockBarsFor(symbol, { timeframe: TimeFrame.Day, start });
-      return evidence(`bars:${symbol}:90d`, { symbol, closes: bars.map(bar => bar.close).slice(-90) });
+      const closes = bars.map(bar => bar.close).slice(-90);
+      return evidence(`bars:${symbol}:90d`, { symbol, closes, ...historicalRisk(closes) });
     },
   });
 

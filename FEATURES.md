@@ -9,7 +9,7 @@ This is the challenge's central explainability file. The product is an internal-
 | 2. Market view | Latest Alpaca prices plus agent access to 90-day bars and news | Grounds decisions in recent broker data |
 | 3. Order ticket | Buy/sell ticket, signed preview, explicit confirmation, idempotent submission and lifecycle refresh | Makes paper orders safe and demoable |
 | 4. AI functionality | OpenAI Agents SDK Guided Rebalance Agent | Produces useful portfolio-management ideas |
-| 5. Portfolio intelligence | Cash, P&L, weights, top exposure, HHI and deterministic what-if simulation | Keeps risk math outside the model |
+| 5. Portfolio intelligence | Cash, P&L, weights, concentration, HHI, 90-day volatility/drawdown and deterministic what-if simulation | Keeps risk math outside the model |
 | 6. Agentic AI | The agent selects among seven read-only Alpaca and risk tools, then stores a plan | Demonstrates bounded multi-tool agency without autonomous execution |
 | 7. Creativity | Decision Receipt links evidence, plan, risk checks, approval and Alpaca outcome | Makes every recommendation and order inspectable |
 | 8. Explainability | This file, evidence IDs, explicit guardrails and runnable checks | Shows how and why each feature works |
