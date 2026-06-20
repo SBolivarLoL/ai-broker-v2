@@ -2,12 +2,14 @@ import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { signPreview, verifyPreview } from "./orders";
 import { riskSnapshot, simulateTrade } from "./risk";
+import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { createStore } from "./store";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
 const previewSecret = process.env.PREVIEW_SECRET ?? "";
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+const allow = rateLimiter();
 
 async function reconcileOrders() {
   const orders = await alpaca.trading.orders.getAllOrders({ status: "all", limit: 100 });
@@ -19,11 +21,16 @@ Bun.serve({
   idleTimeout: 60,
   async fetch(request) {
     const url = new URL(request.url);
+    if (request.method === "POST" && !validMutationOrigin(request)) return json({ error: "Invalid request origin" }, 403);
+    let actor = "anonymous";
+    if (url.pathname.startsWith("/api/")) {
+      try { actor = actorFor(request); } catch { return json({ error: "Unauthorized" }, 401); }
+    }
     try {
       if (url.pathname === "/") return new Response(Bun.file("src/index.html"));
       if (url.pathname === "/health") return json({ status: "ok" });
       if (url.pathname === "/ready") {
-        if (previewSecret.length < 32) return json({ status: "not_ready", error: "PREVIEW_SECRET is not configured" }, 503);
+        if (previewSecret.length < 32 || !securityReady()) return json({ status: "not_ready", error: "Security configuration is incomplete" }, 503);
         await alpaca.trading.account.getAccount();
         return json({ status: "ready", paper: true });
       }
@@ -53,13 +60,14 @@ Bun.serve({
         return json(await runPortfolioCopilot(alpaca));
       }
       if (url.pathname === "/api/agent/plans" && request.method === "POST") {
+        if (!allow(`${actor}:agent`, 10)) return json({ error: "Agent rate limit exceeded" }, 429);
         if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the agent" }, 503);
         const parsed = Intent.safeParse((await request.json()).intent);
         if (!parsed.success) return json({ error: "Intent must be reduce_concentration, balanced_growth, or preserve_capital" }, 400);
         const planId = crypto.randomUUID();
         const output = await runPortfolioCopilot(alpaca, parsed.data);
         store.plan(planId, parsed.data, output);
-        store.event("agent.plan.created", "demo-advisor", { planId, intent: parsed.data, ideas: output.ideas.length });
+        store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length });
         return json({ planId, intent: parsed.data, ...output });
       }
       if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
@@ -67,6 +75,7 @@ Bun.serve({
         return plan ? json(plan) : json({ error: "Plan not found" }, 404);
       }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
+        if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
         const { symbol: rawSymbol, qty: rawQty, side, planId } = await request.json();
         const symbol = String(rawSymbol ?? "").trim().toUpperCase();
         const qty = Number(rawQty);
@@ -84,27 +93,28 @@ Bun.serve({
         if (typeof price !== "number") return json({ error: "No valid current price" }, 400);
         if (account.equity === undefined || account.cash === undefined) return json({ error: "Account risk data unavailable" }, 502);
         const simulation = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price });
-        store.event("order.preview", "demo-advisor", { symbol, side, qty, simulation });
+        store.event("order.preview", actor, { symbol, side, qty, simulation });
         if (!simulation.allowed) return json({ allowed: false, simulation }, 422);
         const expiresAt = Date.now() + 120_000;
         return json({ allowed: true, simulation, expiresAt, previewToken: signPreview({ symbol, side, qty, price, expiresAt, planId, simulation }, previewSecret) });
       }
       if (url.pathname === "/api/orders" && request.method === "POST") {
+        if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
         const { previewToken, idempotencyKey } = await request.json();
         if (typeof previewToken !== "string" || typeof idempotencyKey !== "string" || !/^[\w-]{8,100}$/.test(idempotencyKey)) return json({ error: "Valid preview token and idempotency key are required" }, 400);
         const previous = store.submission(idempotencyKey);
         if (previous) return previous.pending ? json({ error: "Order submission is already processing" }, 409) : json(previous);
         const preview = verifyPreview(previewToken, previewSecret);
         if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Order submission is already processing" }, 409);
-        store.event("order.confirmed", "demo-advisor", { symbol: preview.symbol, side: preview.side, qty: preview.qty, idempotencyKey });
+        store.event("order.confirmed", actor, { symbol: preview.symbol, side: preview.side, qty: preview.qty, idempotencyKey });
         // Alpaca also enforces this key, covering a lost response after acceptance.
         const order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side, clientOrderId: idempotencyKey });
         if (!order.id) throw new Error("Alpaca returned an order without an id");
         const receiptId = crypto.randomUUID();
         const response = { ...order, receiptId };
         store.completeSubmission(idempotencyKey, order.id, response);
-        store.receipt(receiptId, { advisor: "demo-advisor", plan: preview.planId ? store.getPlan(preview.planId) : null, preview, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
-        store.event("order.submitted", "demo-advisor", { orderId: order.id, receiptId, idempotencyKey });
+        store.receipt(receiptId, { advisor: actor, plan: preview.planId ? store.getPlan(preview.planId) : null, preview, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
+        store.event("order.submitted", actor, { orderId: order.id, receiptId, idempotencyKey });
         return json(response);
       }
       if (url.pathname.startsWith("/api/receipts/") && request.method === "GET") {

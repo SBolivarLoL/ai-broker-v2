@@ -13,6 +13,7 @@ bun cli sell AAPL 1 --confirm
 ```
 
 `paper: true` is hard-coded. Live trading is intentionally unavailable.
+Production access is expected behind a managed OIDC identity-aware proxy; see `.env.example` for its required verified-header settings.
 
 Checks:
 

@@ -34,6 +34,7 @@ This is the challenge's central explainability file. The product is an internal-
 - Preview tokens are HMAC-signed and expire after two minutes.
 - Submission requires a unique idempotency key; duplicates return the original result or a processing response.
 - Paper trading is hard-coded. Live mode is unavailable.
+- Production refuses readiness unless a managed OIDC proxy origin, email domain and 32+ character proxy secret are configured. Mutations are same-origin and money/agent routes are rate-limited per advisor.
 
 ## Failure behavior
 
