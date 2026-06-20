@@ -10,11 +10,12 @@ Bun.serve({
     try {
       if (url.pathname === "/") return new Response(Bun.file("src/index.html"));
       if (url.pathname === "/api/account") {
-        const [account, positions] = await Promise.all([
+        const [account, positions, orders] = await Promise.all([
           alpaca.trading.account.getAccount(),
           alpaca.trading.positions.getAllOpenPositions(),
+          alpaca.trading.orders.getAllOrders({ status: "open", limit: 100 }),
         ]);
-        return json({ account, positions });
+        return json({ account, positions, orders });
       }
       if (url.pathname === "/api/quote") {
         const symbol = url.searchParams.get("symbol")?.trim().toUpperCase();
