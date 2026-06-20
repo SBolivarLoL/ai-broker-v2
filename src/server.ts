@@ -97,7 +97,8 @@ Bun.serve({
         const preview = verifyPreview(previewToken, previewSecret);
         if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Order submission is already processing" }, 409);
         store.event("order.confirmed", "demo-advisor", { symbol: preview.symbol, side: preview.side, qty: preview.qty, idempotencyKey });
-        const order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side });
+        // Alpaca also enforces this key, covering a lost response after acceptance.
+        const order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side, clientOrderId: idempotencyKey });
         if (!order.id) throw new Error("Alpaca returned an order without an id");
         const receiptId = crypto.randomUUID();
         const response = { ...order, receiptId };
@@ -110,6 +111,7 @@ Bun.serve({
         const receipt = store.getReceipt(url.pathname.split("/").pop() ?? "");
         return receipt ? json(receipt) : json({ error: "Receipt not found" }, 404);
       }
+      if (url.pathname === "/api/receipts" && request.method === "GET") return json(store.receipts());
       return json({ error: "Not found" }, 404);
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "Alpaca request failed" }, 502);

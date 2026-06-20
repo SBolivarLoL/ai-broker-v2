@@ -30,6 +30,10 @@ export function createStore(filename = "data/app.db") {
       const row = db.query("SELECT payload FROM receipts WHERE id = ?").get(id) as { payload: string } | null;
       return row ? JSON.parse(row.payload) : null;
     },
+    receipts(limit = 20) {
+      return (db.query("SELECT id, payload FROM receipts ORDER BY created_at DESC LIMIT ?").all(limit) as { id: string; payload: string }[])
+        .map(row => ({ id: row.id, ...JSON.parse(row.payload) }));
+    },
     reconcileOrder(orderId: string, status: string) {
       // ponytail: O(n) is fine for one paper account; add an indexed order_id column before multi-account use.
       const rows = db.query("SELECT id, payload FROM receipts").all() as { id: string; payload: string }[];
