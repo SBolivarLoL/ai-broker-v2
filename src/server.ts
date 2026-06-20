@@ -1,5 +1,5 @@
 import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { runPortfolioCopilot } from "./copilot";
+import { Intent, runPortfolioCopilot } from "./copilot";
 import { signPreview, verifyPreview } from "./orders";
 import { riskSnapshot, simulateTrade } from "./risk";
 import { createStore } from "./store";
@@ -8,6 +8,11 @@ const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
 const previewSecret = process.env.PREVIEW_SECRET ?? "";
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+async function reconcileOrders() {
+  const orders = await alpaca.trading.orders.getAllOrders({ status: "all", limit: 100 });
+  for (const order of orders) if (order.id && order.status) store.reconcileOrder(order.id, order.status);
+}
 
 Bun.serve({
   port: Number(process.env.PORT ?? 3000),
@@ -47,13 +52,28 @@ Bun.serve({
         if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the copilot" }, 503);
         return json(await runPortfolioCopilot(alpaca));
       }
+      if (url.pathname === "/api/agent/plans" && request.method === "POST") {
+        if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the agent" }, 503);
+        const parsed = Intent.safeParse((await request.json()).intent);
+        if (!parsed.success) return json({ error: "Intent must be reduce_concentration, balanced_growth, or preserve_capital" }, 400);
+        const planId = crypto.randomUUID();
+        const output = await runPortfolioCopilot(alpaca, parsed.data);
+        store.plan(planId, parsed.data, output);
+        store.event("agent.plan.created", "demo-advisor", { planId, intent: parsed.data, ideas: output.ideas.length });
+        return json({ planId, intent: parsed.data, ...output });
+      }
+      if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
+        const plan = store.getPlan(url.pathname.split("/").pop() ?? "");
+        return plan ? json(plan) : json({ error: "Plan not found" }, 404);
+      }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
-        const { symbol: rawSymbol, qty: rawQty, side } = await request.json();
+        const { symbol: rawSymbol, qty: rawQty, side, planId } = await request.json();
         const symbol = String(rawSymbol ?? "").trim().toUpperCase();
         const qty = Number(rawQty);
         if (!symbol || !Number.isFinite(qty) || qty <= 0 || !["buy", "sell"].includes(side)) {
           return json({ error: "Valid symbol, quantity, and side are required" }, 400);
         }
+        if (planId !== undefined && (typeof planId !== "string" || !store.getPlan(planId))) return json({ error: "Valid stored plan id is required" }, 400);
         const [account, positions, asset, price] = await Promise.all([
           alpaca.trading.account.getAccount(),
           alpaca.trading.positions.getAllOpenPositions(),
@@ -67,7 +87,7 @@ Bun.serve({
         store.event("order.preview", "demo-advisor", { symbol, side, qty, simulation });
         if (!simulation.allowed) return json({ allowed: false, simulation }, 422);
         const expiresAt = Date.now() + 120_000;
-        return json({ allowed: true, simulation, expiresAt, previewToken: signPreview({ symbol, side, qty, price, expiresAt }, previewSecret) });
+        return json({ allowed: true, simulation, expiresAt, previewToken: signPreview({ symbol, side, qty, price, expiresAt, planId, simulation }, previewSecret) });
       }
       if (url.pathname === "/api/orders" && request.method === "POST") {
         const { previewToken, idempotencyKey } = await request.json();
@@ -82,7 +102,7 @@ Bun.serve({
         const receiptId = crypto.randomUUID();
         const response = { ...order, receiptId };
         store.completeSubmission(idempotencyKey, order.id, response);
-        store.receipt(receiptId, { advisor: "demo-advisor", preview, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
+        store.receipt(receiptId, { advisor: "demo-advisor", plan: preview.planId ? store.getPlan(preview.planId) : null, preview, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
         store.event("order.submitted", "demo-advisor", { orderId: order.id, receiptId, idempotencyKey });
         return json(response);
       }
@@ -98,3 +118,5 @@ Bun.serve({
 });
 
 console.log("AI Broker running at http://localhost:3000");
+void reconcileOrders().catch(error => console.error("order reconciliation failed", error instanceof Error ? error.message : error));
+setInterval(() => void reconcileOrders().catch(error => console.error("order reconciliation failed", error instanceof Error ? error.message : error)), 15_000);

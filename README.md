@@ -13,3 +13,14 @@ bun cli sell AAPL 1 --confirm
 ```
 
 `paper: true` is hard-coded. Live trading is intentionally unavailable.
+
+Checks:
+
+```sh
+bun run check
+bun run eval
+bun run alpaca:doctor
+bun run smoke:read
+```
+
+See `FEATURES.md` for the objective map, safety model, and demo script.

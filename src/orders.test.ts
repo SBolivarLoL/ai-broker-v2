@@ -21,5 +21,10 @@ test("submission idempotency and receipts persist", () => {
   expect(store.submission("key")).toEqual({ id: "order-1" });
   store.receipt("receipt-1", { status: "submitted" });
   expect(store.getReceipt("receipt-1")).toEqual({ status: "submitted" });
+  store.receipt("receipt-2", { orderId: "order-1", status: "accepted" });
+  store.reconcileOrder("order-1", "filled");
+  expect(store.getReceipt("receipt-2")).toMatchObject({ orderId: "order-1", status: "filled" });
+  store.plan("plan-1", "balanced_growth", { summary: "Balanced" });
+  expect(store.getPlan("plan-1")).toMatchObject({ id: "plan-1", intent: "balanced_growth", summary: "Balanced" });
   store.close();
 });

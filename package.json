@@ -5,7 +5,10 @@
   "scripts": {
     "start": "bun --env-file=.env src/server.ts",
     "cli": "bun --env-file=.env src/index.ts",
-    "check": "bunx tsc --noEmit && bun test"
+    "check": "bunx tsc --noEmit && bun test",
+    "alpaca:doctor": "./scripts/alpaca.sh doctor",
+    "smoke:read": "./scripts/alpaca.sh account get >/dev/null && ./scripts/alpaca.sh position list >/dev/null && ./scripts/alpaca.sh order list --status open >/dev/null",
+    "eval": "bun test src/risk.test.ts src/orders.test.ts src/eval.test.ts"
   },
   "dependencies": {
     "@alpacahq/alpaca-ts-alpha": "^0.2.0",

@@ -7,6 +7,10 @@ export const Preview = z.object({
   qty: z.number().positive().finite(),
   price: z.number().positive().finite(),
   expiresAt: z.number().int(),
+  planId: z.string().uuid().optional(),
+  simulation: z.object({
+    allowed: z.boolean(), estimatedNotional: z.number(), resultingCash: z.number(), resultingPositionPercent: z.number(), turnoverPercent: z.number(), reasons: z.array(z.string()),
+  }).optional(),
 });
 
 export type Preview = z.infer<typeof Preview>;
@@ -28,4 +32,3 @@ export function verifyPreview(token: string, secret: string, now = Date.now()) {
   if (preview.expiresAt < now) throw new Error("Preview expired");
   return preview;
 }
-
