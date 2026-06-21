@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
+import type { LedgerActivity, LedgerCategory } from "./ledger";
 
 export type RiskReservationStatus = "reserved" | "submitted" | "filled" | "canceled" | "rejected" | "released";
 export type RiskReservation = {
@@ -39,6 +40,23 @@ export function createStore(filename = "data/app.db") {
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
   db.run("CREATE INDEX IF NOT EXISTS risk_reservations_active ON risk_reservations(status)");
+  db.run(`CREATE TABLE IF NOT EXISTS account_activities (
+    activity_id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    sub_type TEXT,
+    category TEXT NOT NULL,
+    status TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    symbol TEXT,
+    side TEXT,
+    quantity REAL,
+    price REAL,
+    amount REAL NOT NULL,
+    order_id TEXT,
+    synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS account_activities_occurred ON account_activities(occurred_at DESC, activity_id DESC)");
+  db.run("CREATE INDEX IF NOT EXISTS account_activities_category ON account_activities(category, occurred_at DESC)");
 
   const reservationRows = (now = Date.now()) => db.query(`SELECT reservation_key AS key, symbol, side, qty, price, status, order_id AS orderId,
     expires_at_ms AS expiresAt, created_at AS createdAt, updated_at AS updatedAt FROM risk_reservations
@@ -56,6 +74,17 @@ export function createStore(filename = "data/app.db") {
       .run(key, candidate.symbol, candidate.side, candidate.qty, candidate.price, now + ttlMs);
     return { reserved: true as const, validation: validation.value };
   });
+  const syncActivitiesTransaction = db.transaction((activities: LedgerActivity[]) => {
+    const statement = db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(activity_id) DO UPDATE SET type=excluded.type, sub_type=excluded.sub_type, category=excluded.category, status=excluded.status,
+      occurred_at=excluded.occurred_at, symbol=excluded.symbol, side=excluded.side, quantity=excluded.quantity, price=excluded.price,
+      amount=excluded.amount, order_id=excluded.order_id, synced_at=CURRENT_TIMESTAMP`);
+    for (const activity of activities) statement.run(activity.id, activity.type, activity.subType, activity.category, activity.status, activity.occurredAt, activity.symbol, activity.side, activity.quantity, activity.price, activity.amount, activity.orderId);
+    return activities.length;
+  });
+  const activitySelect = `SELECT activity_id AS id, type, sub_type AS subType, category, status, occurred_at AS occurredAt,
+    symbol, side, quantity, price, amount, order_id AS orderId FROM account_activities`;
   return {
     event(type: string, actor: string, payload: unknown) {
       db.query("INSERT INTO events (type, actor, payload) VALUES (?, ?, ?)").run(type, actor, JSON.stringify(payload));
@@ -114,6 +143,13 @@ export function createStore(filename = "data/app.db") {
     getPlan(id: string) {
       const row = db.query("SELECT intent, payload, created_at FROM plans WHERE id = ?").get(id) as { intent: string; payload: string; created_at: string } | null;
       return row ? { id, intent: row.intent, createdAt: row.created_at, ...JSON.parse(row.payload) } : null;
+    },
+    syncActivities(activities: LedgerActivity[]) { return syncActivitiesTransaction.immediate(activities); },
+    activities(limit = 100, category?: LedgerCategory) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5_000) throw new Error("Activity limit is out of range");
+      return (category
+        ? db.query(`${activitySelect} WHERE category = ? ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(category, limit)
+        : db.query(`${activitySelect} ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(limit)) as LedgerActivity[];
     },
     close() { db.close(); },
   };
