@@ -190,8 +190,8 @@ Goal: make the broker's accounting and order state reliable enough to support de
 - [x] Separate deposits/withdrawals from investment performance.
 - [x] Add dividends, interest, fees and cashflow timeline.
 - [ ] Add time-weighted and money-weighted returns with benchmarks.
-- [ ] Replace polling with order/account update streams plus recovery polling.
-- [ ] Complete the order blotter with nested legs, filters, replace and cancel. Read/filter/cancel foundation exists.
+- [x] Maintain order state with Alpaca trade-update streaming, reconnects and periodic REST recovery polling.
+- [x] Build an order blotter with nested-leg data, filters, safe replacement and cancellation.
 - [ ] Persist daily portfolio/risk snapshots and data-quality flags.
 
 Exit gate: the local ledger reconciles to Alpaca balances and activities across partial fills, cancellations, dividends, fees and cash transfers.
@@ -295,13 +295,13 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Finish the order blotter with replace support, then add streaming order updates and recovery polling.
-2. Persist daily portfolio/risk snapshots and reconcile corporate-action cost-basis changes.
-3. Add time-weighted and money-weighted returns with benchmark attribution.
-4. Build the company detail chart, quote-quality, volume and news timeline.
-5. Add watchlists, movers, market clock and corporate-action alerts.
-6. Add limit/stop/bracket paper order tickets with expanded risk previews.
-7. Add comparable-company valuation, counter-thesis review, factor exposure and expected shortfall.
+1. Persist daily portfolio/risk snapshots and reconcile corporate-action cost-basis changes.
+2. Add time-weighted and money-weighted returns with benchmark attribution.
+3. Build the company detail chart, quote-quality, volume and news timeline.
+4. Add watchlists, movers, market clock and corporate-action alerts.
+5. Add limit/stop/bracket paper order tickets with expanded risk previews.
+6. Add comparable-company valuation and counter-thesis review.
+7. Add factor exposure, expected shortfall and portfolio risk contribution.
 8. Build the options research workspace before enabling any options execution.
 
 ## Capability and safety checklist for every new feature
