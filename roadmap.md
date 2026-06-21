@@ -22,9 +22,9 @@ This document is the build map for turning AI Broker into a serious personal inv
 | Account balances, status, equity, cash and buying power | Account overview, buying-power meter, trading-state warnings | Basic view exists |
 | Open positions | Holdings, exposure, cost basis, unrealized P&L, close-position workflows | Basic view exists |
 | Portfolio history | Equity curve, cashflow-adjusted P&L, drawdown, volatility, Sharpe and period comparison | Initial version exists |
-| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | Normalized ledger and FIFO P&L exist; corporate-action reconciliation remains |
+| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | FIFO ledger applies explicit split/symbol-change evidence; complex basis allocations are flagged for review |
 | Account configuration | Show and safely update supported trading preferences | Defer until settings UX and audit log exist |
-| Order and account update streams | Near-real-time fills, partial fills, cancellations, rejections and position refresh | Recovery polling and order blotter exist; stream is next priority |
+| Order and account update streams | Near-real-time fills, partial fills, cancellations, rejections and position refresh | Trade-update stream, reconnects, order blotter and REST recovery polling exist |
 
 ### Order management and execution
 
@@ -186,7 +186,8 @@ Goal: make the broker's accounting and order state reliable enough to support de
 
 - [x] Ingest paginated account activities into a normalized local ledger.
 - [x] Calculate FIFO realized P&L from fills and separate fees from trading returns.
-- [ ] Reconcile realized P&L for splits, mergers, spin-offs and other cost-basis-changing corporate actions.
+- [x] Reconcile explicit forward/reverse splits and symbol changes while preserving FIFO basis.
+- [ ] Reconcile mergers, spin-offs and other actions that require broker-provided basis allocations; unresolved events are now surfaced explicitly.
 - [x] Separate deposits/withdrawals from investment performance.
 - [x] Add dividends, interest, fees and cashflow timeline.
 - [ ] Add time-weighted and money-weighted returns with benchmarks.
@@ -295,8 +296,8 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Reconcile corporate-action cost-basis changes in the authoritative ledger.
-2. Add time-weighted and money-weighted returns with benchmark attribution.
+1. Add time-weighted and money-weighted returns with benchmark attribution.
+2. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
 3. Build the company detail chart, quote-quality, volume and news timeline.
 4. Add watchlists, movers, market clock and corporate-action alerts.
 5. Add limit/stop/bracket paper order tickets with expanded risk previews.

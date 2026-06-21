@@ -53,8 +53,11 @@ export function createStore(filename = "data/app.db") {
     price REAL,
     amount REAL NOT NULL,
     order_id TEXT,
+    corporate_action TEXT,
     synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  const activityColumns = db.query("PRAGMA table_info(account_activities)").all() as { name: string }[];
+  if (!activityColumns.some(column => column.name === "corporate_action")) db.run("ALTER TABLE account_activities ADD COLUMN corporate_action TEXT");
   db.run("CREATE INDEX IF NOT EXISTS account_activities_occurred ON account_activities(occurred_at DESC, activity_id DESC)");
   db.run("CREATE INDEX IF NOT EXISTS account_activities_category ON account_activities(category, occurred_at DESC)");
   db.run(`CREATE TABLE IF NOT EXISTS research_runs (
@@ -97,16 +100,16 @@ export function createStore(filename = "data/app.db") {
     return { reserved: true as const, validation: validation.value };
   });
   const syncActivitiesTransaction = db.transaction((activities: LedgerActivity[]) => {
-    const statement = db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    const statement = db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id, corporate_action)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(activity_id) DO UPDATE SET type=excluded.type, sub_type=excluded.sub_type, category=excluded.category, status=excluded.status,
       occurred_at=excluded.occurred_at, symbol=excluded.symbol, side=excluded.side, quantity=excluded.quantity, price=excluded.price,
-      amount=excluded.amount, order_id=excluded.order_id, synced_at=CURRENT_TIMESTAMP`);
-    for (const activity of activities) statement.run(activity.id, activity.type, activity.subType, activity.category, activity.status, activity.occurredAt, activity.symbol, activity.side, activity.quantity, activity.price, activity.amount, activity.orderId);
+      amount=excluded.amount, order_id=excluded.order_id, corporate_action=excluded.corporate_action, synced_at=CURRENT_TIMESTAMP`);
+    for (const activity of activities) statement.run(activity.id, activity.type, activity.subType, activity.category, activity.status, activity.occurredAt, activity.symbol, activity.side, activity.quantity, activity.price, activity.amount, activity.orderId, activity.corporateAction ? JSON.stringify(activity.corporateAction) : null);
     return activities.length;
   });
   const activitySelect = `SELECT activity_id AS id, type, sub_type AS subType, category, status, occurred_at AS occurredAt,
-    symbol, side, quantity, price, amount, order_id AS orderId FROM account_activities`;
+    symbol, side, quantity, price, amount, order_id AS orderId, corporate_action AS corporateActionJson FROM account_activities`;
   return {
     event(type: string, actor: string, payload: unknown) {
       db.query("INSERT INTO events (type, actor, payload) VALUES (?, ?, ?)").run(type, actor, JSON.stringify(payload));
@@ -169,9 +172,10 @@ export function createStore(filename = "data/app.db") {
     syncActivities(activities: LedgerActivity[]) { return syncActivitiesTransaction.immediate(activities); },
     activities(limit = 100, category?: LedgerCategory) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 5_000) throw new Error("Activity limit is out of range");
-      return (category
+      const rows = (category
         ? db.query(`${activitySelect} WHERE category = ? ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(category, limit)
-        : db.query(`${activitySelect} ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(limit)) as LedgerActivity[];
+        : db.query(`${activitySelect} ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(limit)) as (LedgerActivity & { corporateActionJson: string | null })[];
+      return rows.map(({ corporateActionJson, ...activity }) => ({ ...activity, corporateAction: corporateActionJson ? JSON.parse(corporateActionJson) : null }));
     },
     startResearch(id: string, symbol: string, model: string) {
       db.query("INSERT INTO research_runs (id, symbol, status, model) VALUES (?, ?, 'running', ?)").run(id, symbol, model);
