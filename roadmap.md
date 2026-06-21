@@ -192,7 +192,7 @@ Goal: make the broker's accounting and order state reliable enough to support de
 - [ ] Add time-weighted and money-weighted returns with benchmarks.
 - [x] Maintain order state with Alpaca trade-update streaming, reconnects and periodic REST recovery polling.
 - [x] Build an order blotter with nested-leg data, filters, safe replacement and cancellation.
-- [ ] Persist daily portfolio/risk snapshots and data-quality flags.
+- [x] Persist reconciled daily portfolio/risk snapshots with data-quality flags.
 
 Exit gate: the local ledger reconciles to Alpaca balances and activities across partial fills, cancellations, dividends, fees and cash transfers.
 
@@ -295,7 +295,7 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Persist daily portfolio/risk snapshots and reconcile corporate-action cost-basis changes.
+1. Reconcile corporate-action cost-basis changes in the authoritative ledger.
 2. Add time-weighted and money-weighted returns with benchmark attribution.
 3. Build the company detail chart, quote-quality, volume and news timeline.
 4. Add watchlists, movers, market clock and corporate-action alerts.
