@@ -4,6 +4,7 @@ import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
+import { runCompanyResearch } from "./research";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
 import { createStore } from "./store";
@@ -185,6 +186,28 @@ Bun.serve({
       if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
         const plan = store.getPlan(url.pathname.split("/").pop() ?? "");
         return plan ? json(plan) : json({ error: "Plan not found" }, 404);
+      }
+      if (url.pathname === "/api/research/runs" && request.method === "POST") {
+        if (!allow(`${actor}:research`, 6)) return json({ error: "Research agent rate limit exceeded" }, 429);
+        if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable company research" }, 503);
+        const symbol = String((await requestJson(request)).symbol ?? "").trim().toUpperCase();
+        if (!/^[A-Z.]{1,10}$/.test(symbol)) return json({ error: "A valid stock symbol is required" }, 400);
+        const runId = crypto.randomUUID(); const model = process.env.OPENAI_MODEL ?? "gpt-5.5";
+        store.startResearch(runId, symbol, model);
+        try {
+          const result = await runCompanyResearch(alpaca, symbol, runId);
+          store.completeResearch(runId, result, result.metrics);
+          store.event("research.completed", actor, { runId, symbol, score: result.metrics.overallScore, latencyMs: result.metrics.latencyMs });
+          return json(result);
+        } catch (error) {
+          store.failResearch(runId, error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      }
+      if (url.pathname === "/api/research/metrics" && request.method === "GET") return json(store.researchMetrics());
+      if (url.pathname.startsWith("/api/research/runs/") && request.method === "GET") {
+        const research = store.getResearch(url.pathname.split("/").pop() ?? "");
+        return research ? json(research) : json({ error: "Research run not found" }, 404);
       }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
         if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);

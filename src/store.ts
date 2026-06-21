@@ -57,6 +57,18 @@ export function createStore(filename = "data/app.db") {
   )`);
   db.run("CREATE INDEX IF NOT EXISTS account_activities_occurred ON account_activities(occurred_at DESC, activity_id DESC)");
   db.run("CREATE INDEX IF NOT EXISTS account_activities_category ON account_activities(category, occurred_at DESC)");
+  db.run(`CREATE TABLE IF NOT EXISTS research_runs (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed')),
+    model TEXT NOT NULL,
+    payload TEXT,
+    metrics TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS research_runs_created ON research_runs(created_at DESC)");
 
   const reservationRows = (now = Date.now()) => db.query(`SELECT reservation_key AS key, symbol, side, qty, price, status, order_id AS orderId,
     expires_at_ms AS expiresAt, created_at AS createdAt, updated_at AS updatedAt FROM risk_reservations
@@ -150,6 +162,25 @@ export function createStore(filename = "data/app.db") {
       return (category
         ? db.query(`${activitySelect} WHERE category = ? ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(category, limit)
         : db.query(`${activitySelect} ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(limit)) as LedgerActivity[];
+    },
+    startResearch(id: string, symbol: string, model: string) {
+      db.query("INSERT INTO research_runs (id, symbol, status, model) VALUES (?, ?, 'running', ?)").run(id, symbol, model);
+    },
+    completeResearch(id: string, payload: unknown, metrics: unknown) {
+      db.query("UPDATE research_runs SET status = 'completed', payload = ?, metrics = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'").run(JSON.stringify(payload), JSON.stringify(metrics), id);
+    },
+    failResearch(id: string, error: string) {
+      db.query("UPDATE research_runs SET status = 'failed', error = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'").run(error.slice(0, 500), id);
+    },
+    getResearch(id: string) {
+      const row = db.query("SELECT id, symbol, status, model, payload, metrics, error, created_at AS createdAt, completed_at AS completedAt FROM research_runs WHERE id = ?").get(id) as any;
+      return row ? { ...row, payload: row.payload ? JSON.parse(row.payload) : null, metrics: row.metrics ? JSON.parse(row.metrics) : null } : null;
+    },
+    researchMetrics(limit = 50) {
+      const rows = db.query("SELECT metrics FROM research_runs WHERE status = 'completed' AND metrics IS NOT NULL ORDER BY created_at DESC LIMIT ?").all(limit) as { metrics: string }[];
+      const metrics = rows.map(row => JSON.parse(row.metrics));
+      const average = (key: string) => metrics.length ? metrics.reduce((sum, item) => sum + Number(item[key] ?? 0), 0) / metrics.length : 0;
+      return { totalRuns: metrics.length, successRate: metrics.length ? metrics.filter(item => item.overallScore >= 90).length / metrics.length : 0, averageScore: average("overallScore"), averageLatencyMs: average("latencyMs"), averageCitationValidity: average("citationValidity"), averageNumericGrounding: average("numericGrounding"), averageToolCoverage: average("toolCoverage"), averageTokens: average("totalTokens") };
     },
     close() { db.close(); },
   };
