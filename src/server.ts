@@ -1,5 +1,6 @@
 import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
+import { companyMarketSnapshot } from "./company-market";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signReplacementPreview, verifyReplacementPreview } from "./order-management";
@@ -47,6 +48,7 @@ let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | nul
 const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
 let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
+const companyMarketCache = new Map<string, { expiresAt: number; value: ReturnType<typeof companyMarketSnapshot> }>();
 
 async function getAssetCatalog() {
   if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
@@ -158,6 +160,27 @@ Bun.serve({
         const query = url.searchParams.get("q")?.trim() ?? "";
         if (query.length < 1 || query.length > 50) return json({ error: "Search must contain 1 to 50 characters" }, 400);
         return json({ query, results: searchAssets(await getAssetCatalog(), query) });
+      }
+      if (url.pathname === "/api/company/market" && request.method === "GET") {
+        const symbol = url.searchParams.get("symbol")?.trim().toUpperCase() ?? "";
+        const period = url.searchParams.get("period") ?? "3M";
+        const periodDays: Record<string, number> = { "1M": 35, "3M": 100, "1Y": 370 };
+        if (!/^[A-Z.]{1,10}$/.test(symbol) || !periodDays[period]) return json({ error: "Valid symbol and period (1M, 3M, or 1Y) are required" }, 400);
+        const cacheKey = `${symbol}:${period}`;
+        const cached = companyMarketCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) return json(cached.value);
+        const start = new Date(Date.now() - periodDays[period] * 86_400_000);
+        const [asset, snapshot, bars, news, clock] = await Promise.all([
+          alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }),
+          alpaca.marketData.stocks.stockSnapshotSingle({ symbol, feed: "iex" }),
+          alpaca.marketData.getStockBarsFor(symbol, { timeframe: TimeFrame.Day, start, feed: "iex" }),
+          alpaca.marketData.news.news({ symbols: symbol, limit: 8, sort: "desc" }).then(response => response.news).catch(() => []),
+          alpaca.trading.calendar.clock(),
+        ]);
+        const value = companyMarketSnapshot(asset, snapshot, bars, news, clock, period);
+        companyMarketCache.set(cacheKey, { value, expiresAt: Date.now() + 30_000 });
+        if (companyMarketCache.size > 60) companyMarketCache.delete(companyMarketCache.keys().next().value!);
+        return json(value);
       }
       if (url.pathname === "/api/account/activities" && request.method === "GET") {
         const allowedCategories = new Set<LedgerCategory>(["trade", "dividend", "interest", "fee", "transfer", "corporate_action", "option", "other"]);

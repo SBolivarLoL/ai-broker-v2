@@ -201,8 +201,9 @@ Exit gate: the local ledger reconciles to Alpaca balances and activities across 
 
 Goal: make company discovery and monitoring genuinely useful.
 
-- [ ] Company detail page with snapshot, chart, quote, spread and volume.
-- [ ] Configurable candlestick periods and benchmark comparison.
+- [x] Company detail workspace with asset eligibility, snapshot, quote/spread quality, volume context and timestamped news.
+- [x] Configurable 1M/3M/1Y daily candlestick and volume periods.
+- [ ] Company chart benchmark overlay and relative-strength comparison.
 - [ ] Watchlist CRUD backed by Alpaca watchlists.
 - [ ] Live stock quote/bar stream with reconnect and stale-data indicators.
 - [ ] Movers and most-active discovery panels.
@@ -296,10 +297,10 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Build the company detail chart, quote-quality, volume and news timeline.
+1. Add watchlists, movers, market clock and corporate-action alerts.
 2. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
-3. Build the company detail chart, quote-quality, volume and news timeline.
-4. Add watchlists, movers, market clock and corporate-action alerts.
+3. Add company benchmark overlays and relative-strength comparison.
+4. Add live quote/bar streaming with reconnect and stale-data recovery.
 5. Add limit/stop/bracket paper order tickets with expanded risk previews.
 6. Add comparable-company valuation and counter-thesis review.
 7. Add factor exposure, expected shortfall and portfolio risk contribution.
