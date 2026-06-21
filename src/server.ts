@@ -1,5 +1,5 @@
 import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
-import { diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
+import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signReplacementPreview, verifyReplacementPreview } from "./order-management";
@@ -191,15 +191,19 @@ Bun.serve({
         const periods: Record<string, string> = { "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1A" };
         const period = url.searchParams.get("period") ?? "3M";
         if (!periods[period]) return json({ error: "Period must be 1M, 3M, 6M, or 1Y" }, 400);
+        const benchmarkSymbol = (process.env.PORTFOLIO_BENCHMARK ?? "SPY").trim().toUpperCase();
+        if (!/^[A-Z.]{1,10}$/.test(benchmarkSymbol)) return json({ error: "PORTFOLIO_BENCHMARK must be a valid symbol" }, 500);
         const [history, positions] = await Promise.all([
-          alpaca.trading.portfolioHistory.getAccountPortfolioHistory({ period: periods[period], timeframe: "1D", pnlReset: "no_reset" }),
+          alpaca.trading.portfolioHistory.getAccountPortfolioHistory({ period: periods[period], timeframe: "1D", pnlReset: "no_reset", cashflowTypes: "CSD,CSW,JNLC" }),
           alpaca.trading.positions.getAllOpenPositions(),
         ]);
         const points = performancePoints(history);
+        const benchmarkBars = points.length ? await alpaca.marketData.getStockBarsFor(benchmarkSymbol, { timeframe: TimeFrame.Day, start: new Date(points[0].timestamp - 3 * 86_400_000), end: new Date(points.at(-1)!.timestamp + 2 * 86_400_000) }) : [];
+        const benchmark = benchmarkAttribution(points, benchmarkBars, benchmarkSymbol);
         const attribution = positions.map(position => ({ symbol: position.symbol, marketValue: Number(position.marketValue), unrealizedProfitLoss: Number(position.unrealizedPl), unrealizedReturnPercent: Number(position.unrealizedPlpc) * 100 }))
           .filter(item => Object.values(item).every(value => typeof value === "string" || Number.isFinite(value)))
           .sort((a, b) => b.unrealizedProfitLoss - a.unrealizedProfitLoss);
-        return json({ period, summary: performanceSummary(points), points, attribution, asOf: new Date().toISOString() });
+        return json({ period, summary: performanceSummary(points), benchmark, points, attribution, quality: { cashflowAdjusted: true, benchmarkCoverage: benchmark.quality }, asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/agent/plans" && request.method === "POST") {
         if (!allow(`${actor}:agent`, 10)) return json({ error: "Agent rate limit exceeded" }, 429);
