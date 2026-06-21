@@ -201,6 +201,9 @@ Bun.serve({
           return json(result);
         } catch (error) {
           store.failResearch(runId, error instanceof Error ? error.message : String(error));
+          if (error instanceof Error && error.message.startsWith("Output guardrail triggered")) {
+            throw new ClientError("The research report did not meet the minimum evidence-grounding threshold. Please run it again.", 422);
+          }
           throw error;
         }
       }
