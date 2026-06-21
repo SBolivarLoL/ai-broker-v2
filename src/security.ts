@@ -24,11 +24,15 @@ export function securityReady(env: Env = process.env) {
   return env.NODE_ENV !== "production" || Boolean(env.APP_ORIGIN && env.AUTHORIZED_EMAIL_DOMAIN && (env.AUTH_PROXY_SECRET?.length ?? 0) >= 32);
 }
 
-export function rateLimiter(windowMs = 60_000) {
+export function rateLimiter(windowMs = 60_000, maximumKeys = 10_000) {
   const hits = new Map<string, { count: number; reset: number }>();
   return (key: string, maximum: number, now = Date.now()) => {
     const current = hits.get(key);
     if (!current || current.reset <= now) {
+      if (!current && hits.size >= maximumKeys) {
+        for (const [storedKey, value] of hits) if (value.reset <= now) hits.delete(storedKey);
+        if (hits.size >= maximumKeys) return false;
+      }
       hits.set(key, { count: 1, reset: now + windowMs });
       return true;
     }

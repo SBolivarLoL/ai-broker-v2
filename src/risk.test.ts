@@ -39,4 +39,20 @@ describe("risk engine", () => {
     expect(result.allowed).toBe(false);
     expect(result.reasons).toContain("Resulting position exceeds 20% concentration limit");
   });
+
+  test("includes pending buys in cash, concentration, and turnover", () => {
+    const pendingOrders = [{ symbol: "SPY", side: "buy" as const, qty: 10, price: 200 }];
+    const result = simulateTrade({ snapshot, positions, symbol: "SPY", side: "buy", qty: 1, price: 100, dailyTurnover: 7_000, pendingOrders });
+    expect(result.resultingCash).toBe(4_900);
+    expect(result.resultingPositionPercent).toBe(21);
+    expect(result.turnoverPercent).toBe(91);
+    expect(result.reasons).toContain("Resulting position exceeds 20% concentration limit");
+    expect(result.reasons).toContain("Daily turnover exceeds 10% limit");
+  });
+
+  test("pending buys reserve cash and pending sells reserve inventory", () => {
+    const lowCash = riskSnapshot(10_000, 500, positions);
+    expect(simulateTrade({ snapshot: lowCash, positions, symbol: "SPY", side: "buy", qty: 2, price: 200, pendingOrders: [{ symbol: "QQQ", side: "buy", qty: 1, price: 200 }] }).reasons).toContain("Insufficient cash");
+    expect(simulateTrade({ snapshot, positions, symbol: "AAPL", side: "sell", qty: 6, price: 200, pendingOrders: [{ symbol: "AAPL", side: "sell", qty: 5, price: 200 }] }).reasons).toContain("Sell quantity exceeds owned quantity");
+  });
 });

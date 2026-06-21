@@ -1,0 +1,26 @@
+import { expect, test } from "bun:test";
+import { searchAssets } from "./search";
+
+const assets = [
+  { symbol: "NVDA", name: "NVIDIA Corporation", exchange: "NASDAQ" },
+  { symbol: "NKE", name: "Nike, Inc.", exchange: "NYSE" },
+  { symbol: "NEE", name: "NextEra Energy, Inc.", exchange: "NYSE" },
+  { symbol: "AAPL", name: "Apple Inc.", exchange: "NASDAQ" },
+  { symbol: "MSFT", name: "Microsoft Corporation", exchange: "NASDAQ" },
+];
+
+test("ranks ticker prefixes before company-name prefixes", () => {
+  expect(searchAssets(assets, "n").map(asset => asset.symbol)).toEqual(["NEE", "NKE", "NVDA"]);
+  expect(searchAssets(assets, "app")[0]?.symbol).toBe("AAPL");
+});
+
+test("supports case-insensitive fuzzy subsequence matches and limits results", () => {
+  expect(searchAssets(assets, "APLE")[0]?.symbol).toBe("AAPL");
+  expect(searchAssets(assets, "mcrsft")[0]?.symbol).toBe("MSFT");
+  expect(searchAssets(assets, "n", 2)).toHaveLength(2);
+});
+
+test("returns no suggestions for empty or unrelated input", () => {
+  expect(searchAssets(assets, "")).toEqual([]);
+  expect(searchAssets(assets, "zzzzzz")).toEqual([]);
+});

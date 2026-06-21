@@ -22,6 +22,14 @@ export type TradeSimulation = {
 
 export type FilledOrder = { filledAt?: Date | string | null; filledQty?: string | number; filledAvgPrice?: string | number | null };
 
+/** An unfilled broker order or a local pre-submission risk reservation. */
+export type PendingOrder = {
+  symbol: string;
+  side: "buy" | "sell";
+  qty: string | number;
+  price: string | number;
+};
+
 export function historicalRisk(closes: number[]) {
   if (closes.length < 2 || closes.some(value => !Number.isFinite(value) || value <= 0)) return { annualizedVolatility: 0, maxDrawdown: 0 };
   const returns = closes.slice(1).map((value, index) => value / closes[index] - 1);
@@ -86,21 +94,33 @@ export function simulateTrade(input: {
   qty: number;
   price: number;
   dailyTurnover?: number;
+  pendingOrders?: PendingOrder[];
 }): TradeSimulation {
-  const { snapshot, positions, symbol, side, qty, price, dailyTurnover = 0 } = input;
+  const { snapshot, positions, symbol, side, qty, price, dailyTurnover = 0, pendingOrders = [] } = input;
   if (![qty, price].every(value => Number.isFinite(value) && value > 0)) throw new Error("Quantity and price must be positive finite numbers");
+  for (const pending of pendingOrders) {
+    if (pending.side !== "buy" && pending.side !== "sell") throw new Error("Pending order side must be buy or sell");
+    if (![finite(pending.qty), finite(pending.price)].every(value => value > 0)) throw new Error("Pending order quantity and price must be positive finite numbers");
+  }
   const estimatedNotional = qty * price;
   const current = positions.find(position => position.symbol === symbol);
   const currentValue = current ? finite(current.marketValue) : 0;
   const ownedQty = current ? finite(current.qty) : 0;
-  const resultingValue = currentValue + (side === "buy" ? estimatedNotional : -estimatedNotional);
-  const resultingCash = snapshot.cash + (side === "buy" ? -estimatedNotional : estimatedNotional);
+  const pendingForSymbol = pendingOrders.filter(order => order.symbol === symbol);
+  const pendingValue = pendingForSymbol.reduce((sum, order) => sum + (order.side === "buy" ? 1 : -1) * finite(order.qty) * finite(order.price), 0);
+  const pendingSoldQty = pendingForSymbol.filter(order => order.side === "sell").reduce((sum, order) => sum + finite(order.qty), 0);
+  const pendingBuyNotional = pendingOrders.filter(order => order.side === "buy").reduce((sum, order) => sum + finite(order.qty) * finite(order.price), 0);
+  const pendingTurnover = pendingOrders.reduce((sum, order) => sum + finite(order.qty) * finite(order.price), 0);
+  const resultingValue = currentValue + pendingValue + (side === "buy" ? estimatedNotional : -estimatedNotional);
+  // Do not let uncertain proceeds from open sells fund a new buy.
+  const availableCash = snapshot.cash - pendingBuyNotional;
+  const resultingCash = availableCash + (side === "buy" ? -estimatedNotional : estimatedNotional);
   const resultingPositionPercent = Math.max(0, resultingValue) / snapshot.equity * 100;
-  const turnoverPercent = (dailyTurnover + estimatedNotional) / snapshot.equity * 100;
+  const turnoverPercent = (dailyTurnover + pendingTurnover + estimatedNotional) / snapshot.equity * 100;
   const reasons: string[] = [];
   const maxNotional = Math.min(2_500, snapshot.equity * 0.025);
-  if (side === "sell" && qty > ownedQty) reasons.push("Sell quantity exceeds owned quantity");
-  if (side === "buy" && estimatedNotional > snapshot.cash) reasons.push("Insufficient cash");
+  if (side === "sell" && qty + pendingSoldQty > ownedQty) reasons.push("Sell quantity exceeds owned quantity");
+  if (side === "buy" && estimatedNotional > availableCash) reasons.push("Insufficient cash");
   if (estimatedNotional > maxNotional) reasons.push(`Order exceeds $${maxNotional.toFixed(2)} limit`);
   if (resultingPositionPercent > 20) reasons.push("Resulting position exceeds 20% concentration limit");
   if (turnoverPercent > 10) reasons.push("Daily turnover exceeds 10% limit");

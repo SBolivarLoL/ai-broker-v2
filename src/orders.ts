@@ -32,3 +32,18 @@ export function verifyPreview(token: string, secret: string, now = Date.now()) {
   if (preview.expiresAt < now) throw new Error("Preview expired");
   return preview;
 }
+
+/**
+ * Verifies intent only, then requires the caller to obtain fresh account, position,
+ * open-order, quote and turnover data before it can submit the order.
+ */
+export async function verifyPreviewFresh<T>(
+  token: string,
+  secret: string,
+  validate: (intent: Pick<Preview, "symbol" | "side" | "qty" | "price" | "planId">) => T | Promise<T>,
+  now = Date.now(),
+) {
+  const preview = verifyPreview(token, secret, now);
+  const intent = { symbol: preview.symbol, side: preview.side, qty: preview.qty, price: preview.price, ...(preview.planId ? { planId: preview.planId } : {}) };
+  return { preview, validation: await validate(intent) };
+}

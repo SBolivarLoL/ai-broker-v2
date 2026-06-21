@@ -21,7 +21,7 @@ This is the challenge's central explainability file. The product is an internal-
 - The agent can read portfolio, risk, price, bars, news, asset/market status and simulations.
 - The agent has no order, cancellation, credential, shell, CLI or raw HTTP tool.
 - Alpaca news is untrusted evidence; the prompt forbids following instructions inside it.
-- A deterministic output guardrail rejects invented evidence IDs, certainty claims, and actionable quantities without a successful policy simulation.
+- A deterministic output guardrail rejects invented evidence IDs, certainty claims, and actionable quantities unless an opaque simulation authority exactly matches the idea's symbol, side, quantity, policy version, state snapshot and expiry.
 - The server is the only order boundary. A browser confirmation alone is never sufficient.
 - `alpaca-ts-alpha` is the runtime integration. Alpaca CLI is used only for independent diagnostics and read-only smoke checks.
 
@@ -33,10 +33,12 @@ This is the challenge's central explainability file. The product is an internal-
 - Resulting position concentration cannot exceed 20%.
 - Conservative rolling-24-hour turnover cannot exceed 10% of equity.
 - Preview tokens are HMAC-signed and expire after two minutes.
+- Confirmation reloads the asset, quote, account, positions and order window; price moves above 1% require a new preview.
+- Working broker orders and atomic local reservations consume cash, inventory, concentration and turnover capacity, preventing concurrent order stacking.
 - Submission requires a unique idempotency key; duplicates return the original result or a processing response.
 - A lost placement response is recovered by Alpaca `clientOrderId`; a retry reservation is released only when Alpaca confirms no matching order.
 - Paper trading is hard-coded. Live mode is unavailable.
-- Production refuses readiness unless a managed OIDC proxy origin, email domain and 32+ character proxy secret are configured. Mutations are same-origin and money/agent routes are rate-limited per advisor.
+- Production refuses readiness unless a managed OIDC proxy origin, email domain and 32+ character proxy secret are configured. Mutations are same-origin, request bodies are bounded, broker DTOs are allow-listed, browser output is escaped, and money/agent routes are rate-limited per advisor.
 
 ## Failure behavior
 
