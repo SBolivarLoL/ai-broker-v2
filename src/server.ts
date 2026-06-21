@@ -1,5 +1,7 @@
 import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
+import { diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { Intent, runPortfolioCopilot } from "./copilot";
+import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
@@ -37,6 +39,8 @@ const orderDto = (order: any) => ({ id: order.id, clientOrderId: order.clientOrd
 const allow = rateLimiter();
 let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null = null;
 let assetCatalogRequest: Promise<SearchableAsset[]> | null = null;
+let activitySync: { expiresAt: number; imported: number; truncated: boolean } | null = null;
+let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | null = null;
 
 async function getAssetCatalog() {
   if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
@@ -47,6 +51,23 @@ async function getAssetCatalog() {
   const assets = await assetCatalogRequest;
   assetCatalog = { assets, expiresAt: Date.now() + 15 * 60_000 };
   return assets;
+}
+
+async function syncAccountActivities() {
+  if (activitySync && activitySync.expiresAt > Date.now()) return activitySync;
+  activitySyncRequest ??= (async () => {
+    const activities = [];
+    const maximum = 1_000;
+    for await (const activity of alpaca.trading.iterateActivities({ direction: "desc", pageSize: 100 })) {
+      activities.push(normalizeActivity(activity));
+      if (activities.length >= maximum) break;
+    }
+    store.syncActivities(activities);
+    return { imported: activities.length, truncated: activities.length >= maximum };
+  })().finally(() => { activitySyncRequest = null; });
+  const result = await activitySyncRequest;
+  activitySync = { ...result, expiresAt: Date.now() + 30_000 };
+  return activitySync;
 }
 
 async function reconcileOrders() {
@@ -114,6 +135,16 @@ Bun.serve({
         if (query.length < 1 || query.length > 50) return json({ error: "Search must contain 1 to 50 characters" }, 400);
         return json({ query, results: searchAssets(await getAssetCatalog(), query) });
       }
+      if (url.pathname === "/api/account/activities" && request.method === "GET") {
+        const allowedCategories = new Set<LedgerCategory>(["trade", "dividend", "interest", "fee", "transfer", "corporate_action", "option", "other"]);
+        const rawCategory = url.searchParams.get("category") ?? "";
+        const category = rawCategory ? rawCategory as LedgerCategory : undefined;
+        const limit = Number(url.searchParams.get("limit") ?? 50);
+        if ((category && !allowedCategories.has(category)) || !Number.isInteger(limit) || limit < 1 || limit > 200) return json({ error: "Valid activity category and limit from 1 to 200 are required" }, 400);
+        const sync = await syncAccountActivities();
+        const allActivities = store.activities(5_000);
+        return json({ summary: ledgerSummary(allActivities, sync.truncated), activities: store.activities(limit, category), imported: sync.imported, asOf: new Date().toISOString() });
+      }
       if (url.pathname === "/api/portfolio/risk") {
         const [account, positions] = await Promise.all([
           alpaca.trading.account.getAccount(),
@@ -123,7 +154,22 @@ Bun.serve({
         const start = new Date(Date.now() - 90 * 86_400_000);
         const series = await Promise.all(positions.map(async position => ({ marketValue: Number(position.marketValue), closes: (await alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start })).map(bar => bar.close).slice(-90) })));
         const history = portfolioHistory(Number(account.equity), Number(account.cash), series);
-        return json({ ...riskSnapshot(account.equity, account.cash, positions), ...historicalRisk(history), asOf: new Date().toISOString() });
+        const snapshot = riskSnapshot(account.equity, account.cash, positions);
+        return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/portfolio/performance") {
+        const periods: Record<string, string> = { "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1A" };
+        const period = url.searchParams.get("period") ?? "3M";
+        if (!periods[period]) return json({ error: "Period must be 1M, 3M, 6M, or 1Y" }, 400);
+        const [history, positions] = await Promise.all([
+          alpaca.trading.portfolioHistory.getAccountPortfolioHistory({ period: periods[period], timeframe: "1D", pnlReset: "no_reset" }),
+          alpaca.trading.positions.getAllOpenPositions(),
+        ]);
+        const points = performancePoints(history);
+        const attribution = positions.map(position => ({ symbol: position.symbol, marketValue: Number(position.marketValue), unrealizedProfitLoss: Number(position.unrealizedPl), unrealizedReturnPercent: Number(position.unrealizedPlpc) * 100 }))
+          .filter(item => Object.values(item).every(value => typeof value === "string" || Number.isFinite(value)))
+          .sort((a, b) => b.unrealizedProfitLoss - a.unrealizedProfitLoss);
+        return json({ period, summary: performanceSummary(points), points, attribution, asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/agent/plans" && request.method === "POST") {
         if (!allow(`${actor}:agent`, 10)) return json({ error: "Agent rate limit exceeded" }, 429);
