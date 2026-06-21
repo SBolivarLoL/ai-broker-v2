@@ -44,9 +44,17 @@ button,input,select{font:inherit;color:inherit}
 @keyframes live{0%{box-shadow:0 0 0 0 rgba(15,157,82,.5)}70%{box-shadow:0 0 0 7px rgba(15,157,82,0)}100%{box-shadow:0 0 0 0 rgba(15,157,82,0)}}
 
 .hero{max-width:720px;margin-bottom:40px;animation:rise .5s ease both}
+.hero-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
 .eyebrow{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
 .balance{font-size:clamp(52px,9vw,84px);font-weight:700;letter-spacing:-.055em;line-height:1.04;margin:8px 0 6px;font-variant-numeric:tabular-nums}
 .sub{color:var(--muted)}
+.ghost{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:8px 12px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.ghost:hover{color:var(--text);background:var(--surface-2)}
+.privacy-mode .private-value{font-size:0!important;color:transparent!important}
+.privacy-mode .private-value::after{content:"******";color:var(--text)}
+.privacy-mode .balance.private-value::after{font-size:clamp(52px,9vw,84px)}
+.privacy-mode .price.private-value::after{font-size:42px}
+.privacy-mode .sub.private-value::after{font-size:15px;color:var(--muted)}
 
 .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);transition:box-shadow .25s ease,transform .25s ease;animation:rise .5s ease both}
@@ -157,9 +165,9 @@ select.field{cursor:pointer}
 <main class="shell">
 <header class="top"><div class="brand">AI Broker</div><nav class="nav" aria-label="Main navigation"><button data-view="home" class="active" aria-selected="true">Home</button><button data-view="portfolio" aria-selected="false">Portfolio</button><button data-view="advisor" aria-selected="false">AI Advisor</button></nav><div class="paper"><i class="dot"></i>Alpaca paper</div></header>
 <div class="view" id="home-view">
-<section class="hero"><div class="eyebrow">Portfolio value</div><div class="balance" id="equity">—</div><div class="sub" id="buying-power">Connecting…</div></section>
+<section class="hero"><div class="hero-head"><div><div class="eyebrow">Portfolio value</div><div class="balance private-value" id="equity">—</div><div class="sub private-value" id="buying-power">Connecting…</div></div><button class="ghost" id="privacy-toggle" type="button" aria-pressed="false">Hide balances</button></div></section>
 <div class="grid">
-<section class="card"><h2>Market</h2><form class="quote" id="quote-form"><div class="search-box"><input class="field" id="quote-symbol" value="AAPL" aria-label="Search stocks" role="combobox" aria-autocomplete="list" aria-controls="stock-suggestions" aria-expanded="false" autocomplete="off"><div class="suggestions" id="stock-suggestions" role="listbox" hidden></div></div><button class="primary">Search</button></form><div class="price" id="price">—</div><div class="muted" id="price-label">Latest available price</div></section>
+<section class="card"><h2>Market</h2><form class="quote" id="quote-form"><div class="search-box"><input class="field" id="quote-symbol" value="AAPL" aria-label="Search stocks" role="combobox" aria-autocomplete="list" aria-controls="stock-suggestions" aria-expanded="false" autocomplete="off"><div class="suggestions" id="stock-suggestions" role="listbox" hidden></div></div><button class="primary">Search</button></form><div class="price private-value" id="price">—</div><div class="muted" id="price-label">Latest available price</div></section>
 <section class="card"><h2>Order</h2><form class="ticket" id="order-form"><div class="segmented"><input id="buy" name="side" value="buy" type="radio" checked><label for="buy">Buy</label><input id="sell" name="side" value="sell" type="radio"><label for="sell">Sell</label></div><input class="field" id="order-symbol" value="AAPL" aria-label="Stock symbol"><input class="field" id="qty" type="number" min="0.000001" step="any" value="1" aria-label="Quantity"><button class="primary" id="order-button">Review paper order</button></form></section>
 </div></div>
 <div class="view" id="portfolio-view" hidden><div class="view-title"><h1>Portfolio</h1><div class="muted">Positions, performance, risk and account history.</div></div><div class="grid">
@@ -179,6 +187,9 @@ async function api(path,options){const response=await fetch(path,options),body=a
 const views=['home','portfolio','advisor'];
 function activateView(view){if(!views.includes(view))view='home';views.forEach(name=>{$(`#${name}-view`).hidden=name!==view;const button=$(`[data-view="${name}"]`);button.classList.toggle('active',name===view);button.setAttribute('aria-selected',String(name===view))});if(location.hash!==`#${view}`)history.replaceState(null,'',`#${view}`);scrollTo({top:0,behavior:'smooth'})}
 document.querySelector('.nav').onclick=event=>{const button=event.target.closest('button[data-view]');if(button)activateView(button.dataset.view)};addEventListener('hashchange',()=>activateView(location.hash.slice(1)));activateView(location.hash.slice(1));
+const homeView=$('#home-view'),privacyToggle=$('#privacy-toggle');let privacyEnabled=false;try{privacyEnabled=localStorage.getItem('privacy-mode')==='true'}catch{}
+function setPrivacy(enabled){privacyEnabled=enabled;homeView.classList.toggle('privacy-mode',enabled);privacyToggle.setAttribute('aria-pressed',String(enabled));privacyToggle.textContent=enabled?'Show balances':'Hide balances';try{localStorage.setItem('privacy-mode',String(enabled))}catch{}}
+privacyToggle.onclick=()=>setPrivacy(!privacyEnabled);setPrivacy(privacyEnabled);
 const quoteInput=$('#quote-symbol'),suggestions=$('#stock-suggestions');let searchTimer,searchRequest,searchResults=[],activeSuggestion=-1;
 function hideSuggestions(){suggestions.hidden=true;suggestions.innerHTML='';quoteInput.setAttribute('aria-expanded','false');quoteInput.removeAttribute('aria-activedescendant');searchResults=[];activeSuggestion=-1}
 function paintSuggestions(){suggestions.querySelectorAll('.suggestion').forEach((item,index)=>item.classList.toggle('active',index===activeSuggestion));if(activeSuggestion>=0){const item=suggestions.children[activeSuggestion];quoteInput.setAttribute('aria-activedescendant',item.id);item.scrollIntoView({block:'nearest'})}else quoteInput.removeAttribute('aria-activedescendant')}
