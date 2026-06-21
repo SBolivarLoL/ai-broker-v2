@@ -4,6 +4,7 @@ import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signReplacementPreview, verifyReplacementPreview } from "./order-management";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
+import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { runCompanyResearch } from "./research";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
@@ -45,6 +46,7 @@ let activitySync: { expiresAt: number; imported: number; truncated: boolean } | 
 let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | null = null;
 const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
+let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
 
 async function getAssetCatalog() {
   if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
@@ -89,6 +91,18 @@ async function recoverOrders() {
     for (const order of orders) reconcileOrder(order);
   })().finally(() => { orderRecoveryRequest = null; });
   return orderRecoveryRequest;
+}
+
+async function capturePortfolioSnapshot() {
+  portfolioCaptureRequest ??= (async () => {
+    const [account, positions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
+    if (account.equity === undefined || account.cash === undefined || account.buyingPower === undefined) throw new Error("Account snapshot data unavailable");
+    const risk = riskSnapshot(account.equity, account.cash, positions);
+    const snapshot = buildPortfolioSnapshot(account, positions, risk, orderTracker.metadata());
+    store.portfolioSnapshot(snapshot);
+    return snapshot;
+  })().finally(() => { portfolioCaptureRequest = null; });
+  return portfolioCaptureRequest;
 }
 
 const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
@@ -166,6 +180,12 @@ Bun.serve({
         const history = portfolioHistory(Number(account.equity), Number(account.cash), series);
         const snapshot = riskSnapshot(account.equity, account.cash, positions);
         return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
+        const limit = Number(url.searchParams.get("limit") ?? 30);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 366) return json({ error: "Snapshot limit must be 1 to 366" }, 400);
+        const current = await capturePortfolioSnapshot();
+        return json({ current, history: store.portfolioSnapshots(limit), asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/portfolio/performance") {
         const periods: Record<string, string> = { "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1A" };
@@ -421,5 +441,6 @@ orderUpdates.onTradeUpdate(update => {
   store.event("order.stream.update", "alpaca-stream", { event: update.event, orderId: update.order.id, clientOrderId: update.order.clientOrderId, symbol: update.order.symbol, status: update.order.status, timestamp: update.timestamp });
 });
 orderUpdates.connect();
-void recoverOrders().catch(error => console.error("order recovery failed", error instanceof Error ? error.message : error));
+void recoverOrders().then(() => capturePortfolioSnapshot()).catch(error => console.error("startup recovery failed", error instanceof Error ? error.message : error));
 setInterval(() => void recoverOrders().catch(error => console.error("order recovery failed", error instanceof Error ? error.message : error)), 30_000);
+setInterval(() => void capturePortfolioSnapshot().catch(error => console.error("portfolio snapshot failed", error instanceof Error ? error.message : error)), 15 * 60_000);
