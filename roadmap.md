@@ -22,9 +22,9 @@ This document is the build map for turning AI Broker into a serious personal inv
 | Account balances, status, equity, cash and buying power | Account overview, buying-power meter, trading-state warnings | Basic view exists |
 | Open positions | Holdings, exposure, cost basis, unrealized P&L, close-position workflows | Basic view exists |
 | Portfolio history | Equity curve, cashflow-adjusted P&L, drawdown, volatility, Sharpe and period comparison | Initial version exists |
-| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | Next priority |
+| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | Normalized ledger and FIFO P&L exist; corporate-action reconciliation remains |
 | Account configuration | Show and safely update supported trading preferences | Defer until settings UX and audit log exist |
-| Order and account update streams | Near-real-time fills, partial fills, cancellations, rejections and position refresh | Polling exists; stream is next priority |
+| Order and account update streams | Near-real-time fills, partial fills, cancellations, rejections and position refresh | Recovery polling and order blotter exist; stream is next priority |
 
 ### Order management and execution
 
@@ -177,19 +177,22 @@ Only `draft_order` may produce an order-ticket draft. Actual submission remains 
 - [x] Portfolio volatility, drawdown, historical VaR and stress scenarios.
 - [x] Portfolio history, P&L metrics, equity curve and unrealized attribution.
 - [x] Evidence-bound read-only portfolio agent.
+- [x] Cited company research agent using Alpaca market data, SEC filings and XBRL facts.
+- [x] Persisted agent evaluation metrics for citations, numeric grounding, tool use, latency and tokens.
 
 ### Phase 1 — Trusted portfolio record
 
 Goal: make the broker's accounting and order state reliable enough to support deeper analysis.
 
 - [x] Ingest paginated account activities into a normalized local ledger.
-- [ ] Calculate realized P&L using fills, fees and corporate-action adjustments.
+- [x] Calculate FIFO realized P&L from fills and separate fees from trading returns.
+- [ ] Reconcile realized P&L for splits, mergers, spin-offs and other cost-basis-changing corporate actions.
 - [x] Separate deposits/withdrawals from investment performance.
 - [x] Add dividends, interest, fees and cashflow timeline.
 - [ ] Add time-weighted and money-weighted returns with benchmarks.
-- [ ] Replace polling with order/account update streams plus recovery polling.
-- [ ] Build an order blotter with nested legs, filters, replace and cancel.
-- [ ] Persist daily portfolio/risk snapshots and data-quality flags.
+- [x] Maintain order state with Alpaca trade-update streaming, reconnects and periodic REST recovery polling.
+- [x] Build an order blotter with nested-leg data, filters, safe replacement and cancellation.
+- [x] Persist reconciled daily portfolio/risk snapshots with data-quality flags.
 
 Exit gate: the local ledger reconciles to Alpaca balances and activities across partial fills, cancellations, dividends, fees and cash transfers.
 
@@ -228,15 +231,15 @@ Exit gate: race, partial-fill, gap, nested-order, stale-price and reconnect scen
 
 Goal: provide better decision preparation, not magical predictions.
 
-- [ ] SEC EDGAR ingestion for filings, company facts and XBRL fundamentals.
-- [ ] Cited company research workspace and comparable-company tables.
+- [x] SEC EDGAR ingestion for filings, company facts and XBRL fundamentals.
+- [ ] Complete the cited company research workspace with comparable-company and valuation tables. Single-company cited analysis exists.
 - [ ] News clustering, event timelines and portfolio relevance scoring.
 - [ ] Earnings, dividend and corporate-action briefings.
 - [ ] Natural-language portfolio Q&A backed only by typed tools.
 - [ ] Bull/base/bear valuation and scenario memos.
 - [ ] Counter-thesis/risk-agent review before actionable suggestions.
 - [ ] Trade journal with thesis drift and post-trade review.
-- [ ] Evaluation suite for citations, numerical accuracy, tool use and abstention.
+- [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
 
 Exit gate: agents consistently cite retrieved evidence, abstain when data is missing and cannot create execution authority.
 
@@ -292,14 +295,14 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Account-activity ledger and authoritative realized P&L.
-2. Streaming order updates and full order blotter.
-3. Company detail page with chart, quote quality and news.
-4. Watchlists, movers, market clock and corporate-action alerts.
-5. Limit/stop/bracket paper order tickets with expanded risk previews.
-6. SEC EDGAR research service and cited company-analysis agent.
-7. Benchmark attribution, factor exposure and expected shortfall.
-8. Options research workspace before any options execution.
+1. Reconcile corporate-action cost-basis changes in the authoritative ledger.
+2. Add time-weighted and money-weighted returns with benchmark attribution.
+3. Build the company detail chart, quote-quality, volume and news timeline.
+4. Add watchlists, movers, market clock and corporate-action alerts.
+5. Add limit/stop/bracket paper order tickets with expanded risk previews.
+6. Add comparable-company valuation and counter-thesis review.
+7. Add factor exposure, expected shortfall and portfolio risk contribution.
+8. Build the options research workspace before enabling any options execution.
 
 ## Capability and safety checklist for every new feature
 

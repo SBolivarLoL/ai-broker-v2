@@ -69,6 +69,16 @@ export function createStore(filename = "data/app.db") {
     completed_at TEXT
   )`);
   db.run("CREATE INDEX IF NOT EXISTS research_runs_created ON research_runs(created_at DESC)");
+  db.run(`CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    snapshot_date TEXT PRIMARY KEY,
+    captured_at TEXT NOT NULL,
+    equity REAL NOT NULL,
+    cash REAL NOT NULL,
+    position_value REAL NOT NULL,
+    quality_status TEXT NOT NULL CHECK(quality_status IN ('healthy', 'warning', 'error')),
+    payload TEXT NOT NULL
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS portfolio_snapshots_captured ON portfolio_snapshots(captured_at DESC)");
 
   const reservationRows = (now = Date.now()) => db.query(`SELECT reservation_key AS key, symbol, side, qty, price, status, order_id AS orderId,
     expires_at_ms AS expiresAt, created_at AS createdAt, updated_at AS updatedAt FROM risk_reservations
@@ -181,6 +191,16 @@ export function createStore(filename = "data/app.db") {
       const metrics = rows.map(row => JSON.parse(row.metrics));
       const average = (key: string) => metrics.length ? metrics.reduce((sum, item) => sum + Number(item[key] ?? 0), 0) / metrics.length : 0;
       return { totalRuns: metrics.length, successRate: metrics.length ? metrics.filter(item => item.overallScore >= 90).length / metrics.length : 0, averageScore: average("overallScore"), averageLatencyMs: average("latencyMs"), averageCitationValidity: average("citationValidity"), averageNumericGrounding: average("numericGrounding"), averageToolCoverage: average("toolCoverage"), averageTokens: average("totalTokens") };
+    },
+    portfolioSnapshot(snapshot: { snapshotDate: string; capturedAt: string; equity: number; cash: number; positionValue: number; quality: { status: string } }) {
+      db.query(`INSERT INTO portfolio_snapshots (snapshot_date, captured_at, equity, cash, position_value, quality_status, payload) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(snapshot_date) DO UPDATE SET captured_at=excluded.captured_at, equity=excluded.equity, cash=excluded.cash,
+        position_value=excluded.position_value, quality_status=excluded.quality_status, payload=excluded.payload`)
+        .run(snapshot.snapshotDate, snapshot.capturedAt, snapshot.equity, snapshot.cash, snapshot.positionValue, snapshot.quality.status, JSON.stringify(snapshot));
+    },
+    portfolioSnapshots(limit = 90) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 366) throw new Error("Snapshot limit is out of range");
+      return (db.query("SELECT payload FROM portfolio_snapshots ORDER BY snapshot_date DESC LIMIT ?").all(limit) as { payload: string }[]).map(row => JSON.parse(row.payload));
     },
     close() { db.close(); },
   };

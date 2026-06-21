@@ -2,7 +2,9 @@ import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
+import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signReplacementPreview, verifyReplacementPreview } from "./order-management";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
+import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { runCompanyResearch } from "./research";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
@@ -36,12 +38,15 @@ class ClientError extends Error {
 
 const accountDto = (account: any) => ({ equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, currency: account.currency, status: account.status });
 const positionDto = (position: any) => ({ symbol: position.symbol, qty: position.qty, avgEntryPrice: position.avgEntryPrice, currentPrice: position.currentPrice, marketValue: position.marketValue, unrealizedPl: position.unrealizedPl, unrealizedPlpc: position.unrealizedPlpc });
-const orderDto = (order: any) => ({ id: order.id, clientOrderId: order.clientOrderId, symbol: order.symbol, side: order.side, qty: order.qty, filledQty: order.filledQty, type: order.type, timeInForce: order.timeInForce, status: order.status, submittedAt: order.submittedAt, filledAt: order.filledAt });
+const orderDto = managedOrderDto;
 const allow = rateLimiter();
 let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null = null;
 let assetCatalogRequest: Promise<SearchableAsset[]> | null = null;
 let activitySync: { expiresAt: number; imported: number; truncated: boolean } | null = null;
 let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | null = null;
+const orderTracker = new OrderTracker();
+let orderRecoveryRequest: Promise<void> | null = null;
+let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
 
 async function getAssetCatalog() {
   if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
@@ -71,15 +76,33 @@ async function syncAccountActivities() {
   return activitySync;
 }
 
-async function reconcileOrders() {
-  const orders = await alpaca.trading.orders.getAllOrders({ status: "all", limit: 100 });
-  for (const order of orders) {
-    if (order.id && order.status) store.reconcileOrder(order.id, order.status);
-    if (!order.clientOrderId || !order.status) continue;
-    if (order.status === "filled") store.finishRiskReservation(order.clientOrderId, "filled");
-    else if (["canceled", "expired", "replaced"].includes(order.status)) store.finishRiskReservation(order.clientOrderId, "canceled");
-    else if (order.status === "rejected") store.finishRiskReservation(order.clientOrderId, "rejected");
-  }
+function reconcileOrder(order: any) {
+  if (order.id && order.status) store.reconcileOrder(order.id, order.status);
+  if (!order.clientOrderId || !order.status) return;
+  if (order.status === "filled") store.finishRiskReservation(order.clientOrderId, "filled");
+  else if (["canceled", "expired", "replaced"].includes(order.status)) store.finishRiskReservation(order.clientOrderId, "canceled");
+  else if (order.status === "rejected") store.finishRiskReservation(order.clientOrderId, "rejected");
+}
+
+async function recoverOrders() {
+  orderRecoveryRequest ??= (async () => {
+    const orders = await alpaca.trading.orders.getAllOrders({ status: "all", limit: 100, direction: "desc", nested: true });
+    orderTracker.recover(orders);
+    for (const order of orders) reconcileOrder(order);
+  })().finally(() => { orderRecoveryRequest = null; });
+  return orderRecoveryRequest;
+}
+
+async function capturePortfolioSnapshot() {
+  portfolioCaptureRequest ??= (async () => {
+    const [account, positions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
+    if (account.equity === undefined || account.cash === undefined || account.buyingPower === undefined) throw new Error("Account snapshot data unavailable");
+    const risk = riskSnapshot(account.equity, account.cash, positions);
+    const snapshot = buildPortfolioSnapshot(account, positions, risk, orderTracker.metadata());
+    store.portfolioSnapshot(snapshot);
+    return snapshot;
+  })().finally(() => { portfolioCaptureRequest = null; });
+  return portfolioCaptureRequest;
 }
 
 const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
@@ -103,7 +126,7 @@ Bun.serve({
   idleTimeout: 60,
   async fetch(request) {
     const url = new URL(request.url);
-    if (request.method === "POST" && !validMutationOrigin(request)) return json({ error: "Invalid request origin" }, 403);
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && !validMutationOrigin(request)) return json({ error: "Invalid request origin" }, 403);
     let actor = "anonymous";
     if (url.pathname.startsWith("/api/")) {
       try { actor = actorFor(request); } catch { return json({ error: "Unauthorized" }, 401); }
@@ -158,6 +181,12 @@ Bun.serve({
         const snapshot = riskSnapshot(account.equity, account.cash, positions);
         return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
       }
+      if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
+        const limit = Number(url.searchParams.get("limit") ?? 30);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 366) return json({ error: "Snapshot limit must be 1 to 366" }, 400);
+        const current = await capturePortfolioSnapshot();
+        return json({ current, history: store.portfolioSnapshots(limit), asOf: new Date().toISOString() });
+      }
       if (url.pathname === "/api/portfolio/performance") {
         const periods: Record<string, string> = { "1M": "1M", "3M": "3M", "6M": "6M", "1Y": "1A" };
         const period = url.searchParams.get("period") ?? "3M";
@@ -211,6 +240,72 @@ Bun.serve({
       if (url.pathname.startsWith("/api/research/runs/") && request.method === "GET") {
         const research = store.getResearch(url.pathname.split("/").pop() ?? "");
         return research ? json(research) : json({ error: "Research run not found" }, 404);
+      }
+      if (url.pathname === "/api/orders" && request.method === "GET") {
+        const status = url.searchParams.get("status") ?? "all";
+        const limit = Number(url.searchParams.get("limit") ?? 50);
+        if (!["open", "closed", "all"].includes(status) || !Number.isInteger(limit) || limit < 1 || limit > 100) return json({ error: "Status must be open, closed, or all and limit must be 1 to 100" }, 400);
+        if (orderTracker.size === 0) await recoverOrders();
+        const orders = orderTracker.list(status as "open" | "closed" | "all", limit);
+        return json({ status, orders: orders.map(orderDto), sync: orderTracker.metadata(), asOf: new Date().toISOString() });
+      }
+      const cancelOrderMatch = request.method === "DELETE" && url.pathname.match(/^\/api\/orders\/([0-9a-f-]{36})$/i);
+      if (cancelOrderMatch) {
+        if (!allow(`${actor}:order-cancel`, 20)) return json({ error: "Order cancellation rate limit exceeded" }, 429);
+        const orderId = cancelOrderMatch[1]!;
+        const order = await alpaca.trading.orders.getOrderByOrderID({ orderId, nested: true });
+        if (!order.id || !canCancelOrder(order.status)) return json({ error: `Order is no longer cancelable (${order.status ?? "unknown"})` }, 409);
+        try { await alpaca.trading.orders.deleteOrderByOrderID({ orderId }); }
+        catch { throw new ClientError("Alpaca could not accept the cancellation because the order state changed. Refresh the blotter.", 409); }
+        store.event("order.cancel.requested", actor, { orderId, clientOrderId: order.clientOrderId, symbol: order.symbol, priorStatus: order.status });
+        return json({ orderId, status: "cancel_requested", requestedAt: new Date().toISOString() }, 202);
+      }
+      const replacementPreviewMatch = request.method === "POST" && url.pathname.match(/^\/api\/orders\/([0-9a-f-]{36})\/replacement-preview$/i);
+      if (replacementPreviewMatch) {
+        if (!allow(`${actor}:order-replace`, 20)) return json({ error: "Order replacement rate limit exceeded" }, 429);
+        const body = await requestJson(request);
+        const replacement = ReplacementInput.safeParse({ qty: Number(body.qty), limitPrice: body.limitPrice === null ? null : Number(body.limitPrice), stopPrice: body.stopPrice === null ? null : Number(body.stopPrice) });
+        if (!replacement.success) return json({ error: "Valid whole-share quantity and required prices are required" }, 400);
+        const order = await alpaca.trading.orders.getOrderByOrderID({ orderId: replacementPreviewMatch[1]!, nested: true });
+        let preview;
+        try { preview = buildReplacementPreview(order, replacement.data, Date.now() + 120_000); }
+        catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid replacement", 422); }
+        store.event("order.replace.preview", actor, { orderId: order.id, symbol: order.symbol, original: preview.original, replacement: preview.replacement });
+        return json({ preview, previewToken: signReplacementPreview(preview, previewSecret) });
+      }
+      const replaceOrderMatch = request.method === "PATCH" && url.pathname.match(/^\/api\/orders\/([0-9a-f-]{36})$/i);
+      if (replaceOrderMatch) {
+        if (!allow(`${actor}:order-replace`, 20)) return json({ error: "Order replacement rate limit exceeded" }, 429);
+        const { previewToken, idempotencyKey } = await requestJson(request);
+        if (typeof previewToken !== "string" || typeof idempotencyKey !== "string" || !/^[\w-]{8,100}$/.test(idempotencyKey)) return json({ error: "Valid replacement preview and idempotency key are required" }, 400);
+        const previous = store.submission(idempotencyKey); if (previous) return previous.pending ? json({ error: "Replacement is already processing" }, 409) : json(previous);
+        let preview;
+        try { preview = verifyReplacementPreview(previewToken, previewSecret); }
+        catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid replacement preview", 400); }
+        if (preview.orderId !== replaceOrderMatch[1]) return json({ error: "Replacement preview does not match this order" }, 400);
+        if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Replacement is already processing" }, 409);
+        try {
+          const order = await alpaca.trading.orders.getOrderByOrderID({ orderId: preview.orderId, nested: true });
+          if ((order.updatedAt?.toISOString() ?? null) !== preview.expectedUpdatedAt) throw new ClientError("The order changed after preview. Refresh and review the replacement again.", 409);
+          buildReplacementPreview(order, preview.replacement, preview.expiresAt);
+          let replaced;
+          try {
+            replaced = await alpaca.trading.orders.patchOrderByOrderId({ orderId: preview.orderId, patchOrderRequest: { qty: String(preview.replacement.qty), limitPrice: preview.replacement.limitPrice === null ? undefined : String(preview.replacement.limitPrice), stopPrice: preview.replacement.stopPrice === null ? undefined : String(preview.replacement.stopPrice), clientOrderId: idempotencyKey } });
+          } catch (replacementError) {
+            try { replaced = await alpaca.trading.orders.getOrderByClientOrderId({ clientOrderId: idempotencyKey }); }
+            catch { throw replacementError; }
+          }
+          if (!replaced.id) throw new Error("Alpaca returned a replacement without an id");
+          orderTracker.update(replaced); reconcileOrder(replaced);
+          const response = { ...orderDto(replaced), replacedOrderId: preview.orderId };
+          store.completeSubmission(idempotencyKey, replaced.id, response);
+          store.event("order.replace.submitted", actor, { orderId: preview.orderId, replacementOrderId: replaced.id, symbol: preview.symbol, replacement: preview.replacement });
+          return json(response);
+        } catch (error) {
+          store.releaseSubmission(idempotencyKey);
+          if (error instanceof ClientError) throw error;
+          throw new ClientError("Alpaca could not replace the order because its state changed. Refresh the blotter.", 409);
+        }
       }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
         if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
@@ -336,5 +431,16 @@ Bun.serve({
 });
 
 console.log("AI Broker running at http://localhost:3000");
-void reconcileOrders().catch(error => console.error("order reconciliation failed", error instanceof Error ? error.message : error));
-setInterval(() => void reconcileOrders().catch(error => console.error("order reconciliation failed", error instanceof Error ? error.message : error)), 15_000);
+const orderUpdates = alpaca.trading.stream({ reconnect: true, maxReconnectSec: 30 });
+orderUpdates.onStateChange(state => orderTracker.setStreamState(state));
+orderUpdates.onConnect(() => { orderTracker.setStreamState("authenticated"); orderUpdates.subscribeTradeUpdates(); });
+orderUpdates.onDisconnect(() => orderTracker.setStreamState("disconnected"));
+orderUpdates.onError(error => { orderTracker.setStreamState("error", error); console.error("order stream error", error); });
+orderUpdates.onTradeUpdate(update => {
+  orderTracker.update(update.order, update.timestamp ?? new Date()); reconcileOrder(update.order);
+  store.event("order.stream.update", "alpaca-stream", { event: update.event, orderId: update.order.id, clientOrderId: update.order.clientOrderId, symbol: update.order.symbol, status: update.order.status, timestamp: update.timestamp });
+});
+orderUpdates.connect();
+void recoverOrders().then(() => capturePortfolioSnapshot()).catch(error => console.error("startup recovery failed", error instanceof Error ? error.message : error));
+setInterval(() => void recoverOrders().catch(error => console.error("order recovery failed", error instanceof Error ? error.message : error)), 30_000);
+setInterval(() => void capturePortfolioSnapshot().catch(error => console.error("portfolio snapshot failed", error instanceof Error ? error.message : error)), 15 * 60_000);
