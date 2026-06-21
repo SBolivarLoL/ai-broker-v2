@@ -1,0 +1,42 @@
+import { describe, expect, test } from "bun:test";
+import { ledgerSummary, normalizeActivity, type LedgerActivity } from "./ledger";
+import { createStore } from "./store";
+
+const fill = (id: string, occurredAt: string, side: "buy" | "sell", quantity: number, price: number): LedgerActivity => ({ id, type: "FILL", subType: null, category: "trade", status: "executed", occurredAt, symbol: "AAPL", side, quantity, price, amount: quantity * price * (side === "buy" ? -1 : 1), orderId: null });
+
+describe("account activity ledger", () => {
+  test("normalizes fills and non-trade cash activity", () => {
+    expect(normalizeActivity({ id: "1", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), symbol: "AAPL", side: "buy", qty: "2", price: "100" })).toMatchObject({ category: "trade", amount: -200, quantity: 2 });
+    expect(normalizeActivity({ id: "2", activityType: "DIV", date: new Date("2026-01-02"), symbol: "AAPL", netAmount: "3.50" })).toMatchObject({ category: "dividend", amount: 3.5 });
+  });
+
+  test("calculates FIFO realized profit across partial lots", () => {
+    const summary = ledgerSummary([
+      fill("1", "2026-01-01T00:00:00.000Z", "buy", 2, 100),
+      fill("2", "2026-01-02T00:00:00.000Z", "buy", 2, 120),
+      fill("3", "2026-01-03T00:00:00.000Z", "sell", 3, 130),
+    ]);
+    expect(summary).toMatchObject({ realizedProceeds: 390, realizedCostBasis: 320, realizedProfitLoss: 70, tradeCount: 3 });
+  });
+
+  test("separates income, fees and transfers and reports incomplete cost basis", () => {
+    const base = { subType: null, status: "executed", symbol: null, side: null, quantity: null, price: null, orderId: null } as const;
+    const summary = ledgerSummary([
+      { ...base, id: "d", type: "DIV", category: "dividend", occurredAt: "2026-01-01T00:00:00Z", amount: 10 },
+      { ...base, id: "f", type: "FEE", category: "fee", occurredAt: "2026-01-01T00:00:01Z", amount: -2 },
+      { ...base, id: "t", type: "CSD", category: "transfer", occurredAt: "2026-01-01T00:00:02Z", amount: 100 },
+      fill("s", "2026-01-02T00:00:00Z", "sell", 1, 50),
+    ], true);
+    expect(summary).toMatchObject({ dividends: 10, feesPaid: 2, netTransfers: 100, totalCashImpact: 158 });
+    expect(summary.warnings).toHaveLength(2);
+  });
+
+  test("persists broker activities idempotently", () => {
+    const store = createStore(":memory:");
+    const activity = fill("fill-1", "2026-01-01T00:00:00Z", "buy", 1, 100);
+    store.syncActivities([activity]);
+    store.syncActivities([{ ...activity, price: 101, amount: -101 }]);
+    expect(store.activities()).toEqual([{ ...activity, price: 101, amount: -101 }]);
+    store.close();
+  });
+});
