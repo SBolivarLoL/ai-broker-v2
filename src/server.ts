@@ -2,6 +2,7 @@ import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
+import { canCancelOrder, managedOrderDto } from "./order-management";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { runCompanyResearch } from "./research";
@@ -36,7 +37,7 @@ class ClientError extends Error {
 
 const accountDto = (account: any) => ({ equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, currency: account.currency, status: account.status });
 const positionDto = (position: any) => ({ symbol: position.symbol, qty: position.qty, avgEntryPrice: position.avgEntryPrice, currentPrice: position.currentPrice, marketValue: position.marketValue, unrealizedPl: position.unrealizedPl, unrealizedPlpc: position.unrealizedPlpc });
-const orderDto = (order: any) => ({ id: order.id, clientOrderId: order.clientOrderId, symbol: order.symbol, side: order.side, qty: order.qty, filledQty: order.filledQty, type: order.type, timeInForce: order.timeInForce, status: order.status, submittedAt: order.submittedAt, filledAt: order.filledAt });
+const orderDto = managedOrderDto;
 const allow = rateLimiter();
 let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null = null;
 let assetCatalogRequest: Promise<SearchableAsset[]> | null = null;
@@ -211,6 +212,24 @@ Bun.serve({
       if (url.pathname.startsWith("/api/research/runs/") && request.method === "GET") {
         const research = store.getResearch(url.pathname.split("/").pop() ?? "");
         return research ? json(research) : json({ error: "Research run not found" }, 404);
+      }
+      if (url.pathname === "/api/orders" && request.method === "GET") {
+        const status = url.searchParams.get("status") ?? "all";
+        const limit = Number(url.searchParams.get("limit") ?? 50);
+        if (!["open", "closed", "all"].includes(status) || !Number.isInteger(limit) || limit < 1 || limit > 100) return json({ error: "Status must be open, closed, or all and limit must be 1 to 100" }, 400);
+        const orders = await alpaca.trading.orders.getAllOrders({ status: status as "open" | "closed" | "all", limit, direction: "desc", nested: true });
+        return json({ status, orders: orders.map(orderDto), asOf: new Date().toISOString() });
+      }
+      const cancelOrderMatch = request.method === "DELETE" && url.pathname.match(/^\/api\/orders\/([0-9a-f-]{36})$/i);
+      if (cancelOrderMatch) {
+        if (!allow(`${actor}:order-cancel`, 20)) return json({ error: "Order cancellation rate limit exceeded" }, 429);
+        const orderId = cancelOrderMatch[1]!;
+        const order = await alpaca.trading.orders.getOrderByOrderID({ orderId, nested: true });
+        if (!order.id || !canCancelOrder(order.status)) return json({ error: `Order is no longer cancelable (${order.status ?? "unknown"})` }, 409);
+        try { await alpaca.trading.orders.deleteOrderByOrderID({ orderId }); }
+        catch { throw new ClientError("Alpaca could not accept the cancellation because the order state changed. Refresh the blotter.", 409); }
+        store.event("order.cancel.requested", actor, { orderId, clientOrderId: order.clientOrderId, symbol: order.symbol, priorStatus: order.status });
+        return json({ orderId, status: "cancel_requested", requestedAt: new Date().toISOString() }, 202);
       }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
         if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
