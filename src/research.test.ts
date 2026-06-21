@@ -36,13 +36,16 @@ test("research evaluator rejects trust failures and scores ungrounded numbers", 
   expect(validResearchOutput(output({ symbol: "MSFT" }), "AAPL", sources)).toBe(false);
 });
 
-test("research guardrail tolerates one minor citation formatting miss but rejects material drift", () => {
+test("research guardrail accepts the 90% citation boundary but rejects material drift", () => {
   const minorMiss = output({
     summaryEvidence: ["market:AAPL", "sec:facts:AAPL", "sec:filings:AAPL", "news:AAPL", "market:AAPL", "sec:facts:AAPL"],
     thesis: [claim("Revenue supports the thesis.", ["sec:facts:AAPL", "sec:filings:AAPL", "market:AAPL", "news:AAPL"]), claim("Market context.", ["market:AAPL", "sec:facts:AAPL", "sec:filings:AAPL", "news:AAPL"]), claim("A malformed supplemental citation.", ["invented", "sec:facts:AAPL", "market:AAPL", "sec:filings:AAPL"])],
   });
   expect(evaluateResearch(minorMiss, sources).citationValidity).toBeGreaterThanOrEqual(.95);
   expect(validResearchOutput(minorMiss, "AAPL", sources)).toBe(true);
+  const boundary = output({ thesis: [claim("One unsupported citation among otherwise grounded evidence.", ["invented", "market:AAPL", "sec:facts:AAPL", "sec:filings:AAPL"]), claim("Grounded context.", ["market:AAPL", "sec:facts:AAPL", "sec:filings:AAPL", "news:AAPL"])] });
+  expect(evaluateResearch(boundary, sources).citationValidity).toBeGreaterThanOrEqual(.9);
+  expect(validResearchOutput(boundary, "AAPL", sources)).toBe(true);
   expect(validResearchOutput(output({ thesis: [claim("Unsupported.", ["invented"]), claim("Also unsupported.", ["invented-2"])] }), "AAPL", sources)).toBe(false);
 });
 

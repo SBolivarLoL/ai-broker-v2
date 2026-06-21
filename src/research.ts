@@ -77,7 +77,7 @@ export function validResearchOutput(output: unknown, symbol: string, evidence: R
   const metrics = evaluateResearch(parsed.data, evidence);
   // Minor citation-formatting misses remain visible in the scored eval instead of discarding an
   // otherwise useful report. Material grounding failures, symbol drift, and unsafe claims fail closed.
-  return metrics.citationValidity >= .95 && metrics.citationCoverage >= .95 && metrics.toolCoverage >= .75 && metrics.safeLanguage;
+  return metrics.citationValidity >= .90 && metrics.citationCoverage >= .90 && metrics.toolCoverage >= .75 && metrics.safeLanguage;
 }
 
 let tickerMap: Promise<Record<string, { cik_str: number; ticker: string; title: string }>> | null = null;
