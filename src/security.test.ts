@@ -21,3 +21,11 @@ test("mutations are same-origin and rate limited", () => {
   expect(hit("advisor", 2, 2)).toBe(false);
   expect(hit("advisor", 2, 101)).toBe(true);
 });
+
+test("rate limiter bounds identity storage and recovers after expiry", () => {
+  const hit = rateLimiter(100, 2);
+  expect(hit("one", 1, 0)).toBe(true);
+  expect(hit("two", 1, 0)).toBe(true);
+  expect(hit("three", 1, 0)).toBe(false);
+  expect(hit("three", 1, 101)).toBe(true);
+});

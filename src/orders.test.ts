@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { signPreview, verifyPreview } from "./orders";
+import { signPreview, verifyPreview, verifyPreviewFresh } from "./orders";
 import { createStore } from "./store";
 
 const secret = "12345678901234567890123456789012";
@@ -10,6 +10,12 @@ test("preview tokens are signed and expire", () => {
   expect(verifyPreview(token, secret, 1_000)).toEqual(preview);
   expect(() => verifyPreview(`${token}x`, secret, 1_000)).toThrow("Invalid preview token");
   expect(() => verifyPreview(token, secret, 3_000)).toThrow("Preview expired");
+});
+
+test("submission validation receives intent without trusting preview simulation", async () => {
+  const withOldSimulation = signPreview({ ...preview, simulation: { allowed: true, estimatedNotional: 500, resultingCash: 500, resultingPositionPercent: 5, turnoverPercent: 5, reasons: [] } }, secret);
+  const result = await verifyPreviewFresh(withOldSimulation, secret, intent => ({ allowed: false, checked: intent }), 1_000);
+  expect(result.validation).toEqual({ allowed: false, checked: { symbol: "SPY", side: "buy", qty: 1, price: 500 } });
 });
 
 test("submission idempotency and receipts persist", () => {
@@ -30,5 +36,40 @@ test("submission idempotency and receipts persist", () => {
   expect(store.receipts()).toHaveLength(2);
   store.plan("plan-1", "balanced_growth", { summary: "Balanced" });
   expect(store.getPlan("plan-1")).toMatchObject({ id: "plan-1", intent: "balanced_growth", summary: "Balanced" });
+  store.close();
+});
+
+test("risk reservations have a durable lifecycle", () => {
+  const store = createStore(":memory:");
+  const candidate = { symbol: "SPY", side: "buy" as const, qty: 1, price: 100 };
+  expect(store.reserveRisk("risk-1", candidate, active => ({ allowed: active.length === 0, value: active.length }))).toEqual({ reserved: true, validation: 0 });
+  expect(store.activeRiskReservations()).toMatchObject([{ key: "risk-1", status: "reserved", ...candidate }]);
+  expect(store.markRiskSubmitted("risk-1", "order-1")).toBe(true);
+  expect(store.activeRiskReservations()[0]).toMatchObject({ status: "submitted", orderId: "order-1" });
+  expect(store.finishRiskReservation("risk-1", "filled")).toBe(true);
+  expect(store.activeRiskReservations()).toEqual([]);
+  store.close();
+});
+
+test("transactional reservations cannot stack past policy", () => {
+  const store = createStore(":memory:");
+  const reserve = (key: string) => store.reserveRisk(key, { symbol: "SPY", side: "buy", qty: 1, price: 600 }, active => {
+    const projected = active.reduce((sum, order) => sum + order.qty * order.price, 600);
+    return { allowed: projected <= 1_000, value: projected };
+  });
+  expect(reserve("candidate-1")).toMatchObject({ reserved: true });
+  expect(reserve("candidate-2")).toEqual({ reserved: false, reason: "risk", validation: 1_200 });
+  expect(store.activeRiskReservations()).toHaveLength(1);
+  expect(store.finishRiskReservation("candidate-1", "released")).toBe(true);
+  expect(reserve("candidate-2")).toMatchObject({ reserved: true });
+  store.close();
+});
+
+test("abandoned pre-submission reservations expire safely", async () => {
+  const store = createStore(":memory:");
+  store.reserveRisk("abandoned", { symbol: "SPY", side: "buy", qty: 1, price: 100 }, () => ({ allowed: true, value: null }), 1);
+  await Bun.sleep(3);
+  expect(store.activeRiskReservations()).toEqual([]);
+  expect(store.markRiskSubmitted("abandoned", "too-late")).toBe(false);
   store.close();
 });

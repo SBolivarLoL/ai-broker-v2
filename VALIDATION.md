@@ -1,6 +1,6 @@
 # Validation record
 
-Validated on 20 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
+Validated on 21 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
 
 | Objective | Evidence | Result |
 | --- | --- | --- |
@@ -32,8 +32,9 @@ The last two commands mutate only the Alpaca paper account. They use deliberatel
 
 - Runtime and CLI both hard-code paper mode; there is no live-trading switch.
 - The model has no order, cancellation, credential, shell, CLI, or raw HTTP tool.
-- Actionable agent ideas are rejected unless they cite a successful deterministic simulation returned during that run.
-- The order boundary fails closed on invalid assets, prices, account data, signatures, expiry, quantity, cash, ownership, concentration, notional, or rolling turnover.
+- Actionable agent ideas are rejected unless they cite an unexpired deterministic simulation authority matching the exact symbol, side, quantity, policy and state snapshot from that run.
+- The order boundary revalidates fresh broker state at confirmation and fails closed on invalid assets, fractional eligibility, price drift, incomplete order windows, unvalued working orders, account data, signatures, expiry, quantity, projected cash, projected ownership, projected concentration, notional, or rolling turnover.
+- Atomic expiring reservations include concurrent local requests and broker working orders in projected risk; accepted reservations remain active until terminal reconciliation.
 - Alpaca receives the app idempotency key as `clientOrderId`.
 - Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
 - No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.

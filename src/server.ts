@@ -1,19 +1,79 @@
 import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { Intent, runPortfolioCopilot } from "./copilot";
-import { signPreview, verifyPreview } from "./orders";
+import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
+import { searchAssets, type SearchableAsset } from "./search";
 import { createStore } from "./store";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
 const previewSecret = process.env.PREVIEW_SECRET ?? "";
-const json = (body: unknown, status = 200) => Response.json(body, { status });
+const securityHeaders = {
+  "content-security-policy": "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+  "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+} as const;
+const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { ...securityHeaders, "cache-control": "no-store" } });
+const MAX_JSON_BYTES = 16_384;
+
+async function requestJson(request: Request) {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_JSON_BYTES) throw new ClientError("Request body is too large", 413);
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_JSON_BYTES) throw new ClientError("Request body is too large", 413);
+  try { return JSON.parse(text); }
+  catch { throw new ClientError("Request body must be valid JSON", 400); }
+}
+
+class ClientError extends Error {
+  constructor(message: string, readonly status = 400) { super(message); }
+}
+
+const accountDto = (account: any) => ({ equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, currency: account.currency, status: account.status });
+const positionDto = (position: any) => ({ symbol: position.symbol, qty: position.qty, avgEntryPrice: position.avgEntryPrice, currentPrice: position.currentPrice, marketValue: position.marketValue, unrealizedPl: position.unrealizedPl, unrealizedPlpc: position.unrealizedPlpc });
+const orderDto = (order: any) => ({ id: order.id, clientOrderId: order.clientOrderId, symbol: order.symbol, side: order.side, qty: order.qty, filledQty: order.filledQty, type: order.type, timeInForce: order.timeInForce, status: order.status, submittedAt: order.submittedAt, filledAt: order.filledAt });
 const allow = rateLimiter();
+let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null = null;
+let assetCatalogRequest: Promise<SearchableAsset[]> | null = null;
+
+async function getAssetCatalog() {
+  if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
+  assetCatalogRequest ??= alpaca.trading.assets.getV2Assets().then(assets => assets
+    .filter(asset => asset._class === "us_equity" && asset.status === "active" && asset.tradable && asset.symbol && asset.name)
+    .map(asset => ({ symbol: asset.symbol, name: asset.name!, exchange: asset.exchange })))
+    .finally(() => { assetCatalogRequest = null; });
+  const assets = await assetCatalogRequest;
+  assetCatalog = { assets, expiresAt: Date.now() + 15 * 60_000 };
+  return assets;
+}
 
 async function reconcileOrders() {
   const orders = await alpaca.trading.orders.getAllOrders({ status: "all", limit: 100 });
-  for (const order of orders) if (order.id && order.status) store.reconcileOrder(order.id, order.status);
+  for (const order of orders) {
+    if (order.id && order.status) store.reconcileOrder(order.id, order.status);
+    if (!order.clientOrderId || !order.status) continue;
+    if (order.status === "filled") store.finishRiskReservation(order.clientOrderId, "filled");
+    else if (["canceled", "expired", "replaced"].includes(order.status)) store.finishRiskReservation(order.clientOrderId, "canceled");
+    else if (order.status === "rejected") store.finishRiskReservation(order.clientOrderId, "rejected");
+  }
+}
+
+const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
+
+async function pendingBrokerOrders(orders: any[], candidateSymbol: string, candidatePrice: number) {
+  const working = orders.filter(order => workingStatuses.has(String(order.status)));
+  const symbols = [...new Set(working.map(order => String(order.symbol)))];
+  const prices = new Map(await Promise.all(symbols.map(async symbol => [symbol, symbol === candidateSymbol ? candidatePrice : await alpaca.marketData.getLatestPrice(symbol)] as const)));
+  return working.map(order => {
+    const qty = Number(order.qty) - Number(order.filledQty ?? 0);
+    const price = Number(order.limitPrice ?? order.stopPrice ?? prices.get(String(order.symbol)));
+    if (!(qty > 0) || !Number.isFinite(price) || price <= 0 || !["buy", "sell"].includes(order.side)) {
+      throw new Error("A working order could not be valued safely");
+    }
+    return { orderId: order.id, symbol: String(order.symbol), side: order.side as "buy" | "sell", qty, price };
+  });
 }
 
 Bun.serve({
@@ -27,7 +87,7 @@ Bun.serve({
       try { actor = actorFor(request); } catch { return json({ error: "Unauthorized" }, 401); }
     }
     try {
-      if (url.pathname === "/") return new Response(Bun.file("src/index.html"));
+      if (url.pathname === "/") return new Response(Bun.file("src/index.html"), { headers: securityHeaders });
       if (url.pathname === "/health") return json({ status: "ok" });
       if (url.pathname === "/ready") {
         if (previewSecret.length < 32 || !securityReady()) return json({ status: "not_ready", error: "Security configuration is incomplete" }, 503);
@@ -40,12 +100,19 @@ Bun.serve({
           alpaca.trading.positions.getAllOpenPositions(),
           alpaca.trading.orders.getAllOrders({ status: "open", limit: 100 }),
         ]);
-        return json({ account, positions, orders });
+        return json({ account: accountDto(account), positions: positions.map(positionDto), orders: orders.map(orderDto) });
       }
       if (url.pathname === "/api/quote") {
         const symbol = url.searchParams.get("symbol")?.trim().toUpperCase();
-        if (!symbol) return json({ error: "Symbol is required" }, 400);
-        return json({ symbol, price: await alpaca.marketData.getLatestPrice(symbol) });
+        if (!symbol || !/^[A-Z.]{1,10}$/.test(symbol)) return json({ error: "Valid symbol is required" }, 400);
+        const price = await alpaca.marketData.getLatestPrice(symbol);
+        if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) return json({ error: "No valid current price" }, 502);
+        return json({ symbol, price, asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/assets/search") {
+        const query = url.searchParams.get("q")?.trim() ?? "";
+        if (query.length < 1 || query.length > 50) return json({ error: "Search must contain 1 to 50 characters" }, 400);
+        return json({ query, results: searchAssets(await getAssetCatalog(), query) });
       }
       if (url.pathname === "/api/portfolio/risk") {
         const [account, positions] = await Promise.all([
@@ -58,14 +125,10 @@ Bun.serve({
         const history = portfolioHistory(Number(account.equity), Number(account.cash), series);
         return json({ ...riskSnapshot(account.equity, account.cash, positions), ...historicalRisk(history), asOf: new Date().toISOString() });
       }
-      if (url.pathname === "/api/copilot" && request.method === "POST") {
-        if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the copilot" }, 503);
-        return json(await runPortfolioCopilot(alpaca));
-      }
       if (url.pathname === "/api/agent/plans" && request.method === "POST") {
         if (!allow(`${actor}:agent`, 10)) return json({ error: "Agent rate limit exceeded" }, 429);
         if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable the agent" }, 503);
-        const parsed = Intent.safeParse((await request.json()).intent);
+        const parsed = Intent.safeParse((await requestJson(request)).intent);
         if (!parsed.success) return json({ error: "Intent must be reduce_concentration, balanced_growth, or preserve_capital" }, 400);
         const planId = crypto.randomUUID();
         const output = await runPortfolioCopilot(alpaca, parsed.data);
@@ -79,10 +142,10 @@ Bun.serve({
       }
       if (url.pathname === "/api/orders/preview" && request.method === "POST") {
         if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
-        const { symbol: rawSymbol, qty: rawQty, side, planId } = await request.json();
+        const { symbol: rawSymbol, qty: rawQty, side, planId } = await requestJson(request);
         const symbol = String(rawSymbol ?? "").trim().toUpperCase();
         const qty = Number(rawQty);
-        if (!symbol || !Number.isFinite(qty) || qty <= 0 || !["buy", "sell"].includes(side)) {
+        if (!/^[A-Z.]{1,10}$/.test(symbol) || !Number.isFinite(qty) || qty <= 0 || !["buy", "sell"].includes(side)) {
           return json({ error: "Valid symbol, quantity, and side are required" }, 400);
         }
         if (planId !== undefined && (typeof planId !== "string" || !store.getPlan(planId))) return json({ error: "Valid stored plan id is required" }, 400);
@@ -104,26 +167,85 @@ Bun.serve({
       }
       if (url.pathname === "/api/orders" && request.method === "POST") {
         if (!allow(`${actor}:orders`, 30)) return json({ error: "Order rate limit exceeded" }, 429);
-        const { previewToken, idempotencyKey } = await request.json();
+        const { previewToken, idempotencyKey } = await requestJson(request);
         if (typeof previewToken !== "string" || typeof idempotencyKey !== "string" || !/^[\w-]{8,100}$/.test(idempotencyKey)) return json({ error: "Valid preview token and idempotency key are required" }, 400);
         const previous = store.submission(idempotencyKey);
         if (previous) return previous.pending ? json({ error: "Order submission is already processing" }, 409) : json(previous);
-        const preview = verifyPreview(previewToken, previewSecret);
         if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Order submission is already processing" }, 409);
-        store.event("order.confirmed", actor, { symbol: preview.symbol, side: preview.side, qty: preview.qty, idempotencyKey });
+        let preview: Preview;
+        let freshPrice = 0;
+        let freshSimulation;
+        try {
+          const fresh = await verifyPreviewFresh(previewToken, previewSecret, async intent => {
+            const [account, positions, asset, price, recentOrders] = await Promise.all([
+              alpaca.trading.account.getAccount(),
+              alpaca.trading.positions.getAllOpenPositions(),
+              alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: intent.symbol }),
+              alpaca.marketData.getLatestPrice(intent.symbol),
+              alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
+            ]);
+            if (!asset.tradable || asset._class !== "us_equity") throw new ClientError("The asset is no longer tradable", 409);
+            if (!asset.fractionable && !Number.isInteger(intent.qty)) throw new ClientError("This asset does not support fractional orders", 409);
+            if (account.equity === undefined || account.cash === undefined || typeof price !== "number" || !Number.isFinite(price) || price <= 0) throw new Error("Fresh trade validation data is unavailable");
+            if (recentOrders.length >= 500) throw new Error("The complete order window could not be verified");
+            if (Math.abs(price / intent.price - 1) > 0.01) throw new ClientError("The price moved more than 1%; review the order again", 409);
+            const brokerPending = await pendingBrokerOrders(recentOrders, intent.symbol, price);
+            return { account, positions, price, recentOrders, brokerPending };
+          });
+          preview = fresh.preview;
+          freshPrice = fresh.validation.price;
+          const reservation = store.reserveRisk(idempotencyKey, { symbol: preview.symbol, side: preview.side, qty: preview.qty, price: freshPrice }, active => {
+            const brokerIds = new Set(fresh.validation.brokerPending.map(order => order.orderId));
+            const localPending = active.filter(order => !order.orderId || !brokerIds.has(order.orderId));
+            const simulation = simulateTrade({
+              snapshot: riskSnapshot(Number(fresh.validation.account.equity), Number(fresh.validation.account.cash), fresh.validation.positions),
+              positions: fresh.validation.positions,
+              symbol: preview.symbol,
+              side: preview.side,
+              qty: preview.qty,
+              price: freshPrice,
+              dailyTurnover: rollingTurnover(fresh.validation.recentOrders),
+              pendingOrders: [...fresh.validation.brokerPending, ...localPending],
+            });
+            return { allowed: simulation.allowed, value: simulation };
+          });
+          if (!reservation.reserved) {
+            store.releaseSubmission(idempotencyKey);
+            if (reservation.reason === "risk") return json({ allowed: false, simulation: reservation.validation }, 422);
+            return json({ error: "Order submission is already processing" }, 409);
+          }
+          freshSimulation = reservation.validation;
+        } catch (error) {
+          store.releaseSubmission(idempotencyKey);
+          if (error instanceof ClientError) throw error;
+          if (error instanceof Error && ["Invalid preview token", "Preview expired"].includes(error.message)) throw new ClientError(error.message, 400);
+          throw error;
+        }
+        store.event("order.confirmed", actor, { symbol: preview.symbol, side: preview.side, qty: preview.qty, price: freshPrice, simulation: freshSimulation, idempotencyKey });
         // Alpaca also enforces this key, covering a lost response after acceptance.
         let order;
         try {
           order = await alpaca.trading.orders.market({ symbol: preview.symbol, qty: preview.qty, side: preview.side, clientOrderId: idempotencyKey });
         } catch (placementError) {
           try { order = await alpaca.trading.orders.getOrderByClientOrderId({ clientOrderId: idempotencyKey }); }
-          catch { store.releaseSubmission(idempotencyKey); throw placementError; }
+          catch {
+            store.finishRiskReservation(idempotencyKey, "released");
+            store.releaseSubmission(idempotencyKey);
+            throw placementError;
+          }
         }
-        if (!order.id) throw new Error("Alpaca returned an order without an id");
+        if (!order.id) {
+          store.finishRiskReservation(idempotencyKey, "released");
+          store.releaseSubmission(idempotencyKey);
+          throw new Error("Alpaca returned an order without an id");
+        }
+        if (!store.markRiskSubmitted(idempotencyKey, order.id)) console.error("risk reservation transition failed", { idempotencyKey, orderId: order.id });
+        if (order.status === "filled") store.finishRiskReservation(idempotencyKey, "filled");
+        else if (order.status === "rejected") store.finishRiskReservation(idempotencyKey, "rejected");
         const receiptId = crypto.randomUUID();
-        const response = { ...order, receiptId };
+        const response = { ...orderDto(order), receiptId };
         store.completeSubmission(idempotencyKey, order.id, response);
-        store.receipt(receiptId, { advisor: actor, plan: preview.planId ? store.getPlan(preview.planId) : null, preview, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
+        store.receipt(receiptId, { advisor: actor, plan: preview.planId ? store.getPlan(preview.planId) : null, preview: { ...preview, price: freshPrice, simulation: freshSimulation }, idempotencyKey, orderId: order.id, status: order.status, createdAt: new Date().toISOString() });
         store.event("order.submitted", actor, { orderId: order.id, receiptId, idempotencyKey });
         return json(response);
       }
@@ -134,7 +256,9 @@ Bun.serve({
       if (url.pathname === "/api/receipts" && request.method === "GET") return json(store.receipts());
       return json({ error: "Not found" }, 404);
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Alpaca request failed" }, 502);
+      if (error instanceof ClientError) return json({ error: error.message }, error.status);
+      console.error("request failed", { method: request.method, path: url.pathname, error: error instanceof Error ? error.message : String(error) });
+      return json({ error: "The broker service could not complete the request" }, 502);
     }
   },
 });
