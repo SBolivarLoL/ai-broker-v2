@@ -190,7 +190,7 @@ Goal: make the broker's accounting and order state reliable enough to support de
 - [ ] Reconcile mergers, spin-offs and other actions that require broker-provided basis allocations; unresolved events are now surfaced explicitly.
 - [x] Separate deposits/withdrawals from investment performance.
 - [x] Add dividends, interest, fees and cashflow timeline.
-- [ ] Add time-weighted and money-weighted returns with benchmarks.
+- [x] Add cashflow-adjusted time-weighted and money-weighted returns with configurable benchmark attribution and coverage flags.
 - [x] Maintain order state with Alpaca trade-update streaming, reconnects and periodic REST recovery polling.
 - [x] Build an order blotter with nested-leg data, filters, safe replacement and cancellation.
 - [x] Persist reconciled daily portfolio/risk snapshots with data-quality flags.
@@ -296,7 +296,7 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Add time-weighted and money-weighted returns with benchmark attribution.
+1. Build the company detail chart, quote-quality, volume and news timeline.
 2. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
 3. Build the company detail chart, quote-quality, volume and news timeline.
 4. Add watchlists, movers, market clock and corporate-action alerts.
