@@ -204,11 +204,12 @@ Goal: make company discovery and monitoring genuinely useful.
 - [x] Company detail workspace with asset eligibility, snapshot, quote/spread quality, volume context and timestamped news.
 - [x] Configurable 1M/3M/1Y daily candlestick and volume periods.
 - [ ] Company chart benchmark overlay and relative-strength comparison.
-- [ ] Watchlist CRUD backed by Alpaca watchlists.
+- [x] Watchlist CRUD backed by Alpaca watchlists, with validation, audit events and account-level persistence.
 - [ ] Live stock quote/bar stream with reconnect and stale-data indicators.
-- [ ] Movers and most-active discovery panels.
+- [x] Alpaca SIP movers and most-active discovery panels with source and freshness labels.
 - [ ] Portfolio/watchlist news feeds with source links and timestamps.
-- [ ] Market clock, calendar and session-aware order messaging.
+- [x] NASDAQ market clock dashboard with phase and next open/close timestamps.
+- [ ] Trading calendar, holidays and session-aware order messaging.
 - [ ] Corporate-action calendar and holdings impact alerts.
 - [ ] Company logos and reference-data eligibility badges.
 
@@ -297,7 +298,7 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 ## Prioritized next build queue
 
-1. Add watchlists, movers, market clock and corporate-action alerts.
+1. Add corporate-action holdings-impact alerts and portfolio/watchlist news feeds.
 2. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
 3. Add company benchmark overlays and relative-strength comparison.
 4. Add live quote/bar streaming with reconnect and stale-data recovery.
