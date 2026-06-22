@@ -1,6 +1,6 @@
 import type { trading } from "@alpacahq/alpaca-ts-alpha";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { signToken, verifyToken } from "./orders";
 
 const cancellable = new Set(["new", "accepted", "partially_filled", "held", "accepted_for_bidding", "calculated", "stopped", "suspended"]);
 const replaceable = new Set(["new", "partially_filled"]);
@@ -43,18 +43,21 @@ export function buildReplacementPreview(order: trading.Order, raw: unknown, expi
   return { orderId: order.id, symbol: order.symbol, side: order.side, expectedUpdatedAt: order.updatedAt?.toISOString() ?? null, original, replacement, expiresAt };
 }
 
-const replacementSignature = (payload: string, secret: string) => createHmac("sha256", secret).update(payload).digest("base64url");
 export function signReplacementPreview(preview: ReplacementPreview, secret: string) {
-  if (secret.length < 32) throw new Error("PREVIEW_SECRET must be at least 32 characters");
-  const payload = Buffer.from(JSON.stringify(ReplacementPreview.parse(preview))).toString("base64url");
-  return `${payload}.${replacementSignature(payload, secret)}`;
+  return signToken(ReplacementPreview.parse(preview), secret);
 }
 export function verifyReplacementPreview(token: string, secret: string, now = Date.now()) {
-  const [payload, supplied] = token.split("."); if (!payload || !supplied) throw new Error("Invalid replacement preview token");
-  const expected = replacementSignature(payload, secret);
-  if (supplied.length !== expected.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) throw new Error("Invalid replacement preview token");
-  const preview = ReplacementPreview.parse(JSON.parse(Buffer.from(payload, "base64url").toString()));
+  const preview = ReplacementPreview.parse(verifyToken(token, secret, "Invalid replacement preview token"));
   if (preview.expiresAt < now) throw new Error("Replacement preview expired");
+  return preview;
+}
+
+const CancelAllPreview = z.object({ orderIds: z.array(z.string().uuid()).min(1).max(100), expiresAt: z.number().int() });
+export type CancelAllPreview = z.infer<typeof CancelAllPreview>;
+export function signCancelAllPreview(preview: CancelAllPreview, secret: string) { return signToken(CancelAllPreview.parse(preview), secret); }
+export function verifyCancelAllPreview(token: string, secret: string, now = Date.now()) {
+  const preview = CancelAllPreview.parse(verifyToken(token, secret, "Invalid cancel-all preview token"));
+  if (preview.expiresAt < now) throw new Error("Cancel-all preview expired");
   return preview;
 }
 

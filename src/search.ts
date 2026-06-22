@@ -27,19 +27,16 @@ function assetScore(asset: SearchableAsset, rawQuery: string) {
   if (symbol === query) return 0;
   if (symbol.startsWith(query)) return 10 + (symbol.length - query.length) / 100;
   if (name.startsWith(query)) return 20 + (name.length - query.length) / 1_000;
-  const nameWords = asset.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const wordIndex = nameWords.findIndex(word => word.startsWith(query));
-  if (wordIndex >= 0) return 30 + wordIndex;
   // One-character queries should stay useful instead of matching nearly every name.
   if (query.length === 1) return null;
   const symbolIndex = symbol.indexOf(query);
-  if (symbolIndex >= 0) return 40 + symbolIndex;
+  if (symbolIndex >= 0) return 30 + symbolIndex;
   const nameIndex = name.indexOf(query);
-  if (nameIndex >= 0) return 50 + nameIndex / 100;
+  if (nameIndex >= 0) return 40 + nameIndex / 100;
   const symbolGaps = subsequenceScore(query, symbol);
-  if (symbolGaps !== null) return 60 + symbolGaps;
   const nameGaps = subsequenceScore(query, name);
-  return nameGaps === null ? null : 70 + nameGaps;
+  const gaps = [symbolGaps, nameGaps].filter((value): value is number => value !== null);
+  return gaps.length ? 50 + Math.min(...gaps) : null;
 }
 
 export function searchAssets(assets: SearchableAsset[], query: string, limit = 8) {

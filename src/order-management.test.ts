@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, signReplacementPreview, verifyReplacementPreview } from "./order-management";
+import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, signCancelAllPreview, signReplacementPreview, verifyCancelAllPreview, verifyReplacementPreview } from "./order-management";
 
 test("only stable working states expose cancellation", () => {
   for (const status of ["new", "accepted", "partially_filled", "held"]) expect(canCancelOrder(status), status).toBe(true);
@@ -26,6 +26,14 @@ test("replacement previews are signed and expire", () => {
   const token = signReplacementPreview(preview, secret);
   expect(verifyReplacementPreview(token, secret, 1_000)).toEqual(preview);
   expect(() => verifyReplacementPreview(token, secret, 3_000)).toThrow("expired");
+});
+
+test("cancel-all previews bind an exact order snapshot and expire", () => {
+  const secret = "12345678901234567890123456789012";
+  const preview = { orderIds: ["123e4567-e89b-12d3-a456-426614174000"], expiresAt: 2_000 };
+  const token = signCancelAllPreview(preview, secret);
+  expect(verifyCancelAllPreview(token, secret, 1_000)).toEqual(preview);
+  expect(() => verifyCancelAllPreview(token, secret, 3_000)).toThrow("Cancel-all preview expired");
 });
 
 test("order tracker applies stream updates and reports recovery freshness", () => {

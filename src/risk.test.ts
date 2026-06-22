@@ -40,6 +40,13 @@ describe("risk engine", () => {
     expect(result.reasons).toContain("Resulting position exceeds 20% concentration limit");
   });
 
+  test("permits only explicitly bounded short exposure", () => {
+    const empty = riskSnapshot(100_000, 50_000, []);
+    expect(simulateTrade({ snapshot: empty, positions: [], symbol: "AAPL", side: "sell", qty: 10, price: 100 }).reasons).toContain("Sell quantity exceeds owned quantity");
+    expect(simulateTrade({ snapshot: empty, positions: [], symbol: "AAPL", side: "sell", qty: 10, price: 100, allowShort: true }).allowed).toBeTrue();
+    expect(simulateTrade({ snapshot: empty, positions: [], symbol: "AAPL", side: "sell", qty: 60, price: 100, allowShort: true }).reasons).toContain("Order exceeds $2500.00 limit");
+  });
+
   test("includes pending buys in cash, concentration, and turnover", () => {
     const pendingOrders = [{ symbol: "SPY", side: "buy" as const, qty: 10, price: 200 }];
     const result = simulateTrade({ snapshot, positions, symbol: "SPY", side: "buy", qty: 1, price: 100, dailyTurnover: 7_000, pendingOrders });

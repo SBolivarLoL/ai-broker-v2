@@ -203,14 +203,15 @@ Goal: make company discovery and monitoring genuinely useful.
 
 - [x] Company detail workspace with asset eligibility, snapshot, quote/spread quality, volume context and timestamped news.
 - [x] Configurable 1M/3M/1Y daily candlestick and volume periods.
-- [ ] Company chart benchmark overlay and relative-strength comparison.
-- [ ] Watchlist CRUD backed by Alpaca watchlists.
-- [ ] Live stock quote/bar stream with reconnect and stale-data indicators.
-- [ ] Movers and most-active discovery panels.
-- [ ] Portfolio/watchlist news feeds with source links and timestamps.
-- [ ] Market clock, calendar and session-aware order messaging.
-- [ ] Corporate-action calendar and holdings impact alerts.
-- [ ] Company logos and reference-data eligibility badges.
+- [x] Company chart benchmark overlay and relative-strength comparison with SPY, QQQ and DIA.
+- [x] Watchlist CRUD backed by Alpaca watchlists, with validation, audit events and account-level persistence.
+- [x] Live IEX stock quote/bar stream through a bounded server SSE bridge with reconnect and stale-data indicators.
+- [x] Alpaca SIP movers and most-active discovery panels with source and freshness labels.
+- [x] Portfolio/watchlist news feeds with source links, timestamps and explicit relevance scopes.
+- [x] NASDAQ market clock dashboard with phase and next open/close timestamps.
+- [x] Trading calendar, early closes and session-aware market-order review messaging.
+- [x] Corporate-action calendar and holdings impact alerts with bounded dividend/split estimates and review warnings for complex events.
+- [x] Company logos proxied from Alpaca when entitled, with a deterministic symbol placeholder otherwise, plus tradable, fractional, shortable and marginable eligibility badges.
 
 Exit gate: every displayed market value identifies its source feed and timestamp, and stale/limited entitlements are visible.
 
@@ -218,14 +219,15 @@ Exit gate: every displayed market value identifies its source feed and timestamp
 
 Goal: reach the practical order-management depth expected from a modern broker while preserving the risk boundary.
 
-- [ ] Limit, stop and stop-limit tickets.
-- [ ] Bracket, OCO, OTO and trailing-stop workflows.
-- [ ] Fractional quantity and dollar-notional tickets.
-- [ ] DAY/GTC and eligible auction/extended-hours choices.
-- [ ] Working-order replace/cancel and cancel-all emergency control.
-- [ ] Pre-trade spread, liquidity and estimated-slippage warnings.
-- [ ] Multi-order rebalance basket with atomic portfolio-level preview.
-- [ ] Paper short-selling module only after borrow/margin risk policy.
+- [x] Limit, stop and stop-limit tickets.
+- [x] Trailing-stop tickets with deterministic preview and the shared risk boundary.
+- [x] Buy bracket/OTO and sell OCO linked-order workflows with leg validation, one signed preview and nested lifecycle reconciliation.
+- [x] Fractional quantity and dollar-notional market tickets with runtime asset eligibility checks.
+- [x] DAY/GTC, eligible extended-hours choices, and whole-share OPG/CLS auction tickets.
+- [x] Working-order replace/cancel and snapshot-bound cancel-all emergency control.
+- [x] Pre-trade IEX spread, current-volume participation and estimated spread-cost warnings.
+- [x] Multi-order rebalance basket with atomic application-level risk preview, reservation and exact approval; Alpaca legs submit sequentially with partial-failure disclosure because the broker exposes no atomic basket endpoint.
+- [x] Explicit paper short-selling gate with account margin enablement, marginable/easy-to-borrow asset checks, DAY market/limit-only tickets, 5% short concentration, fresh revalidation and a separate approval warning.
 
 Exit gate: race, partial-fill, gap, nested-order, stale-price and reconnect scenarios pass an expanded safety corpus.
 
@@ -234,9 +236,14 @@ Exit gate: race, partial-fill, gap, nested-order, stale-price and reconnect scen
 Goal: provide better decision preparation, not magical predictions.
 
 - [x] SEC EDGAR ingestion for filings, company facts and XBRL fundamentals.
+- [ ] Retrieve bounded 10-K and 10-Q sections such as Risk Factors and MD&A so research cites filing content, not only filing metadata.
+- [ ] Build comparable annual and quarterly financial trends with exact accession, form, period and filing-URL provenance for every metric.
+- [ ] Centralize SEC request caching, retries, declared user-agent identity and fair-access rate limiting.
+- [ ] Add watchlist alerts for material 8-K filings with concise, filing-grounded relevance summaries.
+- [ ] Continue with the official SEC JSON and filing APIs first; evaluate `edgartools` only when robust section parsing, standardized statements, Form 4 or 13F support justifies an isolated Python worker.
 - [ ] Complete the cited company research workspace with comparable-company and valuation tables. Single-company cited analysis exists.
-- [ ] News clustering, event timelines and portfolio relevance scoring.
-- [ ] Earnings, dividend and corporate-action briefings.
+- [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
+- [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
 - [ ] Natural-language portfolio Q&A backed only by typed tools.
 - [ ] Bull/base/bear valuation and scenario memos.
 - [ ] Counter-thesis/risk-agent review before actionable suggestions.
@@ -249,12 +256,12 @@ Exit gate: agents consistently cite retrieved evidence, abstain when data is mis
 
 Goal: progress from descriptive risk to decision-grade portfolio construction.
 
-- [ ] Historical and parametric VaR plus expected shortfall.
+- [x] Historical and parametric 95% daily VaR plus historical expected shortfall.
 - [ ] Factor, sector, industry and asset-class exposure.
-- [ ] Correlation matrix, marginal/component VaR and risk contribution.
-- [ ] Liquidity risk using spread and average daily volume.
+- [x] Correlation matrix calculations and covariance-based portfolio risk contribution.
+- [x] Liquidity risk using live IEX spread, average daily volume and estimated days at 10% ADV.
 - [ ] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
-- [ ] Benchmark attribution, alpha, beta, tracking error and information ratio.
+- [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
 - [ ] Rebalancing with taxes/fees/turnover constraints where data permits.
 - [ ] Mean-variance and risk-parity proposals with robust constraints.
 - [ ] Policy editor for position, sector, drawdown and turnover limits.
@@ -265,21 +272,21 @@ Exit gate: calculations have fixtures, clear assumptions, confidence limits and 
 
 Goal: add options without importing hidden leverage into the equity risk model.
 
-- [ ] Option chain, expiration and strike browser.
-- [ ] Bid/ask, liquidity, open-interest and volatility filters where available.
-- [ ] Greeks and payoff diagrams with independent calculation tests.
-- [ ] Single-leg and supported multi-leg paper tickets.
-- [ ] Portfolio Greeks and underlying/volatility/time stress tests.
-- [ ] Assignment, exercise, expiry and buying-power workflows.
-- [ ] Options activity ledger events and decision receipts.
+- [x] Bounded option-chain, expiration and strike browser backed by Alpaca contract metadata and snapshots.
+- [x] Bid/ask, spread, volume, open-interest and implied-volatility filters where available.
+- [x] Alpaca Greeks with an independently tested Black-Scholes comparison and long-option expiry payoff diagrams.
+- [x] Signed, fresh-validated paper tickets for long single legs and defined-risk net-debit verticals; naked option selling remains unavailable.
+- [x] Signed portfolio Greeks plus delta-gamma underlying shocks, IV shocks and one-day theta estimates.
+- [x] Assignment-notional, exercise-cost, expiry and options-buying-power previews plus exact-position exercise/do-not-exercise workflows.
+- [x] Options activity ledger categorization plus max-loss, exercise-cost, assignment-notional and broker-order decision receipts.
 
 Exit gate: max loss, assignment exposure and expiration behavior are known before every order.
 
 ### Phase 7 — Multi-asset expansion
 
-- [ ] Read-only index and FX benchmark data.
+- [x] Read-only index and FX benchmark monitor with explicit entitlement-unavailable states for this paper account.
 - [ ] Fixed-income research if account and data access support it.
-- [ ] Crypto market-data workspace and 24/7 risk model.
+- [x] Read-only BTC/USD, ETH/USD and SOL/USD 24/7 quote, spread, daily-range and liquidity-risk workspace.
 - [ ] Crypto paper trading only after venue, custody, fee and liquidity review.
 - [ ] Keep crypto transfers, perpetual leverage and tokenization disabled until separately approved.
 
@@ -287,7 +294,7 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 
 - [ ] Real user authentication, authorization and encrypted secret management.
 - [ ] Database migrations, backups, observability and incident response.
-- [ ] Broker reconciliation jobs and stale-stream recovery.
+- [x] Broker order reconciliation polling, authenticated stream recovery, stale-state metadata and daily portfolio snapshot reconciliation.
 - [ ] Immutable audit trail and exportable decision receipts.
 - [ ] Kill switch, exposure caps and operational runbooks.
 - [ ] Data licensing and subscription review.
@@ -295,16 +302,19 @@ Exit gate: max loss, assignment exposure and expiration behavior are known befor
 - [ ] Closed beta with paper accounts and measurable safety targets.
 - [ ] Live trading only as a separately reviewed deployment mode.
 
+Capability boundary verified on 22 June 2026: this paper account exposes equity, option and crypto data/trading capabilities. Index and FX endpoints are present but not entitled and are shown as unavailable; Alpaca asset metadata does not provide sector/factor classifications; fixed-income research, crypto execution, transfers, perpetual leverage, tokenization and live trading remain gated rather than silently enabled.
+
 ## Prioritized next build queue
 
-1. Add watchlists, movers, market clock and corporate-action alerts.
+1. [x] Add corporate-action holdings-impact alerts and portfolio/watchlist news feeds.
 2. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
-3. Add company benchmark overlays and relative-strength comparison.
-4. Add live quote/bar streaming with reconnect and stale-data recovery.
-5. Add limit/stop/bracket paper order tickets with expanded risk previews.
-6. Add comparable-company valuation and counter-thesis review.
-7. Add factor exposure, expected shortfall and portfolio risk contribution.
-8. Build the options research workspace before enabling any options execution.
+3. [x] Add company benchmark overlays and relative-strength comparison.
+4. [x] Add live quote/bar streaming with reconnect and stale-data recovery.
+5. [x] Add limit/stop/trailing, linked bracket/OCO/OTO, auction and rebalance-basket paper workflows with expanded risk previews.
+6. Add filing-section evidence and accession-linked historical financial trends through the official SEC APIs.
+7. Add comparable-company valuation and counter-thesis review.
+8. Add factor exposure, expected shortfall and portfolio risk contribution.
+9. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
 ## Capability and safety checklist for every new feature
 

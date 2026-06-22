@@ -1,14 +1,14 @@
 # Validation record
 
-Validated on 21 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
+Validated on 22 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
 
 | Objective | Evidence | Result |
 | --- | --- | --- |
 | 1. Connected broker | `/ready`, `/api/account`, `bun run alpaca:doctor`, `bun run smoke:read` | Alpaca paper trading and market data connected |
-| 2. Market view | `/api/quote`; agent `get_latest_price`, `get_price_history`, and news tools | Current price and recent 90-day evidence available |
-| 3. Order ticket | Signed preview, explicit UI confirmation, idempotent submit, refresh/reconciliation; opt-in buy and sell smoke tests | Both paper sides accepted, found by client ID, cancelled, and reconciled |
+| 2. Market view | Live IEX stream, company/benchmark workspace, session calendar, watchlists, event clusters, option chain and multi-asset monitor | Current data, timestamps, sources and entitlement gaps are visible |
+| 3. Order ticket | Signed equity, linked, auction, basket, short and defined-risk option previews; exact confirmation, idempotency and reconciliation | Supported paper workflows fail closed and remain human-approved |
 | 4. AI functionality | `/api/agent/plans`; OpenAI Agents SDK structured output | Live plans return exactly three portfolio ideas |
-| 5. Portfolio intelligence | `/api/portfolio/risk`; pure risk and what-if tests | Cash, P&L, concentration, HHI, volatility, drawdown, and policy impact |
+| 5. Portfolio intelligence | Risk, snapshot, performance, ledger and option-exposure endpoints; deterministic tests | VaR/ES, risk contribution, liquidity, benchmark and option stress remain outside the model |
 | 6. Agentic AI | Seven bounded read-only tools, six-turn cap, stored plans | Live agent selects tools but cannot execute orders |
 | 7. Creativity | Plan-linked Decision Receipt and lifecycle reconciliation | Advisor, evidence, simulation, approval key, order, and final status remain inspectable |
 | 8. Explainability | `FEATURES.md` | Central rationale, boundaries, policy, failures, checks, and demo flow |
@@ -38,6 +38,7 @@ The last two commands mutate only the Alpaca paper account. They use deliberatel
 - Alpaca receives the app idempotency key as `clientOrderId`.
 - Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
 - No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.
+- `bun run check` passes 86 tests across 21 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
 
 ## Production boundary
 

@@ -6,10 +6,10 @@ This is the challenge's central explainability file. The product is an internal-
 | Objective | Implementation | Why it exists |
 | --- | --- | --- |
 | 1. Connected broker | Live equity, cash, buying power, positions, orders, health and readiness | Proves the paper account is connected and usable |
-| 2. Market view | Latest Alpaca prices plus agent access to 90-day bars and news | Grounds decisions in recent broker data |
-| 3. Order ticket | Buy/sell ticket, signed preview, explicit confirmation, idempotent submission and lifecycle refresh | Makes paper orders safe and demoable |
+| 2. Market view | IEX live quotes/bars, company benchmarks, calendar, watchlists, clustered news, corporate actions, options chains and entitlement-aware multi-asset data | Grounds decisions in current, sourced broker data |
+| 3. Order ticket | Signed equity, linked, auction, basket, explicit-short and defined-risk option previews with explicit confirmation, idempotency and lifecycle refresh | Makes paper orders safe and demoable |
 | 4. AI functionality | OpenAI Agents SDK Guided Rebalance Agent | Produces useful portfolio-management ideas |
-| 5. Portfolio intelligence | Cash, P&L, weights, concentration, HHI, 90-day volatility/drawdown and deterministic what-if simulation | Keeps risk math outside the model |
+| 5. Portfolio intelligence | Reconciled ledger/snapshots, performance, VaR/expected shortfall, risk contribution, liquidity, benchmark diagnostics, option Greeks/stress and deterministic what-if simulation | Keeps risk math outside the model |
 | 6. Agentic AI | The agent selects among seven read-only Alpaca and risk tools, then stores a plan | Demonstrates bounded multi-tool agency without autonomous execution |
 | 7. Creativity | Decision Receipt links evidence, plan, risk checks, approval and Alpaca outcome | Makes every recommendation and order inspectable |
 | 8. Explainability | This file, evidence IDs, explicit guardrails and runnable checks | Shows how and why each feature works |
@@ -27,8 +27,8 @@ This is the challenge's central explainability file. The product is an internal-
 
 ## Order policy
 
-- US stocks and ETFs only; Alpaca must report the asset tradable.
-- No shorts: sell quantity cannot exceed the owned quantity.
+- Equity tickets require tradable US stocks or ETFs. Options use a separate defined-risk boundary.
+- Ordinary sells cannot exceed holdings. A new paper short requires an explicit checkbox, margin-enabled account, marginable/easy-to-borrow asset, DAY market/limit order, fresh borrow validation and a 5% short-concentration cap.
 - Maximum order is the lesser of $2,500 or 2.5% of equity.
 - Resulting position concentration cannot exceed 20%.
 - Conservative rolling-24-hour turnover cannot exceed 10% of equity.
@@ -38,6 +38,8 @@ This is the challenge's central explainability file. The product is an internal-
 - Submission requires a unique idempotency key; duplicates return the original result or a processing response.
 - A lost placement response is recovered by Alpaca `clientOrderId`; a retry reservation is released only when Alpaca confirms no matching order.
 - Paper trading is hard-coded. Live mode is unavailable.
+- Option execution is limited to long buy-to-open single legs and net-debit verticals. Naked selling is unavailable; previews show max loss, exercise cost and short-leg assignment notional.
+- Rebalance baskets are atomically previewed and reserved inside the app, then submitted sequentially because Alpaca exposes no atomic equity-basket endpoint.
 - Production refuses readiness unless a managed OIDC proxy origin, email domain and 32+ character proxy secret are configured. Mutations are same-origin, request bodies are bounded, broker DTOs are allow-listed, browser output is escaped, and money/agent routes are rate-limited per advisor.
 
 ## Failure behavior
@@ -56,7 +58,7 @@ This is the challenge's central explainability file. The product is an internal-
 - `bun run alpaca:doctor` verifies paper credentials and both Alpaca APIs through the independent CLI.
 - `bun run smoke:read` verifies account, positions and open orders without mutation.
 - `SMOKE_ORDER=paper-confirm bun run smoke:order` verifies buy or sell submit, lookup and exact cancellation in paper mode only.
-- Live checks have verified the paper account, current price, risk endpoint, signed preview and stored evidence-backed agent plan.
+- Live checks have verified the paper account, market/option data, monitoring, advanced risk, signed equity/basket/short/option previews and every application view without submitting validation orders.
 
 ## Five-minute demo
 
