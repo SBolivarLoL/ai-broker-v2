@@ -33,3 +33,30 @@ export function discoveryDto(movers: any, actives: any, clock: any) {
     screenerAsOf: movers.lastUpdated ?? actives.lastUpdated ?? null,
   };
 }
+
+export function orderSessionGuidance(clock: any) {
+  const exchange = clock?.clocks?.find((item: any) => item.market?.acronym === "NASDAQ");
+  const phase = String(exchange?.phase ?? "unknown");
+  const core = ["open", "core", "continuous"].includes(phase.toLowerCase());
+  return {
+    phase,
+    coreSession: core,
+    nextOpen: exchange?.nextMarketOpen ? new Date(exchange.nextMarketOpen).toISOString() : null,
+    nextClose: exchange?.nextMarketClose ? new Date(exchange.nextMarketClose).toISOString() : null,
+    message: core ? "The core session is open; a market order may execute promptly but its price is not guaranteed." : "The core session is closed; a DAY market order may queue for the next eligible session and open at a materially different price.",
+  };
+}
+
+export function calendarDto(response: any, clock: any) {
+  const guidance = orderSessionGuidance(clock);
+  return {
+    market: { name: String(response.market?.name ?? "US equities"), acronym: String(response.market?.acronym ?? "NASDAQ"), timezone: String(response.market?.timezone ?? "America/New_York") },
+    sessions: (response.calendar ?? []).map((day: any) => {
+      const coreStart = new Date(day.coreStart), coreEnd = new Date(day.coreEnd);
+      const durationMinutes = Math.round((coreEnd.getTime() - coreStart.getTime()) / 60_000);
+      return { date: new Date(day.date).toISOString().slice(0, 10), coreStart: coreStart.toISOString(), coreEnd: coreEnd.toISOString(), preStart: day.preStart ? new Date(day.preStart).toISOString() : null, postEnd: day.postEnd ? new Date(day.postEnd).toISOString() : null, settlementDate: day.settlementDate ? new Date(day.settlementDate).toISOString().slice(0, 10) : null, durationMinutes, earlyClose: durationMinutes < 390 };
+    }),
+    guidance,
+    asOf: new Date().toISOString(),
+  };
+}
