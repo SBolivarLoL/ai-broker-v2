@@ -72,16 +72,14 @@ export function createStore(filename = "data/app.db") {
     completed_at TEXT
   )`);
   db.run("CREATE INDEX IF NOT EXISTS research_runs_created ON research_runs(created_at DESC)");
-  db.run(`CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-    snapshot_date TEXT PRIMARY KEY,
-    captured_at TEXT NOT NULL,
-    equity REAL NOT NULL,
-    cash REAL NOT NULL,
-    position_value REAL NOT NULL,
-    quality_status TEXT NOT NULL CHECK(quality_status IN ('healthy', 'warning', 'error')),
-    payload TEXT NOT NULL
-  )`);
-  db.run("CREATE INDEX IF NOT EXISTS portfolio_snapshots_captured ON portfolio_snapshots(captured_at DESC)");
+  db.run("CREATE TABLE IF NOT EXISTS portfolio_snapshots (snapshot_date TEXT PRIMARY KEY, payload TEXT NOT NULL)");
+  const snapshotColumns = db.query("PRAGMA table_info(portfolio_snapshots)").all() as { name: string }[];
+  if (snapshotColumns.some(column => column.name === "captured_at")) db.transaction(() => {
+    db.run("ALTER TABLE portfolio_snapshots RENAME TO portfolio_snapshots_legacy");
+    db.run("CREATE TABLE portfolio_snapshots (snapshot_date TEXT PRIMARY KEY, payload TEXT NOT NULL)");
+    db.run("INSERT INTO portfolio_snapshots (snapshot_date, payload) SELECT snapshot_date, payload FROM portfolio_snapshots_legacy");
+    db.run("DROP TABLE portfolio_snapshots_legacy");
+  }).immediate();
 
   const reservationRows = (now = Date.now()) => db.query(`SELECT reservation_key AS key, symbol, side, qty, price, status, order_id AS orderId,
     expires_at_ms AS expiresAt, created_at AS createdAt, updated_at AS updatedAt FROM risk_reservations
@@ -98,6 +96,19 @@ export function createStore(filename = "data/app.db") {
     db.query("INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)")
       .run(key, candidate.symbol, candidate.side, candidate.qty, candidate.price, now + ttlMs);
     return { reserved: true as const, validation: validation.value };
+  });
+  const reserveRiskBasketTransaction = db.transaction(<T>(key: string, candidates: ReservationCandidate[], validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs: number) => {
+    if (!key || candidates.length < 2 || candidates.length > 10 || candidates.some(candidate => !candidate.symbol || !Number.isFinite(candidate.qty) || candidate.qty <= 0 || !Number.isFinite(candidate.price) || candidate.price <= 0)) throw new Error("Invalid basket risk reservation");
+    const keys = candidates.map((_, index) => `${key}:${index}`);
+    const placeholders = keys.map(() => "?").join(",");
+    if (db.query(`SELECT reservation_key FROM risk_reservations WHERE reservation_key IN (${placeholders}) LIMIT 1`).get(...keys)) return { reserved: false as const, reason: "exists" as const };
+    const now = Date.now();
+    db.query("UPDATE risk_reservations SET status = 'released', updated_at = CURRENT_TIMESTAMP WHERE status = 'reserved' AND expires_at_ms <= ?").run(now);
+    const validation = validate(reservationRows(now));
+    if (!validation.allowed) return { reserved: false as const, reason: "risk" as const, validation: validation.value };
+    const insert = db.query("INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)");
+    candidates.forEach((candidate, index) => insert.run(keys[index]!, candidate.symbol, candidate.side, candidate.qty, candidate.price, now + ttlMs));
+    return { reserved: true as const, keys, validation: validation.value };
   });
   const syncActivitiesTransaction = db.transaction((activities: LedgerActivity[]) => {
     const statement = db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id, corporate_action)
@@ -131,6 +142,11 @@ export function createStore(filename = "data/app.db") {
     reserveRisk<T>(key: string, candidate: ReservationCandidate, validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000) {
       if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("Risk reservation TTL must be positive");
       return reserveRiskTransaction.immediate(key, candidate, validate, ttlMs);
+    },
+    /** Atomically validates and reserves every leg of one application-level basket. */
+    reserveRiskBasket<T>(key: string, candidates: ReservationCandidate[], validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000) {
+      if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("Risk reservation TTL must be positive");
+      return reserveRiskBasketTransaction.immediate(key, candidates, validate, ttlMs);
     },
     activeRiskReservations() { return reservationRows(); },
     markRiskSubmitted(key: string, orderId: string) {
@@ -196,11 +212,9 @@ export function createStore(filename = "data/app.db") {
       const average = (key: string) => metrics.length ? metrics.reduce((sum, item) => sum + Number(item[key] ?? 0), 0) / metrics.length : 0;
       return { totalRuns: metrics.length, successRate: metrics.length ? metrics.filter(item => item.overallScore >= 90).length / metrics.length : 0, averageScore: average("overallScore"), averageLatencyMs: average("latencyMs"), averageCitationValidity: average("citationValidity"), averageNumericGrounding: average("numericGrounding"), averageToolCoverage: average("toolCoverage"), averageTokens: average("totalTokens") };
     },
-    portfolioSnapshot(snapshot: { snapshotDate: string; capturedAt: string; equity: number; cash: number; positionValue: number; quality: { status: string } }) {
-      db.query(`INSERT INTO portfolio_snapshots (snapshot_date, captured_at, equity, cash, position_value, quality_status, payload) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(snapshot_date) DO UPDATE SET captured_at=excluded.captured_at, equity=excluded.equity, cash=excluded.cash,
-        position_value=excluded.position_value, quality_status=excluded.quality_status, payload=excluded.payload`)
-        .run(snapshot.snapshotDate, snapshot.capturedAt, snapshot.equity, snapshot.cash, snapshot.positionValue, snapshot.quality.status, JSON.stringify(snapshot));
+    portfolioSnapshot<T extends { snapshotDate: string }>(snapshot: T) {
+      db.query("INSERT INTO portfolio_snapshots (snapshot_date, payload) VALUES (?, ?) ON CONFLICT(snapshot_date) DO UPDATE SET payload=excluded.payload")
+        .run(snapshot.snapshotDate, JSON.stringify(snapshot));
     },
     portfolioSnapshots(limit = 90) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 366) throw new Error("Snapshot limit is out of range");

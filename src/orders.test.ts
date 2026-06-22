@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { signPreview, verifyPreview, verifyPreviewFresh } from "./orders";
+import { signPreview, verifyPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { createStore } from "./store";
 
 const secret = "12345678901234567890123456789012";
-const preview = { symbol: "SPY", side: "buy" as const, qty: 1, price: 500, expiresAt: 2_000 };
+const preview: Preview = { symbol: "SPY", side: "buy", qty: 1, amountType: "quantity", type: "market", orderClass: "simple", limitPrice: null, stopPrice: null, trailPercent: null, takeProfitPrice: null, stopLossPrice: null, stopLossLimitPrice: null, timeInForce: "day", extendedHours: false, allowShort: false, price: 500, expiresAt: 2_000 };
 
 test("preview tokens are signed and expire", () => {
   const token = signPreview(preview, secret);
@@ -15,7 +15,7 @@ test("preview tokens are signed and expire", () => {
 test("submission validation receives intent without trusting preview simulation", async () => {
   const withOldSimulation = signPreview({ ...preview, simulation: { allowed: true, estimatedNotional: 500, resultingCash: 500, resultingPositionPercent: 5, turnoverPercent: 5, reasons: [] } }, secret);
   const result = await verifyPreviewFresh(withOldSimulation, secret, intent => ({ allowed: false, checked: intent }), 1_000);
-  expect(result.validation).toEqual({ allowed: false, checked: { symbol: "SPY", side: "buy", qty: 1, price: 500 } });
+  expect(result.validation).toMatchObject({ allowed: false, checked: { symbol: "SPY", side: "buy", qty: 1, type: "market", amountType: "quantity", price: 500 } });
 });
 
 test("submission idempotency and receipts persist", () => {
@@ -62,6 +62,21 @@ test("transactional reservations cannot stack past policy", () => {
   expect(store.activeRiskReservations()).toHaveLength(1);
   expect(store.finishRiskReservation("candidate-1", "released")).toBe(true);
   expect(reserve("candidate-2")).toMatchObject({ reserved: true });
+  store.close();
+});
+
+test("basket risk reservations are all-or-nothing", () => {
+  const store = createStore(":memory:");
+  const candidates = [
+    { symbol: "AAPL", side: "sell" as const, qty: 1, price: 100 },
+    { symbol: "MSFT", side: "buy" as const, qty: 2, price: 100 },
+  ];
+  expect(store.reserveRiskBasket("basket", candidates, active => ({ allowed: active.length === 0, value: active.length }))).toMatchObject({ reserved: true, keys: ["basket:0", "basket:1"] });
+  expect(store.activeRiskReservations()).toHaveLength(2);
+  expect(store.reserveRiskBasket("second", candidates, active => ({ allowed: active.length === 0, value: active.length }))).toEqual({ reserved: false, reason: "risk", validation: 2 });
+  expect(store.activeRiskReservations()).toHaveLength(2);
+  store.finishRiskReservation("basket:0", "released");
+  store.finishRiskReservation("basket:1", "released");
   store.close();
 });
 

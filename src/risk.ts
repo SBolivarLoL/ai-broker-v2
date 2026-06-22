@@ -95,8 +95,9 @@ export function simulateTrade(input: {
   price: number;
   dailyTurnover?: number;
   pendingOrders?: PendingOrder[];
+  allowShort?: boolean;
 }): TradeSimulation {
-  const { snapshot, positions, symbol, side, qty, price, dailyTurnover = 0, pendingOrders = [] } = input;
+  const { snapshot, positions, symbol, side, qty, price, dailyTurnover = 0, pendingOrders = [], allowShort = false } = input;
   if (![qty, price].every(value => Number.isFinite(value) && value > 0)) throw new Error("Quantity and price must be positive finite numbers");
   for (const pending of pendingOrders) {
     if (pending.side !== "buy" && pending.side !== "sell") throw new Error("Pending order side must be buy or sell");
@@ -115,11 +116,13 @@ export function simulateTrade(input: {
   // Do not let uncertain proceeds from open sells fund a new buy.
   const availableCash = snapshot.cash - pendingBuyNotional;
   const resultingCash = availableCash + (side === "buy" ? -estimatedNotional : estimatedNotional);
-  const resultingPositionPercent = Math.max(0, resultingValue) / snapshot.equity * 100;
+  const opensShort = side === "sell" && qty + pendingSoldQty > ownedQty;
+  const resultingPositionPercent = (allowShort && opensShort ? Math.abs(resultingValue) : Math.max(0, resultingValue)) / snapshot.equity * 100;
   const turnoverPercent = (dailyTurnover + pendingTurnover + estimatedNotional) / snapshot.equity * 100;
   const reasons: string[] = [];
   const maxNotional = Math.min(2_500, snapshot.equity * 0.025);
-  if (side === "sell" && qty + pendingSoldQty > ownedQty) reasons.push("Sell quantity exceeds owned quantity");
+  if (opensShort && !allowShort) reasons.push("Sell quantity exceeds owned quantity");
+  if (opensShort && allowShort && resultingPositionPercent > 5) reasons.push("Resulting short position exceeds 5% concentration limit");
   if (side === "buy" && estimatedNotional > availableCash) reasons.push("Insufficient cash");
   if (estimatedNotional > maxNotional) reasons.push(`Order exceeds $${maxNotional.toFixed(2)} limit`);
   if (resultingPositionPercent > 20) reasons.push("Resulting position exceeds 20% concentration limit");
