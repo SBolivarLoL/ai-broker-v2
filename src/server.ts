@@ -3,6 +3,7 @@ import { benchmarkAttribution, diversificationScore, performancePoints, performa
 import { companyMarketSnapshot } from "./company-market";
 import { Intent, runPortfolioCopilot } from "./copilot";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
+import { discoveryDto, parseSymbol, parseWatchlistInput, watchlistDto } from "./market-workspace";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signReplacementPreview, verifyReplacementPreview } from "./order-management";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
 import { buildPortfolioSnapshot } from "./portfolio-snapshot";
@@ -49,6 +50,34 @@ const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
 let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
 const companyMarketCache = new Map<string, { expiresAt: number; value: ReturnType<typeof companyMarketSnapshot> }>();
+let marketDiscoveryCache: { expiresAt: number; value: ReturnType<typeof discoveryDto> } | null = null;
+
+async function getMarketDiscovery() {
+  if (marketDiscoveryCache && marketDiscoveryCache.expiresAt > Date.now()) return marketDiscoveryCache.value;
+  const [movers, actives, clock] = await Promise.all([
+    alpaca.marketData.screener.movers({ marketType: "stocks", top: 5 }),
+    alpaca.marketData.screener.mostActives({ by: "volume", top: 5 }),
+    alpaca.trading.calendar.clock(),
+  ]);
+  const value = discoveryDto(movers, actives, clock);
+  marketDiscoveryCache = { value, expiresAt: Date.now() + 30_000 };
+  return value;
+}
+
+async function getWatchlists() {
+  const summaries = await alpaca.trading.watchlists.getWatchlists();
+  return Promise.all(summaries.map(item => alpaca.trading.watchlists.getWatchlistById({ watchlistId: item.id })));
+}
+
+function watchlistInput(value: unknown) {
+  try { return parseWatchlistInput(value); }
+  catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid watchlist", 422); }
+}
+
+function watchlistSymbol(value: unknown) {
+  try { return parseSymbol(value); }
+  catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid symbol", 422); }
+}
 
 async function getAssetCatalog() {
   if (assetCatalog && assetCatalog.expiresAt > Date.now()) return assetCatalog.assets;
@@ -181,6 +210,47 @@ Bun.serve({
         companyMarketCache.set(cacheKey, { value, expiresAt: Date.now() + 30_000 });
         if (companyMarketCache.size > 60) companyMarketCache.delete(companyMarketCache.keys().next().value!);
         return json(value);
+      }
+      if (url.pathname === "/api/market/workspace" && request.method === "GET") {
+        const [watchlists, discovery] = await Promise.all([getWatchlists(), getMarketDiscovery()]);
+        return json({ watchlists: watchlists.map(watchlistDto), discovery });
+      }
+      if (url.pathname === "/api/watchlists" && request.method === "POST") {
+        if (!allow(`${actor}:watchlists`, 30)) return json({ error: "Watchlist rate limit exceeded" }, 429);
+        const input = watchlistInput(await requestJson(request));
+        const watchlist = await alpaca.trading.watchlists.postWatchlist({ updateWatchlistRequest: input });
+        store.event("watchlist.created", actor, { watchlistId: watchlist.id, name: input.name, symbols: input.symbols });
+        return json(watchlistDto(watchlist), 201);
+      }
+      const watchlistMatch = url.pathname.match(/^\/api\/watchlists\/([A-Za-z0-9-]{1,64})$/);
+      if (watchlistMatch && request.method === "PATCH") {
+        if (!allow(`${actor}:watchlists`, 30)) return json({ error: "Watchlist rate limit exceeded" }, 429);
+        const input = watchlistInput(await requestJson(request));
+        const watchlist = await alpaca.trading.watchlists.updateWatchlistById({ watchlistId: watchlistMatch[1]!, updateWatchlistRequest: input });
+        store.event("watchlist.updated", actor, { watchlistId: watchlist.id, name: input.name, symbols: input.symbols });
+        return json(watchlistDto(watchlist));
+      }
+      if (watchlistMatch && request.method === "DELETE") {
+        if (!allow(`${actor}:watchlists`, 30)) return json({ error: "Watchlist rate limit exceeded" }, 429);
+        await alpaca.trading.watchlists.deleteWatchlistById({ watchlistId: watchlistMatch[1]! });
+        store.event("watchlist.deleted", actor, { watchlistId: watchlistMatch[1] });
+        return new Response(null, { status: 204, headers: securityHeaders });
+      }
+      const watchlistAssetsMatch = url.pathname.match(/^\/api\/watchlists\/([A-Za-z0-9-]{1,64})\/assets$/);
+      if (watchlistAssetsMatch && request.method === "POST") {
+        if (!allow(`${actor}:watchlists`, 30)) return json({ error: "Watchlist rate limit exceeded" }, 429);
+        const symbol = watchlistSymbol((await requestJson(request)).symbol);
+        const watchlist = await alpaca.trading.watchlists.addAssetToWatchlist({ watchlistId: watchlistAssetsMatch[1]!, addAssetToWatchlistRequest: { symbol } });
+        store.event("watchlist.asset.added", actor, { watchlistId: watchlist.id, symbol });
+        return json(watchlistDto(watchlist));
+      }
+      const watchlistAssetMatch = url.pathname.match(/^\/api\/watchlists\/([A-Za-z0-9-]{1,64})\/assets\/([^/]+)$/);
+      if (watchlistAssetMatch && request.method === "DELETE") {
+        if (!allow(`${actor}:watchlists`, 30)) return json({ error: "Watchlist rate limit exceeded" }, 429);
+        const symbol = watchlistSymbol(decodeURIComponent(watchlistAssetMatch[2]!));
+        const watchlist = await alpaca.trading.watchlists.removeAssetFromWatchlist({ watchlistId: watchlistAssetMatch[1]!, symbol });
+        store.event("watchlist.asset.removed", actor, { watchlistId: watchlist.id, symbol });
+        return json(watchlistDto(watchlist));
       }
       if (url.pathname === "/api/account/activities" && request.method === "GET") {
         const allowedCategories = new Set<LedgerCategory>(["trade", "dividend", "interest", "fee", "transfer", "corporate_action", "option", "other"]);
