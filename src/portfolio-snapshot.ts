@@ -41,5 +41,3 @@ export function buildPortfolioSnapshot(account: AccountInput, positions: Positio
     risk, positions: normalizedPositions, orderSync, quality: { status, flags }, source: "alpaca-paper",
   };
 }
-
-export type PortfolioSnapshot = ReturnType<typeof buildPortfolioSnapshot>;
