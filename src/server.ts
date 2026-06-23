@@ -75,13 +75,14 @@ async function reconcileOrders() {
   for (const order of orders) {
     if (order.id && order.status) store.reconcileOrder(order.id, order.status);
     if (!order.clientOrderId || !order.status) continue;
-    if (order.status === "filled") store.finishRiskReservation(order.clientOrderId, "filled");
-    else if (["canceled", "expired", "replaced"].includes(order.status)) store.finishRiskReservation(order.clientOrderId, "canceled");
-    else if (order.status === "rejected") store.finishRiskReservation(order.clientOrderId, "rejected");
+    const riskStatus = riskStatusForBrokerStatus(order.status);
+    if (riskStatus) store.finishRiskReservation(order.clientOrderId, riskStatus);
   }
 }
 
 const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
+const canceledStatuses = new Set(["canceled", "expired", "replaced"]);
+const riskStatusForBrokerStatus = (status: string) => status === "filled" ? "filled" : status === "rejected" ? "rejected" : canceledStatuses.has(status) ? "canceled" : null;
 
 async function pendingBrokerOrders(orders: any[], candidateSymbol: string, candidatePrice: number) {
   const working = orders.filter(order => workingStatuses.has(String(order.status)));
@@ -286,8 +287,8 @@ Bun.serve({
           throw new Error("Alpaca returned an order without an id");
         }
         if (!store.markRiskSubmitted(idempotencyKey, order.id)) console.error("risk reservation transition failed", { idempotencyKey, orderId: order.id });
-        if (order.status === "filled") store.finishRiskReservation(idempotencyKey, "filled");
-        else if (order.status === "rejected") store.finishRiskReservation(idempotencyKey, "rejected");
+        const riskStatus = order.status === "filled" || order.status === "rejected" ? riskStatusForBrokerStatus(order.status) : null;
+        if (riskStatus) store.finishRiskReservation(idempotencyKey, riskStatus);
         const receiptId = crypto.randomUUID();
         const response = { ...orderDto(order), receiptId };
         store.completeSubmission(idempotencyKey, order.id, response);
