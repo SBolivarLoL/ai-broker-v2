@@ -98,19 +98,24 @@ export function simulateTrade(input: {
 }): TradeSimulation {
   const { snapshot, positions, symbol, side, qty, price, dailyTurnover = 0, pendingOrders = [] } = input;
   if (![qty, price].every(value => Number.isFinite(value) && value > 0)) throw new Error("Quantity and price must be positive finite numbers");
-  for (const pending of pendingOrders) {
-    if (pending.side !== "buy" && pending.side !== "sell") throw new Error("Pending order side must be buy or sell");
-    if (![finite(pending.qty), finite(pending.price)].every(value => value > 0)) throw new Error("Pending order quantity and price must be positive finite numbers");
-  }
   const estimatedNotional = qty * price;
   const current = positions.find(position => position.symbol === symbol);
   const currentValue = current ? finite(current.marketValue) : 0;
   const ownedQty = current ? finite(current.qty) : 0;
-  const pendingForSymbol = pendingOrders.filter(order => order.symbol === symbol);
-  const pendingValue = pendingForSymbol.reduce((sum, order) => sum + (order.side === "buy" ? 1 : -1) * finite(order.qty) * finite(order.price), 0);
-  const pendingSoldQty = pendingForSymbol.filter(order => order.side === "sell").reduce((sum, order) => sum + finite(order.qty), 0);
-  const pendingBuyNotional = pendingOrders.filter(order => order.side === "buy").reduce((sum, order) => sum + finite(order.qty) * finite(order.price), 0);
-  const pendingTurnover = pendingOrders.reduce((sum, order) => sum + finite(order.qty) * finite(order.price), 0);
+  let pendingValue = 0, pendingSoldQty = 0, pendingBuyNotional = 0, pendingTurnover = 0;
+  for (const pending of pendingOrders) {
+    if (pending.side !== "buy" && pending.side !== "sell") throw new Error("Pending order side must be buy or sell");
+    const pendingQty = finite(pending.qty);
+    const pendingPrice = finite(pending.price);
+    if (pendingQty <= 0 || pendingPrice <= 0) throw new Error("Pending order quantity and price must be positive finite numbers");
+    const pendingNotional = pendingQty * pendingPrice;
+    pendingTurnover += pendingNotional;
+    if (pending.side === "buy") pendingBuyNotional += pendingNotional;
+    if (pending.symbol === symbol) {
+      pendingValue += (pending.side === "buy" ? 1 : -1) * pendingNotional;
+      if (pending.side === "sell") pendingSoldQty += pendingQty;
+    }
+  }
   const resultingValue = currentValue + pendingValue + (side === "buy" ? estimatedNotional : -estimatedNotional);
   // Do not let uncertain proceeds from open sells fund a new buy.
   const availableCash = snapshot.cash - pendingBuyNotional;
