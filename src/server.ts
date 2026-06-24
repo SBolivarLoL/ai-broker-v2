@@ -7,6 +7,7 @@ import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoS
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { monitoringCorporateActions, monitoringEventClusters, monitoringNews, type MonitoringWatchlist } from "./market-monitoring";
 import { parseStreamSymbols, streamBarDto, streamQuoteDto } from "./market-stream";
+import { getStockBarsWithFallback } from "./market-data";
 import { calendarDto, discoveryDto, orderSessionGuidance, parseSymbol, parseWatchlistInput, watchlistDto } from "./market-workspace";
 import { multiAssetDto } from "./multi-asset";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signCancelAllPreview, signReplacementPreview, verifyCancelAllPreview, verifyReplacementPreview } from "./order-management";
@@ -316,6 +317,7 @@ Bun.serve({
     }
     try {
       if (url.pathname === "/") return new Response(Bun.file("src/index.html"), { headers: { ...securityHeaders, "cache-control": "no-store" } });
+      if (url.pathname === "/favicon.ico") return new Response(null, { status: 204, headers: { ...securityHeaders, "cache-control": "public, max-age=86400" } });
       if (url.pathname === "/health") return json({ status: "ok" });
       if (url.pathname === "/ready") {
         if (previewSecret.length < 32 || !securityReady()) return json({ status: "not_ready", error: "Security configuration is incomplete" }, 503);
@@ -682,12 +684,15 @@ Bun.serve({
           alpaca.trading.positions.getAllOpenPositions(),
         ]);
         const points = performancePoints(history);
-        const benchmarkBars = points.length ? await alpaca.marketData.getStockBarsFor(benchmarkSymbol, { timeframe: TimeFrame.Day, start: new Date(points[0].timestamp - 3 * 86_400_000), end: new Date(points.at(-1)!.timestamp + 2 * 86_400_000) }) : [];
+        const benchmarkData = points.length
+          ? await getStockBarsWithFallback(alpaca.marketData, benchmarkSymbol, { timeframe: TimeFrame.Day, start: new Date(points[0].timestamp - 3 * 86_400_000), end: new Date(points.at(-1)!.timestamp + 2 * 86_400_000) })
+          : { bars: [], source: null };
+        const benchmarkBars = benchmarkData.bars;
         const benchmark = benchmarkAttribution(points, benchmarkBars, benchmarkSymbol);
         const attribution = positions.map(position => ({ symbol: position.symbol, marketValue: Number(position.marketValue), unrealizedProfitLoss: Number(position.unrealizedPl), unrealizedReturnPercent: Number(position.unrealizedPlpc) * 100 }))
           .filter(item => Object.values(item).every(value => typeof value === "string" || Number.isFinite(value)))
           .sort((a, b) => b.unrealizedProfitLoss - a.unrealizedProfitLoss);
-        return json({ period, summary: performanceSummary(points), benchmark, points, attribution, quality: { cashflowAdjusted: true, benchmarkCoverage: benchmark.quality }, asOf: new Date().toISOString() });
+        return json({ period, summary: performanceSummary(points), benchmark: { ...benchmark, source: benchmarkData.source }, points, attribution, quality: { cashflowAdjusted: true, benchmarkCoverage: benchmark.quality, benchmarkSource: benchmarkData.source }, asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/agent/plans" && request.method === "POST") {
         if (!allow(`${actor}:agent`, 10)) return json({ error: "Agent rate limit exceeded" }, 429);
