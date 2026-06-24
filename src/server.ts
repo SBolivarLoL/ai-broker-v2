@@ -3,6 +3,7 @@ import { benchmarkAttribution, diversificationScore, performancePoints, performa
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import { companyMarketSnapshot } from "./company-market";
 import { Intent, runPortfolioCopilot } from "./copilot";
+import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
 import { monitoringCorporateActions, monitoringEventClusters, monitoringNews, type MonitoringWatchlist } from "./market-monitoring";
 import { parseStreamSymbols, streamBarDto, streamQuoteDto } from "./market-stream";
@@ -415,6 +416,38 @@ Bun.serve({
         const value = multiAssetDto({ indices, forex, crypto, warnings });
         multiAssetCache = { value, expiresAt: Date.now() + 30_000 };
         return json(value);
+      }
+      if (url.pathname === "/api/strategy/crypto/bars" && request.method === "GET") {
+        let symbols: string[], timeframe: string, days: number;
+        try {
+          symbols = parseCryptoSymbols(url.searchParams.get("symbols"));
+          timeframe = parseCryptoTimeframe(url.searchParams.get("timeframe"));
+          days = parseCryptoLookbackDays(url.searchParams.get("days"));
+        } catch (error) {
+          throw new ClientError(error instanceof Error ? error.message : "Invalid crypto bar query", 400);
+        }
+        const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
+        const bars = await alpaca.marketData.getCryptoBars({ loc: "us", symbols, timeframe, start, end, limit: 10_000 } as any);
+        return json(cryptoBarsDto({ symbols, timeframe, start, end, bars }));
+      }
+      if (url.pathname === "/api/strategy/crypto/snapshots" && request.method === "POST") {
+        if (!allow(`${actor}:strategy-crypto-ingest`, 20)) return json({ error: "Crypto strategy ingestion rate limit exceeded" }, 429);
+        const input = await requestJson(request);
+        const runId = String(input.runId ?? "").trim();
+        if (!runId) return json({ error: "runId is required" }, 400);
+        let symbols: string[];
+        try { symbols = parseCryptoSymbols(input.symbols); }
+        catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid crypto symbols", 400); }
+        const requested = symbols.join(",");
+        const receivedAt = new Date();
+        const [snapshots, orderbooks] = await Promise.all([
+          alpaca.marketData.crypto.cryptoSnapshots({ loc: "us", symbols: requested }).then(result => result.snapshots ?? {}),
+          alpaca.marketData.crypto.cryptoLatestOrderbooks({ loc: "us", symbols: requested }).then(result => result.orderbooks ?? {}).catch(() => ({})),
+        ]);
+        const result = cryptoSnapshotDto({ symbols, snapshots, orderbooks, receivedAt });
+        for (const record of result.records) store.strategyDataSnapshot({ ...record, runId });
+        store.event("strategy.crypto.snapshots.ingested", actor, { runId, symbols, count: result.records.length, stale: result.records.filter(record => record.stale).length });
+        return json({ runId, ...result });
       }
       if (url.pathname === "/api/assets/search") {
         const query = url.searchParams.get("q")?.trim() ?? "";

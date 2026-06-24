@@ -375,9 +375,9 @@ Goal: make crypto data trustworthy enough for strategy research before enabling 
 - [x] Read-only index and FX benchmark monitor with explicit entitlement-unavailable states for this paper account.
 - [ ] Fixed-income research if account and data access support it.
 - [x] Read-only BTC/USD, ETH/USD and SOL/USD 24/7 quote, spread, daily-range and liquidity-risk workspace.
-- [ ] Add historical crypto bar retrieval for BTC/USD, ETH/USD and SOL/USD with timeframe, provider, gap and timezone metadata.
-- [ ] Add real-time crypto stream ingestion for quotes, trades, bars and optional order-book snapshots, bounded by symbol and retention limits.
-- [ ] Persist normalized crypto market-data snapshots used by strategy decisions; store source feed, venue/location, timestamp, stale flag and ingestion latency.
+- [x] Add historical crypto bar retrieval for BTC/USD, ETH/USD and SOL/USD with timeframe, provider, gap and timezone metadata.
+- [x] Add explicit latest crypto snapshot ingestion for quotes, trades, bars and optional order-book snapshots, bounded by symbol and retention limits.
+- [x] Persist normalized crypto market-data snapshots used by strategy decisions; store source feed, venue/location, timestamp, stale flag and ingestion latency.
 - [ ] Add crypto-specific risk policy: 24/7 sessions, cash-only sizing, max notional, max position, max daily loss, max drawdown, max spread, stale-data gate and cool-down after errors.
 - [ ] Add crypto fee, spread, slippage, latency, partial-fill and missed-fill assumptions for backtests and paper-run analysis.
 - [ ] Keep crypto transfers, perpetual leverage and tokenization disabled until separately approved.
@@ -435,7 +435,7 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 3. [x] Add company benchmark overlays and relative-strength comparison.
 4. [x] Add live quote/bar streaming with reconnect and stale-data recovery.
 5. [x] Add limit/stop/trailing, linked bracket/OCO/OTO, auction and rebalance-basket paper workflows with expanded risk previews.
-6. Add crypto historical bars and live crypto stream ingestion with persisted snapshots and freshness metadata.
+6. [x] Add crypto historical bars and explicit latest-snapshot ingestion with persisted snapshots and freshness metadata.
 7. Build deterministic backtest and walk-forward harness with buy-and-hold, cash and equal-weight baselines.
 8. Implement the first three low-complexity strategies: time-sliced accumulation, moving-average trend and mean reversion.
 9. Add shadow-run scheduler, decision receipts and trace explorer before enabling paper-order automation.
