@@ -25,6 +25,13 @@ import { buyAndHoldStrategy, cashStrategy, runBacktest, strategyFromId, walkForw
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
+process.on("uncaughtException", error => {
+  if (error instanceof Error && error.message.startsWith("WebSocket is not open")) {
+    console.error("market stream websocket not ready", error.message);
+    return;
+  }
+  throw error;
+});
 const previewSecret = process.env.PREVIEW_SECRET ?? "";
 const securityHeaders = {
   "content-security-policy": "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
@@ -479,6 +486,72 @@ Bun.serve({
         const walkForward = trainSize && testSize ? walkForwardWindows(bars, trainSize, testSize).map(window => ({ trainStart: window.trainStart, testStart: window.testStart, trainBars: window.train.length, testBars: window.test.length })) : [];
         store.event("strategy.backtest.completed", actor, { strategyId, symbol, timeframe, days, totalReturnPercent: result.totalReturnPercent, bars: bars.length });
         return json({ source: "Alpaca crypto historical bars", symbol, timeframe, start: start.toISOString(), end: end.toISOString(), result, baselines, walkForward, asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/strategy/runs" && request.method === "GET") return json({ runs: store.strategyRuns(), asOf: new Date().toISOString() });
+      if (url.pathname === "/api/strategy/runs" && request.method === "POST") {
+        if (!allow(`${actor}:strategy-runs`, 10)) return json({ error: "Strategy run rate limit exceeded" }, 429);
+        const input = await requestJson(request);
+        let symbols: string[];
+        try { symbols = parseCryptoSymbols(input.symbols, 1); }
+        catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid crypto symbols", 400); }
+        const strategyId = String(input.strategyId ?? "");
+        try { strategyFromId(strategyId, input.params ?? {}); }
+        catch { throw new ClientError("Unsupported strategyId for shadow run", 400); }
+        const runId = crypto.randomUUID();
+        const config = { symbols, strategyId, params: input.params ?? {}, timeframe: parseCryptoTimeframe(input.timeframe), days: parseCryptoLookbackDays(input.days), mode: "shadow" };
+        const configHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(config))).then(bytes => `sha256:${[...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("")}`);
+        store.createStrategyRun({ id: runId, strategyId, strategyVersion: "backtest-v1", status: "shadow", configHash, policyVersion: "crypto-shadow-v1", symbols, budget: 0, config, notes: String(input.notes ?? "") || null });
+        store.event("strategy.run.created", actor, { runId, strategyId, symbols, mode: "shadow" });
+        return json({ runId, ...store.getStrategyRun(runId) }, 201);
+      }
+      const strategyRunTickMatch = url.pathname.match(/^\/api\/strategy\/runs\/([^/]+)\/tick$/);
+      if (strategyRunTickMatch && request.method === "POST") {
+        if (!allow(`${actor}:strategy-tick`, 30)) return json({ error: "Strategy tick rate limit exceeded" }, 429);
+        const runId = decodeURIComponent(strategyRunTickMatch[1]!);
+        const run = store.getStrategyRun(runId);
+        if (!run) return json({ error: "Strategy run not found" }, 404);
+        if (run.status !== "shadow") return json({ error: "Only shadow runs can be evaluated by this endpoint" }, 409);
+        const config = run.config as { symbols: string[]; strategyId: string; params?: Record<string, unknown>; timeframe: string; days: number };
+        const symbol = config.symbols[0]!;
+        const end = new Date(), start = new Date(end.getTime() - config.days * 86_400_000);
+        const [barsBySymbol, snapshotResponse, orderbookResponse] = await Promise.all([
+          alpaca.marketData.getCryptoBars({ loc: "us", symbols: [symbol], timeframe: config.timeframe, start, end, limit: 10_000 } as any),
+          alpaca.marketData.crypto.cryptoSnapshots({ loc: "us", symbols: symbol }).then(result => result.snapshots ?? {}),
+          alpaca.marketData.crypto.cryptoLatestOrderbooks({ loc: "us", symbols: symbol }).then(result => result.orderbooks ?? {}).catch(() => ({})),
+        ]);
+        const bars = barsBySymbol[symbol] ?? [];
+        if (!bars.length) return json({ error: "No crypto bars available for shadow tick" }, 502);
+        const snapshotResult = cryptoSnapshotDto({ symbols: [symbol], snapshots: snapshotResponse, orderbooks: orderbookResponse, receivedAt: new Date() });
+        for (const record of snapshotResult.records) store.strategyDataSnapshot({ ...record, runId });
+        const strategy = strategyFromId(config.strategyId, config.params ?? {});
+        const decisionOutput = strategy(bars, bars.length - 1);
+        const traceId = crypto.randomUUID(), decisionId = crypto.randomUUID(), receiptId = crypto.randomUUID();
+        const decision = decisionOutput.targetExposure > 0 ? "enter" : "hold";
+        store.strategyDecision({
+          id: decisionId,
+          traceId,
+          runId,
+          symbol,
+          decision,
+          features: decisionOutput.features ?? {},
+          weights: {},
+          thresholds: config.params ?? {},
+          riskChecks: { allowed: true, mode: "shadow", submittedOrder: false, reasons: [] },
+          dataSnapshotIds: snapshotResult.records.map(record => record.id),
+          rawSignal: decisionOutput.targetExposure,
+          riskAdjustedSignal: decisionOutput.targetExposure,
+          targetPosition: decisionOutput.targetExposure,
+          reason: decisionOutput.reason,
+        });
+        const trace = store.getStrategyDecisionTrace(traceId);
+        store.receipt(receiptId, { advisor: actor, kind: "strategy_shadow_decision", runId, traceId, decisionId, symbol, decision, submittedOrder: false, createdAt: new Date().toISOString() });
+        store.event("strategy.shadow.tick", actor, { runId, traceId, decisionId, symbol, decision, targetExposure: decisionOutput.targetExposure });
+        return json({ runId, traceId, decisionId, receiptId, trace });
+      }
+      const strategyTraceMatch = url.pathname.match(/^\/api\/strategy\/decision-traces\/([^/]+)$/);
+      if (strategyTraceMatch && request.method === "GET") {
+        const trace = store.getStrategyDecisionTrace(decodeURIComponent(strategyTraceMatch[1]!));
+        return trace ? json(trace) : json({ error: "Strategy decision trace not found" }, 404);
       }
       if (url.pathname === "/api/assets/search") {
         const query = url.searchParams.get("q")?.trim() ?? "";

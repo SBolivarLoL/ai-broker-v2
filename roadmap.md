@@ -391,6 +391,7 @@ Goal: implement small, explainable crypto strategies that can be backtested, sha
 - [ ] Create a strategy plugin interface with deterministic `prepare`, `features`, `decide`, `riskAdjust`, `orders` and `attribution` steps.
 - [ ] Add strategy catalog and config UI for the initial strategies: buy-and-hold benchmark, time-sliced accumulation, moving-average trend, breakout momentum, mean reversion, volatility filter, BTC/ETH relative strength and order-book liquidity scout. Initial backtest implementations exist for buy-and-hold, cash, time-sliced accumulation, moving-average trend and mean reversion.
 - [x] Build historical backtester with walk-forward splits, benchmark comparison, parameter freezing and friction-adjusted metrics.
+- [x] Add explicit shadow-run creation and tick evaluation that stores data snapshots, strategy decisions, decision receipts and trace lookups without submitting orders.
 - [ ] Build shadow-run scheduler that evaluates live signals without placing orders and stores missed/blocked/intended actions.
 - [ ] Add explicit run-level approval for paper strategy automation: symbol universe, budget, max position, max loss, schedule, strategy version and expiry.
 - [ ] Add paper-only crypto order preview/submission path using Alpaca-supported crypto order types, fractional quantity/notional rules and GTC/IOC time-in-force constraints.
@@ -407,6 +408,7 @@ Goal: make strategy behavior explainable, debuggable and auditable before any br
 - [x] Add first-class `strategy_runs`, `strategy_decisions`, `strategy_data_snapshots`, `strategy_orders`, `strategy_metrics` and `strategy_notes` tables with migrations.
 - [ ] Add OpenTelemetry-compatible spans around market-data ingestion, feature calculation, risk policy, strategy decision, paper-order submission and reconciliation.
 - [ ] Add metric instruments for data freshness, tick latency, decision counts, blocked decisions, stale-data rate, paper fill ratio, spread/slippage estimates, drawdown and strategy errors.
+- [x] Add strategy decision trace API that reconstructs features, thresholds, risk checks and persisted market-data snapshots by `trace_id`.
 - [ ] Add decision trace explorer with filters by run, symbol, strategy version, decision, block reason, signal contribution and order outcome.
 - [ ] Add exportable experiment report with config, assumptions, data coverage, metrics, charts, notable decisions and reason-coded failures.
 - [ ] Add immutable audit trail for run approvals, pauses, config changes, strategy code version changes and kill-switch activations.
@@ -438,14 +440,15 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 6. [x] Add crypto historical bars and explicit latest-snapshot ingestion with persisted snapshots and freshness metadata.
 7. [x] Build deterministic backtest and walk-forward harness with buy-and-hold and cash baselines.
 8. [x] Implement the first three low-complexity strategies: time-sliced accumulation, moving-average trend and mean reversion.
-9. Add shadow-run scheduler, decision receipts and trace explorer before enabling paper-order automation.
-10. Add run-level paper strategy approval, risk caps, pause/kill controls and one bounded crypto paper-order runner.
-11. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
-12. Add filing-section evidence and accession-linked historical financial trends through the official SEC APIs.
-13. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI, preceded by a canonical evidence/dedupe format.
-14. Add comparable-company valuation and counter-thesis review.
-15. Add factor exposure, expected shortfall and portfolio risk contribution.
-16. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
+9. [x] Add explicit shadow-run creation/tick evaluation, decision receipts and trace API before enabling paper-order automation.
+10. Add recurring shadow-run scheduler and trace explorer UI.
+11. Add run-level paper strategy approval, risk caps, pause/kill controls and one bounded crypto paper-order runner.
+12. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
+13. Add filing-section evidence and accession-linked historical financial trends through the official SEC APIs.
+14. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI, preceded by a canonical evidence/dedupe format.
+15. Add comparable-company valuation and counter-thesis review.
+16. Add factor exposure, expected shortfall and portfolio risk contribution.
+17. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
 ## Capability and safety checklist for every new feature
 
