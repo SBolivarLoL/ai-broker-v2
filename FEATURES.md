@@ -72,3 +72,5 @@ This is the challenge's central explainability file. The product is an internal-
 7. Confirm a valid paper order and show its pending/fill lifecycle.
 8. Open the Strategy Lab, run a crypto backtest, tick a shadow run, and inspect the decision trace.
 9. Open the Decision Receipt and this objective map.
+
+For detailed Strategy Lab operating instructions, see `STRATEGY_LAB.md`.

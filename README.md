@@ -26,6 +26,7 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=TSLA bun run smoke:order
 ```
 
 See `FEATURES.md` for the objective map, safety model, and demo script.
+See `STRATEGY_LAB.md` for how to run crypto strategy backtests, shadow runs, ticks, traces, and receipts.
 See `VALIDATION.md` for the requirement-by-requirement completion evidence and production boundary.
 See `roadmap.md` for the Alpaca capability inventory and phased product roadmap.
 See `future-improvements.md` for measured, low-impact optimizations that are intentionally deferred.
