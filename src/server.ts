@@ -21,6 +21,7 @@ import { runCompanyResearch } from "./research";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
 import { createStore } from "./store";
+import { buyAndHoldStrategy, cashStrategy, runBacktest, walkForwardWindows, type BacktestStrategy } from "./strategy-backtest";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
@@ -255,6 +256,12 @@ async function capturePortfolioSnapshot() {
 
 const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
 
+function backtestStrategyFor(strategyId: string): BacktestStrategy {
+  if (strategyId === "cash") return cashStrategy;
+  if (strategyId === "buy-and-hold") return buyAndHoldStrategy;
+  throw new ClientError("strategyId must be cash or buy-and-hold until strategy plugins are enabled", 400);
+}
+
 async function pendingBrokerOrders(orders: any[], candidatePrices: Map<string, number>) {
   const working = orders.filter(order => workingStatuses.has(String(order.status)));
   const symbols = [...new Set(working.map(order => String(order.symbol)))];
@@ -448,6 +455,34 @@ Bun.serve({
         for (const record of result.records) store.strategyDataSnapshot({ ...record, runId });
         store.event("strategy.crypto.snapshots.ingested", actor, { runId, symbols, count: result.records.length, stale: result.records.filter(record => record.stale).length });
         return json({ runId, ...result });
+      }
+      if (url.pathname === "/api/strategy/backtests" && request.method === "POST") {
+        if (!allow(`${actor}:strategy-backtest`, 20)) return json({ error: "Strategy backtest rate limit exceeded" }, 429);
+        const input = await requestJson(request);
+        let symbols: string[], timeframe: string, days: number;
+        try {
+          symbols = parseCryptoSymbols(input.symbols, 1);
+          timeframe = parseCryptoTimeframe(input.timeframe);
+          days = parseCryptoLookbackDays(input.days);
+        } catch (error) {
+          throw new ClientError(error instanceof Error ? error.message : "Invalid backtest input", 400);
+        }
+        const strategyId = String(input.strategyId ?? "buy-and-hold");
+        const strategy = backtestStrategyFor(strategyId);
+        const initialCash = Number(input.initialCash ?? 10_000), feeBps = Number(input.feeBps ?? 0), slippageBps = Number(input.slippageBps ?? 5);
+        const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
+        const symbol = symbols[0]!;
+        const barsBySymbol = await alpaca.marketData.getCryptoBars({ loc: "us", symbols, timeframe, start, end, limit: 10_000 } as any);
+        const bars = barsBySymbol[symbol] ?? [];
+        const result = runBacktest({ strategyId, bars, strategy, initialCash, feeBps, slippageBps });
+        const baselines = {
+          cash: runBacktest({ strategyId: "cash", bars, strategy: cashStrategy, initialCash, feeBps, slippageBps }),
+          buyAndHold: runBacktest({ strategyId: "buy-and-hold", bars, strategy: buyAndHoldStrategy, initialCash, feeBps, slippageBps }),
+        };
+        const trainSize = Number(input.trainSize ?? 0), testSize = Number(input.testSize ?? 0);
+        const walkForward = trainSize && testSize ? walkForwardWindows(bars, trainSize, testSize).map(window => ({ trainStart: window.trainStart, testStart: window.testStart, trainBars: window.train.length, testBars: window.test.length })) : [];
+        store.event("strategy.backtest.completed", actor, { strategyId, symbol, timeframe, days, totalReturnPercent: result.totalReturnPercent, bars: bars.length });
+        return json({ source: "Alpaca crypto historical bars", symbol, timeframe, start: start.toISOString(), end: end.toISOString(), result, baselines, walkForward, asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/assets/search") {
         const query = url.searchParams.get("q")?.trim() ?? "";

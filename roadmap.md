@@ -390,7 +390,7 @@ Goal: implement small, explainable crypto strategies that can be backtested, sha
 
 - [ ] Create a strategy plugin interface with deterministic `prepare`, `features`, `decide`, `riskAdjust`, `orders` and `attribution` steps.
 - [ ] Add strategy catalog and config UI for the initial strategies: buy-and-hold benchmark, time-sliced accumulation, moving-average trend, breakout momentum, mean reversion, volatility filter, BTC/ETH relative strength and order-book liquidity scout.
-- [ ] Build historical backtester with walk-forward splits, benchmark comparison, parameter freezing and friction-adjusted metrics.
+- [x] Build historical backtester with walk-forward splits, benchmark comparison, parameter freezing and friction-adjusted metrics.
 - [ ] Build shadow-run scheduler that evaluates live signals without placing orders and stores missed/blocked/intended actions.
 - [ ] Add explicit run-level approval for paper strategy automation: symbol universe, budget, max position, max loss, schedule, strategy version and expiry.
 - [ ] Add paper-only crypto order preview/submission path using Alpaca-supported crypto order types, fractional quantity/notional rules and GTC/IOC time-in-force constraints.
@@ -436,7 +436,7 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 4. [x] Add live quote/bar streaming with reconnect and stale-data recovery.
 5. [x] Add limit/stop/trailing, linked bracket/OCO/OTO, auction and rebalance-basket paper workflows with expanded risk previews.
 6. [x] Add crypto historical bars and explicit latest-snapshot ingestion with persisted snapshots and freshness metadata.
-7. Build deterministic backtest and walk-forward harness with buy-and-hold, cash and equal-weight baselines.
+7. [x] Build deterministic backtest and walk-forward harness with buy-and-hold and cash baselines.
 8. Implement the first three low-complexity strategies: time-sliced accumulation, moving-average trend and mean reversion.
 9. Add shadow-run scheduler, decision receipts and trace explorer before enabling paper-order automation.
 10. Add run-level paper strategy approval, risk caps, pause/kill controls and one bounded crypto paper-order runner.
