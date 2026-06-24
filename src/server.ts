@@ -506,6 +506,13 @@ Bun.serve({
         store.event("strategy.run.created", actor, { runId, strategyId, symbols, mode: "shadow" });
         return json({ runId, ...store.getStrategyRun(runId) }, 201);
       }
+      const strategyRunDecisionMatch = url.pathname.match(/^\/api\/strategy\/runs\/([^/]+)\/decisions$/);
+      if (strategyRunDecisionMatch && request.method === "GET") {
+        const runId = decodeURIComponent(strategyRunDecisionMatch[1]!);
+        const run = store.getStrategyRun(runId);
+        if (!run) return json({ error: "Strategy run not found" }, 404);
+        return json({ runId, decisions: store.strategyDecisions(runId), asOf: new Date().toISOString() });
+      }
       const strategyRunTickMatch = url.pathname.match(/^\/api\/strategy\/runs\/([^/]+)\/tick$/);
       if (strategyRunTickMatch && request.method === "POST") {
         if (!allow(`${actor}:strategy-tick`, 30)) return json({ error: "Strategy tick rate limit exceeded" }, 429);

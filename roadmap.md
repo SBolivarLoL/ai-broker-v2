@@ -142,7 +142,7 @@ Alpaca distinguishes the Trading, Broker, Market Data and OAuth products in its 
 - **Options analyst:** evaluates payoff, Greeks, volatility and assignment scenarios without placing trades.
 - **Trade-review agent:** creates pre-trade and post-trade reviews, including thesis, invalidation, sizing and execution quality.
 - **Strategy analyst:** explains deterministic crypto strategy runs, compares experiment cohorts, identifies regime dependence, and flags overfitting without changing live parameters.
-- **Decision auditor:** answers "why did this strategy decide this?" from stored traces, features, weights, thresholds, risk checks, and paper-fill outcomes.
+- **Decision auditor:** answers "why did this strategy decide this?" from stored traces, features, weights, thresholds, risk checks, and paper-fill outcomes. Initial Strategy Lab UI exposes persisted crypto shadow runs, decision traces, features, thresholds, risk checks, data provenance and receipts.
 
 ### Agent tools to build
 
@@ -174,8 +174,8 @@ Strategy tools may start or pause only shadow runs until the paper strategy runn
 - Trade journal that compares the original thesis with subsequent evidence.
 - Counter-thesis agent that argues against every proposed trade.
 - Post-trade execution review using quote and fill data.
-- Crypto strategy lab with backtest, shadow run, paper run, cohort comparison and strategy-retirement workflows.
-- Decision trace explorer showing raw inputs, derived features, signal weights, risk gates, final action and subsequent paper-fill attribution.
+- Crypto strategy lab with backtest, shadow run, paper run, cohort comparison and strategy-retirement workflows. Initial UI now supports backtests, shadow-run creation and manual shadow ticks.
+- Decision trace explorer showing raw inputs, derived features, signal weights, risk gates, final action and subsequent paper-fill attribution. Initial UI now shows features, thresholds, risk checks, source/feed freshness and raw trace JSON for shadow decisions.
 - Personalized education that explains metrics without presenting certainty.
 
 ## Crypto strategy experiment model

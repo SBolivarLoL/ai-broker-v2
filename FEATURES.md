@@ -12,7 +12,8 @@ This is the challenge's central explainability file. The product is an internal-
 | 5. Portfolio intelligence | Reconciled ledger/snapshots, performance, VaR/expected shortfall, risk contribution, liquidity, benchmark diagnostics, option Greeks/stress and deterministic what-if simulation | Keeps risk math outside the model |
 | 6. Agentic AI | The agent selects among seven read-only Alpaca and risk tools, then stores a plan | Demonstrates bounded multi-tool agency without autonomous execution |
 | 7. Creativity | Decision Receipt links evidence, plan, risk checks, approval and Alpaca outcome | Makes every recommendation and order inspectable |
-| 8. Explainability | This file, evidence IDs, explicit guardrails and runnable checks | Shows how and why each feature works |
+| 8. Explainability | This file, evidence IDs, strategy trace explorer, explicit guardrails and runnable checks | Shows how and why each feature works |
+| 9. Crypto strategy observability | Strategy Lab backtests crypto strategies, creates shadow runs, records ticks, and displays decision traces with features, thresholds, risk checks and data provenance | Lets paper experiments run and be audited before automation |
 
 ## Data flow and boundaries
 
@@ -69,4 +70,5 @@ This is the challenge's central explainability file. The product is an internal-
 5. Draft the suggested trade and show deterministic what-if impact.
 6. Show an oversized or concentrated trade being blocked.
 7. Confirm a valid paper order and show its pending/fill lifecycle.
-8. Open the Decision Receipt and this objective map.
+8. Open the Strategy Lab, run a crypto backtest, tick a shadow run, and inspect the decision trace.
+9. Open the Decision Receipt and this objective map.
