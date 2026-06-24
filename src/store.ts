@@ -18,6 +18,64 @@ export type RiskReservation = {
 
 type ReservationCandidate = Pick<RiskReservation, "symbol" | "side" | "qty" | "price">;
 type ReservationValidation<T> = { allowed: boolean; value: T };
+export type StrategyRunStatus = "backtest" | "shadow" | "paper" | "paused" | "completed" | "retired" | "failed";
+export type StrategyDecisionKind = "hold" | "enter" | "increase" | "reduce" | "exit" | "pause" | "block";
+export type StrategyRunInput = {
+  id: string;
+  strategyId: string;
+  strategyVersion: string;
+  status: StrategyRunStatus;
+  configHash: string;
+  policyVersion: string;
+  symbols: string[];
+  budget: number;
+  config: unknown;
+  notes?: string | null;
+};
+export type StrategyDataSnapshotInput = {
+  id: string;
+  runId: string;
+  symbol: string;
+  source: string;
+  feed: string;
+  observedAt: string;
+  stale: boolean;
+  latencyMs: number | null;
+  payload: unknown;
+};
+export type StrategyDecisionInput = {
+  id: string;
+  traceId: string;
+  runId: string;
+  symbol: string;
+  decision: StrategyDecisionKind;
+  features: unknown;
+  weights: unknown;
+  thresholds: unknown;
+  riskChecks: unknown;
+  dataSnapshotIds: string[];
+  rawSignal: number | null;
+  riskAdjustedSignal: number | null;
+  targetPosition: number | null;
+  reason: string;
+  draftOrder?: unknown;
+  paperOrderId?: string | null;
+};
+export type StrategyOrderInput = {
+  id: string;
+  runId: string;
+  decisionId: string;
+  paperOrderId: string;
+  status: string;
+  payload: unknown;
+};
+export type StrategyMetricInput = {
+  runId: string;
+  name: string;
+  value: number;
+  unit: string;
+  asOf: string;
+};
 
 export function createStore(filename = "data/app.db") {
   if (filename !== ":memory:") mkdirSync("data", { recursive: true });
@@ -73,6 +131,82 @@ export function createStore(filename = "data/app.db") {
   )`);
   db.run("CREATE INDEX IF NOT EXISTS research_runs_created ON research_runs(created_at DESC)");
   db.run("CREATE TABLE IF NOT EXISTS portfolio_snapshots (snapshot_date TEXT PRIMARY KEY, payload TEXT NOT NULL)");
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_runs (
+    id TEXT PRIMARY KEY,
+    strategy_id TEXT NOT NULL,
+    strategy_version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('backtest', 'shadow', 'paper', 'paused', 'completed', 'retired', 'failed')),
+    config_hash TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    symbols TEXT NOT NULL,
+    budget REAL NOT NULL CHECK(budget >= 0),
+    config TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS strategy_runs_status ON strategy_runs(status, created_at DESC)");
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_data_snapshots (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    source TEXT NOT NULL,
+    feed TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    stale INTEGER NOT NULL CHECK(stale IN (0, 1)),
+    latency_ms REAL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS strategy_data_snapshots_run ON strategy_data_snapshots(run_id, observed_at DESC)");
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_decisions (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    symbol TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('hold', 'enter', 'increase', 'reduce', 'exit', 'pause', 'block')),
+    features TEXT NOT NULL,
+    weights TEXT NOT NULL,
+    thresholds TEXT NOT NULL,
+    risk_checks TEXT NOT NULL,
+    data_snapshot_ids TEXT NOT NULL,
+    raw_signal REAL,
+    risk_adjusted_signal REAL,
+    target_position REAL,
+    reason TEXT NOT NULL,
+    draft_order TEXT,
+    paper_order_id TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS strategy_decisions_run ON strategy_decisions(run_id, created_at DESC)");
+  db.run("CREATE INDEX IF NOT EXISTS strategy_decisions_trace ON strategy_decisions(trace_id)");
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_orders (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    decision_id TEXT NOT NULL REFERENCES strategy_decisions(id) ON DELETE CASCADE,
+    paper_order_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS strategy_orders_run ON strategy_orders(run_id, created_at DESC)");
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_metrics (
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    as_of TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (run_id, name, as_of)
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_notes (
+    id INTEGER PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    actor TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
   const snapshotColumns = db.query("PRAGMA table_info(portfolio_snapshots)").all() as { name: string }[];
   if (snapshotColumns.some(column => column.name === "captured_at")) db.transaction(() => {
     db.run("ALTER TABLE portfolio_snapshots RENAME TO portfolio_snapshots_legacy");
@@ -219,6 +353,84 @@ export function createStore(filename = "data/app.db") {
     portfolioSnapshots(limit = 90) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 366) throw new Error("Snapshot limit is out of range");
       return (db.query("SELECT payload FROM portfolio_snapshots ORDER BY snapshot_date DESC LIMIT ?").all(limit) as { payload: string }[]).map(row => JSON.parse(row.payload));
+    },
+    createStrategyRun(input: StrategyRunInput) {
+      if (!input.id || !input.strategyId || !input.strategyVersion || !input.configHash || !input.policyVersion || !input.symbols.length || input.symbols.some(symbol => !/^[A-Z0-9/.-]{2,20}$/.test(symbol)) || !Number.isFinite(input.budget) || input.budget < 0) throw new Error("Invalid strategy run");
+      db.query(`INSERT INTO strategy_runs (id, strategy_id, strategy_version, status, config_hash, policy_version, symbols, budget, config, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(input.id, input.strategyId, input.strategyVersion, input.status, input.configHash, input.policyVersion, JSON.stringify(input.symbols), input.budget, JSON.stringify(input.config), input.notes ?? null);
+    },
+    updateStrategyRunStatus(id: string, status: StrategyRunStatus, notes?: string | null) {
+      return db.query("UPDATE strategy_runs SET status = ?, notes = COALESCE(?, notes), updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(status, notes ?? null, id).changes === 1;
+    },
+    getStrategyRun(id: string) {
+      const row = db.query("SELECT id, strategy_id AS strategyId, strategy_version AS strategyVersion, status, config_hash AS configHash, policy_version AS policyVersion, symbols, budget, config, notes, created_at AS createdAt, updated_at AS updatedAt FROM strategy_runs WHERE id = ?").get(id) as any;
+      return row ? { ...row, symbols: JSON.parse(row.symbols), config: JSON.parse(row.config) } : null;
+    },
+    strategyRuns(limit = 20) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Strategy run limit is out of range");
+      return (db.query("SELECT id, strategy_id AS strategyId, strategy_version AS strategyVersion, status, config_hash AS configHash, policy_version AS policyVersion, symbols, budget, config, notes, created_at AS createdAt, updated_at AS updatedAt FROM strategy_runs ORDER BY created_at DESC LIMIT ?").all(limit) as any[])
+        .map(row => ({ ...row, symbols: JSON.parse(row.symbols), config: JSON.parse(row.config) }));
+    },
+    strategyDataSnapshot(input: StrategyDataSnapshotInput) {
+      if (!input.id || !input.runId || !input.symbol || !input.source || !input.feed || !input.observedAt || (input.latencyMs !== null && (!Number.isFinite(input.latencyMs) || input.latencyMs < 0))) throw new Error("Invalid strategy data snapshot");
+      db.query(`INSERT INTO strategy_data_snapshots (id, run_id, symbol, source, feed, observed_at, stale, latency_ms, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(input.id, input.runId, input.symbol, input.source, input.feed, input.observedAt, input.stale ? 1 : 0, input.latencyMs, JSON.stringify(input.payload));
+    },
+    strategyDecision(input: StrategyDecisionInput) {
+      if (!input.id || !input.traceId || !input.runId || !input.symbol || !input.reason) throw new Error("Invalid strategy decision");
+      db.query(`INSERT INTO strategy_decisions (id, trace_id, run_id, symbol, decision, features, weights, thresholds, risk_checks, data_snapshot_ids, raw_signal, risk_adjusted_signal, target_position, reason, draft_order, paper_order_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(input.id, input.traceId, input.runId, input.symbol, input.decision, JSON.stringify(input.features), JSON.stringify(input.weights), JSON.stringify(input.thresholds), JSON.stringify(input.riskChecks), JSON.stringify(input.dataSnapshotIds), input.rawSignal, input.riskAdjustedSignal, input.targetPosition, input.reason, input.draftOrder === undefined ? null : JSON.stringify(input.draftOrder), input.paperOrderId ?? null);
+    },
+    strategyDecisions(runId: string, limit = 50) {
+      if (!runId || !Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Strategy decision query is out of range");
+      return (db.query(`SELECT id, trace_id AS traceId, run_id AS runId, symbol, decision, features, weights, thresholds, risk_checks AS riskChecks, data_snapshot_ids AS dataSnapshotIds,
+        raw_signal AS rawSignal, risk_adjusted_signal AS riskAdjustedSignal, target_position AS targetPosition, reason, draft_order AS draftOrder, paper_order_id AS paperOrderId, created_at AS createdAt
+        FROM strategy_decisions WHERE run_id = ? ORDER BY created_at DESC LIMIT ?`).all(runId, limit) as any[])
+        .map(row => ({ ...row, features: JSON.parse(row.features), weights: JSON.parse(row.weights), thresholds: JSON.parse(row.thresholds), riskChecks: JSON.parse(row.riskChecks), dataSnapshotIds: JSON.parse(row.dataSnapshotIds), draftOrder: row.draftOrder ? JSON.parse(row.draftOrder) : null }));
+    },
+    getStrategyDecisionTrace(traceId: string) {
+      const row = db.query(`SELECT id, trace_id AS traceId, run_id AS runId, symbol, decision, features, weights, thresholds, risk_checks AS riskChecks, data_snapshot_ids AS dataSnapshotIds,
+        raw_signal AS rawSignal, risk_adjusted_signal AS riskAdjustedSignal, target_position AS targetPosition, reason, draft_order AS draftOrder, paper_order_id AS paperOrderId, created_at AS createdAt
+        FROM strategy_decisions WHERE trace_id = ?`).get(traceId) as any;
+      if (!row) return null;
+      const dataSnapshotIds = JSON.parse(row.dataSnapshotIds) as string[];
+      const snapshots = dataSnapshotIds.length
+        ? db.query(`SELECT id, run_id AS runId, symbol, source, feed, observed_at AS observedAt, stale, latency_ms AS latencyMs, payload, created_at AS createdAt
+          FROM strategy_data_snapshots WHERE id IN (${dataSnapshotIds.map(() => "?").join(",")})`).all(...dataSnapshotIds) as any[]
+        : [];
+      return {
+        ...row,
+        features: JSON.parse(row.features),
+        weights: JSON.parse(row.weights),
+        thresholds: JSON.parse(row.thresholds),
+        riskChecks: JSON.parse(row.riskChecks),
+        dataSnapshotIds,
+        draftOrder: row.draftOrder ? JSON.parse(row.draftOrder) : null,
+        snapshots: snapshots.map(snapshot => ({ ...snapshot, stale: Boolean(snapshot.stale), payload: JSON.parse(snapshot.payload) })),
+      };
+    },
+    strategyOrder(input: StrategyOrderInput) {
+      if (!input.id || !input.runId || !input.decisionId || !input.paperOrderId || !input.status) throw new Error("Invalid strategy order");
+      db.query(`INSERT INTO strategy_orders (id, run_id, decision_id, paper_order_id, status, payload)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET status=excluded.status, payload=excluded.payload, updated_at=CURRENT_TIMESTAMP`)
+        .run(input.id, input.runId, input.decisionId, input.paperOrderId, input.status, JSON.stringify(input.payload));
+    },
+    strategyMetric(input: StrategyMetricInput) {
+      if (!input.runId || !input.name || !Number.isFinite(input.value) || !input.unit || !input.asOf) throw new Error("Invalid strategy metric");
+      db.query(`INSERT INTO strategy_metrics (run_id, name, value, unit, as_of) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, name, as_of) DO UPDATE SET value=excluded.value, unit=excluded.unit, created_at=CURRENT_TIMESTAMP`)
+        .run(input.runId, input.name, input.value, input.unit, input.asOf);
+    },
+    strategyMetrics(runId: string) {
+      return db.query("SELECT run_id AS runId, name, value, unit, as_of AS asOf, created_at AS createdAt FROM strategy_metrics WHERE run_id = ? ORDER BY as_of DESC, name").all(runId);
+    },
+    strategyNote(runId: string, actor: string, note: string) {
+      if (!runId || !actor || !note.trim()) throw new Error("Invalid strategy note");
+      db.query("INSERT INTO strategy_notes (run_id, actor, note) VALUES (?, ?, ?)").run(runId, actor, note.trim());
     },
     close() { db.close(); },
   };
