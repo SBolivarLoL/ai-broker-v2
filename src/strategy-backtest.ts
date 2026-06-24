@@ -76,6 +76,64 @@ export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; st
 export const cashStrategy: BacktestStrategy = () => ({ targetExposure: 0, reason: "cash baseline" });
 export const buyAndHoldStrategy: BacktestStrategy = (_history, index) => ({ targetExposure: 1, reason: index === 0 ? "enter buy-and-hold baseline" : "hold buy-and-hold baseline" });
 
+const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+const closesThrough = (history: BacktestBar[], index: number) => history.slice(0, index + 1).map(bar => Number(bar.close)).filter(value => Number.isFinite(value) && value > 0);
+const stdev = (values: number[]) => {
+  if (values.length < 2) return null;
+  const mean = average(values)!;
+  return Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1));
+};
+
+export function timeSlicedAccumulationStrategy(params: { slices?: number; maxExposure?: number } = {}): BacktestStrategy {
+  const slices = Math.max(1, Math.floor(params.slices ?? 10));
+  const maxExposure = clamp(params.maxExposure ?? 1);
+  return (_history, index) => {
+    const targetExposure = Math.min(maxExposure, (index + 1) / slices * maxExposure);
+    return { targetExposure, reason: targetExposure >= maxExposure ? "accumulation complete" : "scheduled accumulation", features: { slice: index + 1, slices } };
+  };
+}
+
+export function movingAverageTrendStrategy(params: { fast?: number; slow?: number; exposure?: number } = {}): BacktestStrategy {
+  const fast = Math.max(2, Math.floor(params.fast ?? 5));
+  const slow = Math.max(fast + 1, Math.floor(params.slow ?? 20));
+  const exposure = clamp(params.exposure ?? 1);
+  return (history, index) => {
+    const closes = closesThrough(history, index);
+    const fastAverage = closes.length >= fast ? average(closes.slice(-fast)) : null;
+    const slowAverage = closes.length >= slow ? average(closes.slice(-slow)) : null;
+    const riskOn = fastAverage !== null && slowAverage !== null && fastAverage > slowAverage;
+    return { targetExposure: riskOn ? exposure : 0, reason: riskOn ? "fast average above slow average" : "trend confirmation unavailable or bearish", features: { fastAverage, slowAverage } };
+  };
+}
+
+export function meanReversionStrategy(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): BacktestStrategy {
+  const lookback = Math.max(3, Math.floor(params.lookback ?? 20));
+  const entryZScore = Number.isFinite(params.entryZScore) ? params.entryZScore! : -2;
+  const exitZScore = Number.isFinite(params.exitZScore) ? params.exitZScore! : -0.25;
+  const exposure = clamp(params.exposure ?? 1);
+  let active = false;
+  return (history, index) => {
+    const closes = closesThrough(history, index);
+    const window = closes.slice(-lookback);
+    const mean = window.length >= lookback ? average(window) : null;
+    const deviation = window.length >= lookback ? stdev(window) : null;
+    const price = closes.at(-1) ?? null;
+    const zScore = mean !== null && deviation && price !== null ? (price - mean) / deviation : null;
+    if (zScore !== null && zScore <= entryZScore) active = true;
+    else if (zScore !== null && zScore >= exitZScore) active = false;
+    return { targetExposure: active ? exposure : 0, reason: active ? "mean reversion entry active" : "waiting for oversold setup", features: { price, mean, zScore } };
+  };
+}
+
+export function strategyFromId(strategyId: string, params: Record<string, unknown> = {}): BacktestStrategy {
+  if (strategyId === "cash") return cashStrategy;
+  if (strategyId === "buy-and-hold") return buyAndHoldStrategy;
+  if (strategyId === "time-sliced-accumulation") return timeSlicedAccumulationStrategy({ slices: Number(params.slices), maxExposure: Number(params.maxExposure ?? 1) });
+  if (strategyId === "moving-average-trend") return movingAverageTrendStrategy({ fast: Number(params.fast), slow: Number(params.slow), exposure: Number(params.exposure ?? 1) });
+  if (strategyId === "mean-reversion") return meanReversionStrategy({ lookback: Number(params.lookback), entryZScore: Number(params.entryZScore), exitZScore: Number(params.exitZScore), exposure: Number(params.exposure ?? 1) });
+  throw new Error("Unknown strategyId");
+}
+
 export function walkForwardWindows<T>(values: T[], trainSize: number, testSize: number) {
   if (!Number.isInteger(trainSize) || !Number.isInteger(testSize) || trainSize < 2 || testSize < 1) throw new Error("Invalid walk-forward window sizes");
   const windows: { train: T[]; test: T[]; trainStart: number; testStart: number }[] = [];

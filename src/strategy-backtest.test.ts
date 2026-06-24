@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buyAndHoldStrategy, cashStrategy, runBacktest, walkForwardWindows } from "./strategy-backtest";
+import { buyAndHoldStrategy, cashStrategy, meanReversionStrategy, movingAverageTrendStrategy, runBacktest, strategyFromId, timeSlicedAccumulationStrategy, walkForwardWindows } from "./strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -40,4 +40,33 @@ test("walk-forward windows split ordered samples without overlap inside a fold",
     { train: [2, 3, 4], test: [5], trainStart: 1, testStart: 4 },
     { train: [3, 4, 5], test: [6], trainStart: 2, testStart: 5 },
   ]);
+});
+
+test("time-sliced accumulation ramps exposure deterministically", () => {
+  const result = runBacktest({ strategyId: "time-sliced-accumulation", bars, strategy: timeSlicedAccumulationStrategy({ slices: 4 }), initialCash: 1000, slippageBps: 0 });
+  expect(result.points.map(point => point.targetExposure)).toEqual([0.25, 0.5, 0.75, 1]);
+  expect(result.points[0]?.reason).toBe("scheduled accumulation");
+});
+
+test("moving-average trend waits for confirmation then follows the trend", () => {
+  const trendBars = [1, 2, 3, 4, 5, 6].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const strategy = movingAverageTrendStrategy({ fast: 2, slow: 3 });
+  const decisions = trendBars.map((_, index) => strategy(trendBars, index));
+  expect(decisions.slice(0, 2).map(decision => decision.targetExposure)).toEqual([0, 0]);
+  expect(decisions.at(-1)).toMatchObject({ targetExposure: 1, reason: "fast average above slow average" });
+});
+
+test("mean reversion enters on oversold z-score and exits near mean", () => {
+  const reversionBars = [100, 100, 100, 90, 100].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const strategy = meanReversionStrategy({ lookback: 3, entryZScore: -1, exitZScore: -0.1 });
+  const decisions = reversionBars.map((_, index) => strategy(reversionBars, index));
+  expect(decisions[3]?.targetExposure).toBe(1);
+  expect(decisions[4]?.targetExposure).toBe(0);
+});
+
+test("strategy factory exposes the initial crypto strategy catalog", () => {
+  expect(strategyFromId("time-sliced-accumulation", { slices: 2 })(bars, 0).targetExposure).toBe(0.5);
+  expect(typeof strategyFromId("moving-average-trend", { fast: 2, slow: 3 })).toBe("function");
+  expect(typeof strategyFromId("mean-reversion", { lookback: 3 })).toBe("function");
+  expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
 });

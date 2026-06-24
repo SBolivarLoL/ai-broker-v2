@@ -21,7 +21,7 @@ import { runCompanyResearch } from "./research";
 import { actorFor, rateLimiter, securityReady, validMutationOrigin } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
 import { createStore } from "./store";
-import { buyAndHoldStrategy, cashStrategy, runBacktest, walkForwardWindows, type BacktestStrategy } from "./strategy-backtest";
+import { buyAndHoldStrategy, cashStrategy, runBacktest, strategyFromId, walkForwardWindows } from "./strategy-backtest";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
@@ -256,12 +256,6 @@ async function capturePortfolioSnapshot() {
 
 const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
 
-function backtestStrategyFor(strategyId: string): BacktestStrategy {
-  if (strategyId === "cash") return cashStrategy;
-  if (strategyId === "buy-and-hold") return buyAndHoldStrategy;
-  throw new ClientError("strategyId must be cash or buy-and-hold until strategy plugins are enabled", 400);
-}
-
 async function pendingBrokerOrders(orders: any[], candidatePrices: Map<string, number>) {
   const working = orders.filter(order => workingStatuses.has(String(order.status)));
   const symbols = [...new Set(working.map(order => String(order.symbol)))];
@@ -468,7 +462,9 @@ Bun.serve({
           throw new ClientError(error instanceof Error ? error.message : "Invalid backtest input", 400);
         }
         const strategyId = String(input.strategyId ?? "buy-and-hold");
-        const strategy = backtestStrategyFor(strategyId);
+        let strategy;
+        try { strategy = strategyFromId(strategyId, input.params ?? {}); }
+        catch { throw new ClientError("strategyId must be cash, buy-and-hold, time-sliced-accumulation, moving-average-trend, or mean-reversion", 400); }
         const initialCash = Number(input.initialCash ?? 10_000), feeBps = Number(input.feeBps ?? 0), slippageBps = Number(input.slippageBps ?? 5);
         const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
         const symbol = symbols[0]!;
