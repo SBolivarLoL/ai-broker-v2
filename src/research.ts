@@ -10,6 +10,7 @@ import { getOpenFigiIdentity } from "./openfigi";
 import { historicalRisk } from "./risk";
 import { SecEdgarClient, secUserAgentFromEnv, type SecFacts } from "./sec-edgar";
 import { buildSecFinancialTrends } from "./sec-financial-trends";
+import { buildValuationScenarioMemo, ValuationScenarioInput } from "./valuation-scenario";
 
 const SymbolSchema = z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/);
 const CitedClaim = z.object({ text: z.string().min(1).max(500), evidence: z.array(z.string().min(1)).min(1).max(4) });
@@ -167,6 +168,18 @@ export async function getComparableValuations(alpaca: Alpaca, rawSubject: string
     else warnings.push(`${symbol} valuation inputs are unavailable: ${result.reason instanceof Error ? result.reason.message : "provider request failed"}`);
   });
   return comparableValuationTable(subject, peers, results, warnings);
+}
+
+export async function getValuationScenarios(alpaca: Alpaca, rawSymbol: string, assumptions: unknown) {
+  const symbol = SymbolSchema.parse(rawSymbol);
+  const parsedAssumptions = ValuationScenarioInput.safeParse(assumptions);
+  if (!parsedAssumptions.success) throw new Error(parsedAssumptions.error.issues[0]?.message ?? "Scenario assumptions are invalid");
+  const sec = secEdgarClient();
+  const [company, price] = await Promise.all([sec.company(symbol), alpaca.marketData.getLatestPrice(symbol)]);
+  if (typeof price !== "number") throw new Error("Current market price is unavailable");
+  const facts = await sec.companyFacts(company);
+  const result = buildComparableValuationRow(company, facts, price, new Date().toISOString(), true);
+  return buildValuationScenarioMemo(result.row, result.sources, parsedAssumptions.data);
 }
 
 export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runId = crypto.randomUUID()) {

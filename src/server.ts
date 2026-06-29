@@ -26,7 +26,7 @@ import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
-import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, runCompanyResearch } from "./research";
+import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, getValuationScenarios, runCompanyResearch } from "./research";
 import { secUserAgentFromEnv } from "./sec-edgar";
 import { authContextFor, authorize, rateLimiter, securityReady, validMutationOrigin, type AuthContext } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
@@ -1638,6 +1638,12 @@ Bun.serve({
         const peers = String(url.searchParams.get("peers") ?? "");
         try { return json(await getComparableValuations(alpaca, symbol, peers)); }
         catch (error) { return json({ error: error instanceof Error ? error.message : "Invalid comparable valuation request" }, 400); }
+      }
+      if (url.pathname === "/api/research/scenarios" && request.method === "POST") {
+        if (!allow(`${actor}:scenario-research`, 12)) return json({ error: "Scenario valuation rate limit exceeded" }, 429);
+        const input = await requestJson(request);
+        try { return json(await getValuationScenarios(alpaca, String(input.symbol ?? ""), input.scenarios)); }
+        catch (error) { return json({ error: error instanceof Error ? error.message : "Invalid scenario valuation request" }, 400); }
       }
       if (url.pathname === "/api/research/runs" && request.method === "POST") {
         if (!allow(`${actor}:research`, 6)) return json({ error: "Research agent rate limit exceeded" }, 429);

@@ -333,7 +333,7 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
 - [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
 - [x] Natural-language portfolio Q&A backed only by typed tools.
-- [ ] Bull/base/bear valuation and scenario memos.
+- [x] Bull/base/bear valuation and scenario memos.
 - [ ] Counter-thesis/risk-agent review before actionable suggestions.
 - [ ] Trade journal with thesis drift and post-trade review.
 - [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
@@ -373,6 +373,12 @@ Portfolio Q&A contract:
 - Questions are bounded to 3-500 characters and run through a dedicated read-only agent with typed portfolio, deterministic risk, price, daily-bar, licensed-news, asset/market-status and open-order tools. It has no simulation, preview, order, cancellation or credential tool.
 - Every answer is a bounded list of claims, and every claim must cite evidence IDs returned during that exact run. Invented IDs, unsafe certainty language and malformed output trip the output guardrail.
 - Tool results are the only permitted data source. Missing coverage is returned as an explicit limitation; question text and news are treated as untrusted data and cannot expand tool or execution authority.
+
+Scenario valuation contract:
+
+- Bear, base and bull cases use a fixed 12-month horizon and user-entered revenue-growth, net-margin and P/E assumptions ordered from low to high. The application does not infer assumptions, probabilities or company guidance.
+- Mechanical implied prices use directly reported annual SEC revenue, latest SEC shares outstanding and the current Alpaca IEX price. Each memo cites those inputs plus separate derived scenario evidence and exposes every formula.
+- Missing or non-positive revenue/shares and non-positive projected earnings stay unavailable. Outputs explicitly warn about dilution/share-class limits and remain scenarios rather than forecasts or recommendations.
 
 GDELT media-signal contract:
 
