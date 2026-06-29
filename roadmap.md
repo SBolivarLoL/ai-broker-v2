@@ -335,7 +335,7 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Natural-language portfolio Q&A backed only by typed tools.
 - [x] Bull/base/bear valuation and scenario memos.
 - [x] Counter-thesis/risk-agent review before actionable suggestions.
-- [ ] Trade journal with thesis drift and post-trade review.
+- [x] Trade journal with thesis drift and post-trade review.
 - [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
 
 Canonical evidence contract:
@@ -385,6 +385,12 @@ Counter-thesis review contract:
 - Every Guided Rebalance proposal is challenged by a second agent with an independent set of typed read-only tools. It must inspect current portfolio and deterministic risk evidence; approving a trade also requires current symbol-specific price, bars, news or asset-status evidence.
 - Review output preserves the exact proposed symbol/action, cites only evidence retrieved during the review run, and states a counter-thesis plus failure condition. Invalid or ungrounded review output fails the entire plan closed.
 - Buy/reduce ideas marked caution or block are downgraded to watch with zero quantity and no simulation authority. Only approved ideas expose a draft, and the stored plan can bind only an exact quantity, side and symbol on a simple DAY market ticket before fresh preview/submission checks.
+
+Trade-journal contract:
+
+- Journal entries can be created only from a persisted standard stock-order receipt. Symbol, side, quantity, order ID and the signed preview reference price are copied from that receipt; reviewed agent-plan thesis and invalidation text are suggestions that remain editable before creation.
+- Thesis status is explicitly classified by the human reviewer as intact, drifting, invalidated or closed. A review captures a fresh Alpaca price, current position context when available, linked receipt status and price movement from the preview reference without inferring thesis validity from price alone.
+- Original thesis text is immutable, closed entries are terminal, prior reviews remain visible, and entry creation plus every review append to the hash-chained decision audit log. The UI states that preview reference price is not execution fill evidence and flags incomplete order or position context.
 
 GDELT media-signal contract:
 

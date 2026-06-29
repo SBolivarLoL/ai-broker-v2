@@ -43,6 +43,7 @@ import { buildStrategyExperimentReport } from "./strategy-report";
 import { parseStrategyReview, withStrategyReviewConfig } from "./strategy-review";
 import { normalizeStrategySchedule, parseStrategyIntervalMinutes, strategyRunIsDue, withNextStrategySchedule } from "./strategy-scheduler";
 import { buildStrategyDecisionMetrics, buildStrategyErrorMetric, buildStrategySpan } from "./strategy-observability";
+import { appendTradeJournalReview, createTradeJournalEntry, journalCandidateFromReceipt, TradeJournalCreateInput, TradeJournalReviewInput } from "./trade-journal";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
@@ -96,6 +97,7 @@ function authorizeRoute(auth: AuthContext, path: string, method: string) {
   if (method === "GET") return true;
   if (path.startsWith("/api/orders") || path.startsWith("/api/options") || path.startsWith("/api/strategy/crypto/orders") || path.includes("/paper-approval") || path.endsWith("/tick") || path.endsWith("/scheduler/tick")) return authorize(auth, ["trader", "admin"]);
   if (path.startsWith("/api/agent") || path.startsWith("/api/research")) return authorize(auth, ["researcher", "admin"]);
+  if (path.startsWith("/api/trade-journal")) return authorize(auth, ["researcher", "trader", "admin"]);
   if (path.startsWith("/api/watchlists") || path.startsWith("/api/strategy")) return authorize(auth, ["operator", "trader", "admin"]);
   return true;
 }
@@ -1601,6 +1603,59 @@ Bun.serve({
       if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
         const plan = store.getPlan(url.pathname.split("/").pop() ?? "");
         return plan ? json(plan) : json({ error: "Plan not found" }, 404);
+      }
+      if (url.pathname === "/api/trade-journal" && request.method === "GET") {
+        const entries = store.tradeJournalEntries();
+        const journaledReceipts = new Set(entries.map(entry => entry.receiptId));
+        const eligibleReceipts = store.receipts(100)
+          .map(receipt => journalCandidateFromReceipt(receipt.id, receipt))
+          .filter(candidate => candidate !== null && !journaledReceipts.has(candidate.receiptId));
+        return json({ entries, eligibleReceipts, asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/trade-journal" && request.method === "POST") {
+        if (!allow(`${actor}:trade-journal-create`, 30)) return json({ error: "Trade journal rate limit exceeded" }, 429);
+        const parsed = TradeJournalCreateInput.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: "Receipt, thesis, and invalidation are required" }, 400);
+        if (store.tradeJournalEntryForReceipt(parsed.data.receiptId)) return json({ error: "This receipt already has a journal entry" }, 409);
+        const receipt = store.getReceipt(parsed.data.receiptId);
+        if (!receipt) return json({ error: "Receipt not found" }, 404);
+        const candidate = journalCandidateFromReceipt(parsed.data.receiptId, receipt);
+        if (!candidate) return json({ error: "Only standard stock-order receipts can start a trade journal entry" }, 400);
+        const entry = createTradeJournalEntry(candidate, parsed.data, actor);
+        store.addTradeJournalEntry(entry, actor);
+        store.event("trade_journal.created", actor, { journalId: entry.id, receiptId: entry.receiptId, orderId: entry.orderId, symbol: entry.symbol, side: entry.side });
+        return json({ entry }, 201);
+      }
+      const tradeJournalReviewMatch = url.pathname.match(/^\/api\/trade-journal\/([^/]+)\/reviews$/);
+      if (tradeJournalReviewMatch && request.method === "POST") {
+        if (!allow(`${actor}:trade-journal-review`, 60)) return json({ error: "Trade journal review rate limit exceeded" }, 429);
+        const journalId = decodeURIComponent(tradeJournalReviewMatch[1]!);
+        const current = store.getTradeJournalEntry(journalId);
+        if (!current) return json({ error: "Trade journal entry not found" }, 404);
+        const parsed = TradeJournalReviewInput.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: "A thesis status and review note are required" }, 400);
+        if (current.status === "closed") return json({ error: "Closed journal entries cannot be reviewed again" }, 409);
+        const [currentPrice, positions] = await Promise.all([
+          alpaca.marketData.getLatestPrice(current.symbol),
+          alpaca.trading.positions.getAllOpenPositions(),
+        ]);
+        if (typeof currentPrice !== "number" || !Number.isFinite(currentPrice) || currentPrice <= 0) return json({ error: "No valid current price is available for this review" }, 502);
+        const rawPosition = positions.find(position => position.symbol === current.symbol);
+        const numberOrNull = (value: unknown) => { const number = Number(value); return Number.isFinite(number) ? number : null; };
+        const position = rawPosition ? {
+          qty: numberOrNull(rawPosition.qty),
+          averageEntryPrice: numberOrNull(rawPosition.avgEntryPrice),
+          currentPrice: numberOrNull(rawPosition.currentPrice),
+          marketValue: numberOrNull(rawPosition.marketValue),
+          unrealizedProfitLoss: numberOrNull(rawPosition.unrealizedPl),
+          unrealizedReturnPercent: numberOrNull(rawPosition.unrealizedPlpc) === null ? null : numberOrNull(rawPosition.unrealizedPlpc)! * 100,
+        } : null;
+        const receipt = store.getReceipt(current.receiptId);
+        const observedAt = new Date().toISOString();
+        const entry = appendTradeJournalReview(current, parsed.data, { currentPrice, observedAt, receiptStatus: String(receipt?.status ?? "unknown"), position }, actor, observedAt);
+        store.updateTradeJournalEntry(entry, actor);
+        store.event("trade_journal.reviewed", actor, { journalId: entry.id, receiptId: entry.receiptId, symbol: entry.symbol, status: entry.status, reviewId: entry.reviews.at(-1)!.id });
+        return json({ entry });
       }
       if (url.pathname === "/api/research/sec" && request.method === "GET") {
         if (!allow(`${actor}:sec-research`, 30)) return json({ error: "SEC research rate limit exceeded" }, 429);

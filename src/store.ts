@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import type { LedgerActivity, LedgerCategory } from "./ledger";
 import { DEFAULT_OPERATIONS_POLICY, parseOperationsPolicy, type OperationsPolicy } from "./operations-policy";
 import { EncryptedSecret, SecretName, secretMetadata } from "./secret-vault";
+import { TradeJournalEntry } from "./trade-journal";
 
 export type RiskReservationStatus = "reserved" | "submitted" | "filled" | "canceled" | "rejected" | "released";
 export type RiskReservation = {
@@ -124,6 +125,7 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
   { id: "0008", name: "decision receipt audit log", checksum: "sha256:decision-audit-v1" },
   { id: "0009", name: "operational readiness exports", checksum: "sha256:operational-readiness-v1" },
   { id: "0010", name: "encrypted secret vault", checksum: "sha256:encrypted-secret-vault-v1" },
+  { id: "0011", name: "receipt linked trade journal", checksum: "sha256:trade-journal-v1" },
 ];
 
 function mapStrategyDecisionRow(row: any) {
@@ -220,6 +222,14 @@ export function createStore(filename = "data/app.db") {
   db.run("CREATE TABLE IF NOT EXISTS submissions (idempotency_key TEXT PRIMARY KEY, order_id TEXT, response TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
   db.run("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
   db.run("CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, intent TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  db.run(`CREATE TABLE IF NOT EXISTS trade_journal_entries (
+    id TEXT PRIMARY KEY,
+    receipt_id TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS trade_journal_updated ON trade_journal_entries(updated_at DESC)");
   db.run(`CREATE TABLE IF NOT EXISTS operations_policy (
     id TEXT PRIMARY KEY CHECK(id = 'global'),
     payload TEXT NOT NULL,
@@ -587,6 +597,35 @@ export function createStore(filename = "data/app.db") {
     getPlan(id: string) {
       const row = db.query("SELECT intent, payload, created_at FROM plans WHERE id = ?").get(id) as { intent: string; payload: string; created_at: string } | null;
       return row ? { id, intent: row.intent, createdAt: row.created_at, ...JSON.parse(row.payload) } : null;
+    },
+    addTradeJournalEntry(value: TradeJournalEntry, actor: string) {
+      const entry = TradeJournalEntry.parse(value);
+      if (!actor) throw new Error("Trade journal actor is required");
+      db.query("INSERT INTO trade_journal_entries (id, receipt_id, payload, updated_at) VALUES (?, ?, ?, ?)").run(entry.id, entry.receiptId, JSON.stringify(entry), entry.updatedAt);
+      decisionAudit({ subjectId: entry.id, kind: "trade_journal.created", actor, payload: entry });
+      return entry;
+    },
+    getTradeJournalEntry(id: string) {
+      const row = db.query("SELECT payload FROM trade_journal_entries WHERE id = ?").get(id) as { payload: string } | null;
+      return row ? TradeJournalEntry.parse(JSON.parse(row.payload)) : null;
+    },
+    tradeJournalEntryForReceipt(receiptId: string) {
+      const row = db.query("SELECT payload FROM trade_journal_entries WHERE receipt_id = ?").get(receiptId) as { payload: string } | null;
+      return row ? TradeJournalEntry.parse(JSON.parse(row.payload)) : null;
+    },
+    tradeJournalEntries(limit = 100) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Trade journal limit is out of range");
+      return (db.query("SELECT payload FROM trade_journal_entries ORDER BY updated_at DESC LIMIT ?").all(limit) as { payload: string }[])
+        .map(row => TradeJournalEntry.parse(JSON.parse(row.payload)));
+    },
+    updateTradeJournalEntry(value: TradeJournalEntry, actor: string) {
+      const entry = TradeJournalEntry.parse(value);
+      const review = entry.reviews.at(-1);
+      if (!actor || !review) throw new Error("Trade journal review is required");
+      const changed = db.query("UPDATE trade_journal_entries SET payload = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(entry), entry.updatedAt, entry.id).changes;
+      if (changed !== 1) throw new Error("Trade journal entry not found");
+      decisionAudit({ subjectId: entry.id, kind: "trade_journal.reviewed", actor, payload: review });
+      return entry;
     },
     syncActivities(activities: LedgerActivity[]) { return syncActivitiesTransaction.immediate(activities); },
     activities(limit = 100, category?: LedgerCategory) {
