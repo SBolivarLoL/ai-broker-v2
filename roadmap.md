@@ -333,9 +333,9 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
 - [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
 - [x] Natural-language portfolio Q&A backed only by typed tools.
-- [ ] Bull/base/bear valuation and scenario memos.
-- [ ] Counter-thesis/risk-agent review before actionable suggestions.
-- [ ] Trade journal with thesis drift and post-trade review.
+- [x] Bull/base/bear valuation and scenario memos.
+- [x] Counter-thesis/risk-agent review before actionable suggestions.
+- [x] Trade journal with thesis drift and post-trade review.
 - [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
 
 Canonical evidence contract:
@@ -374,6 +374,24 @@ Portfolio Q&A contract:
 - Every answer is a bounded list of claims, and every claim must cite evidence IDs returned during that exact run. Invented IDs, unsafe certainty language and malformed output trip the output guardrail.
 - Tool results are the only permitted data source. Missing coverage is returned as an explicit limitation; question text and news are treated as untrusted data and cannot expand tool or execution authority.
 
+Scenario valuation contract:
+
+- Bear, base and bull cases use a fixed 12-month horizon and user-entered revenue-growth, net-margin and P/E assumptions ordered from low to high. The application does not infer assumptions, probabilities or company guidance.
+- Mechanical implied prices use directly reported annual SEC revenue, latest SEC shares outstanding and the current Alpaca IEX price. Each memo cites those inputs plus separate derived scenario evidence and exposes every formula.
+- Missing or non-positive revenue/shares and non-positive projected earnings stay unavailable. Outputs explicitly warn about dilution/share-class limits and remain scenarios rather than forecasts or recommendations.
+
+Counter-thesis review contract:
+
+- Every Guided Rebalance proposal is challenged by a second agent with an independent set of typed read-only tools. It must inspect current portfolio and deterministic risk evidence; approving a trade also requires current symbol-specific price, bars, news or asset-status evidence.
+- Review output preserves the exact proposed symbol/action, cites only evidence retrieved during the review run, and states a counter-thesis plus failure condition. Invalid or ungrounded review output fails the entire plan closed.
+- Buy/reduce ideas marked caution or block are downgraded to watch with zero quantity and no simulation authority. Only approved ideas expose a draft, and the stored plan can bind only an exact quantity, side and symbol on a simple DAY market ticket before fresh preview/submission checks.
+
+Trade-journal contract:
+
+- Journal entries can be created only from a persisted standard stock-order receipt. Symbol, side, quantity, order ID and the signed preview reference price are copied from that receipt; reviewed agent-plan thesis and invalidation text are suggestions that remain editable before creation.
+- Thesis status is explicitly classified by the human reviewer as intact, drifting, invalidated or closed. A review captures a fresh Alpaca price, current position context when available, linked receipt status and price movement from the preview reference without inferring thesis validity from price alone.
+- Original thesis text is immutable, closed entries are terminal, prior reviews remain visible, and entry creation plus every review append to the hash-chained decision audit log. The UI states that preview reference price is not execution fill evidence and flags incomplete order or position context.
+
 GDELT media-signal contract:
 
 - Company Research uses one exact company-name DOC 2.0 ArticleList query over a three-day window, bounded to 10 newest results. It does not fan out portfolio-wide queries against the rate-limited interactive API.
@@ -388,14 +406,43 @@ Exit gate: agents consistently cite retrieved evidence, abstain when data is mis
 Goal: progress from descriptive risk to decision-grade portfolio construction.
 
 - [x] Historical and parametric 95% daily VaR plus historical expected shortfall.
-- [ ] Factor, sector, industry and asset-class exposure.
+- [x] Factor, sector, industry and asset-class exposure.
 - [x] Correlation matrix calculations and covariance-based portfolio risk contribution.
 - [x] Liquidity risk using live IEX spread, average daily volume and estimated days at 10% ADV.
-- [ ] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
+- [x] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
 - [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
-- [ ] Rebalancing with taxes/fees/turnover constraints where data permits.
-- [ ] Mean-variance and risk-parity proposals with robust constraints.
+- [x] Rebalancing with taxes/fees/turnover constraints where data permits.
+- [x] Mean-variance and risk-parity proposals with robust constraints.
 - [ ] Policy editor for position, sector, drawdown and turnover limits.
+
+Portfolio-exposure contract:
+
+- Asset-class exposure uses Alpaca's position `asset_class` plus account cash. Gross and signed net exposure are measured against current account equity.
+- Sector and industry exposure uses each issuer's official SEC submissions SIC code: the broad SIC division is the sector and the SEC SIC description is the industry. These labels are explicitly not presented as GICS or ICB classifications.
+- Market beta is calculated against SPY from date-aligned daily returns with at least 20 observations. Momentum is the close-to-close return over 63 sessions. Volatility is the sample deviation of the latest 20 daily returns annualized with 252 sessions.
+- Factor contributions use signed position market value divided by account equity. Coverage uses gross invested market value, excludes cash, and reports unavailable history rather than imputing a value. Missing SIC classifications remain visibly unclassified.
+
+Portfolio-scenario contract:
+
+- The rate scenario applies an explicit illustrative return shock for every broad SEC SIC division under a parallel 200-basis-point rate increase. The technology scenario applies -25% to SIC ranges 3570-3579, 3660-3679, 4810-4899 and 7370-7379, and -8% to other classified US equities.
+- The volatility scenario applies a one-day three-sigma downside from each position's annualized 20-session realized volatility, capped at -35%. Missing volatility or classification leaves that position uncovered and contributing zero, with gross invested coverage reported.
+- Scenario P&L uses signed current market value, so shorts respond in the opposite direction; cash remains unchanged. The output retains every position shock, rationale, estimated P&L, assumptions, resulting equity and explicit linear-model limitations.
+- Custom scenarios accept 1-20 unique held symbols with shocks bounded from -100% to +100%. Unknown or duplicate symbols fail validation instead of creating synthetic exposure.
+
+Constrained rebalance contract:
+
+- `POST /api/portfolio/rebalance-plan` is read-only. It accepts 1-10 unique US-equity target weights whose listed weights total no more than 100%, leaves omitted positions unchanged and treats zero-weight targets as reduce-to-zero requests. It returns projected position weights, planned legs, cash impact, turnover, fee, FIFO gain/loss and tax estimates, warnings and methodology; it never submits broker orders.
+- Target deltas are scaled by the remaining turnover budget using the stricter user-entered cap and persisted operations-policy cap after current rolling 24-hour filled-order turnover. Buy sizing uses current cash after the requested cash buffer and estimated fees, and never assumes sell proceeds are available before execution.
+- Tax estimates use imported Alpaca FILL activities and dated FIFO open lots. The app follows IRS holding-period framing that assets held more than one year may be long-term and otherwise short-term, based on [IRS Topic 409](https://www.irs.gov/taxtopics/tc409) and [IRS Publication 550](https://www.irs.gov/publications/p550); Alpaca account activities provide transaction time, quantity, price and side evidence from [Alpaca Account Activities](https://docs.alpaca.markets/reference/getaccountactivities-1). User-entered tax rates apply only to positive lot gains.
+- Explicit max-tax caps use binary-search scaling over FIFO lot consumption because gains are non-linear across lots. If imported activity history is truncated, unmatched, affected by unresolved corporate actions, or lacks enough lots for a planned sale, a max-tax request is reported as unverifiable and no basket draft is produced.
+- Fractionable symbols round down to six decimals and whole-share-only symbols round down to whole shares. Legs below the requested minimum notional are omitted. A basket draft is produced only when all constraints are verifiable and there are 2-10 executable legs; the existing signed basket preview still performs fresh quote, asset, liquidity, risk and operations-policy checks before any paper order can be submitted.
+
+Portfolio-optimizer contract:
+
+- `GET /api/portfolio/optimizer` is read-only and uses current long US-equity holdings only. It does not infer new symbols, does not short, does not use leverage and never creates orders. Non-US-equity, non-positive and insufficient-history positions are omitted with explicit warnings.
+- The optimizer returns two target-weight proposals: risk parity from inverse-volatility scores and a mean-variance tilt from shrunk expected return divided by shrunk variance. Daily returns are aligned over the shared available window; expected returns are shrunk halfway to the cross-sectional mean and off-diagonal covariance is shrunk toward zero before scoring.
+- Robust constraints are user-visible: maximum target weight, maximum absolute turnover, cash reserve and minimum observation count. Weight caps are applied before turnover scaling; if the turnover budget prevents full de-risking from an over-cap current holding, the binding constraint remains visible.
+- Outputs include expected annual return, annualized volatility, position-level current/target/delta weights, risk contribution, coverage and warnings. Target drafts can be loaded only into the constrained rebalance planner; basket preview and signed broker submission remain separate downstream checks.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 
@@ -532,7 +579,7 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 39. [x] Add portfolio/watchlist alerts for material 8-K filings with filing-grounded relevance summaries.
 40. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI. The canonical evidence/dedupe prerequisite is complete.
 41. Add comparable-company valuation and counter-thesis review.
-42. Add factor exposure, expected shortfall and portfolio risk contribution.
+42. [x] Add factor exposure, expected shortfall and portfolio risk contribution.
 43. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
 ## Capability and safety checklist for every new feature

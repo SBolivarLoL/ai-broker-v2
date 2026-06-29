@@ -2,7 +2,7 @@ import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import { companyMarketSnapshot } from "./company-market";
-import { Intent, PortfolioQuestion, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
+import { Intent, PortfolioQuestion, reviewedPlanAllowsOrder, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
 import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 import { buildCryptoOrderPreview, cryptoOrderMarketFromSnapshot, CryptoOrderTicket, signCryptoOrderPreview, verifyCryptoOrderPreview, type CryptoOrderPreview } from "./crypto-order-ticket";
 import { buildDataGovernanceReport } from "./data-governance";
@@ -23,10 +23,14 @@ import { OptionChainQuery, optionChainDto, optionPortfolioGreeks } from "./optio
 import { OptionOrderTicket, optionOrderRisk, signOptionOrderPreview, signOptionPositionAction, verifyOptionOrderPreview, verifyOptionPositionAction } from "./option-order";
 import { evaluateOperationsPolicy, type OperationsPolicyEvaluation } from "./operations-policy";
 import { buildPortfolioSnapshot } from "./portfolio-snapshot";
+import { buildPortfolioExposureReport, type ExposureBar } from "./portfolio-exposure";
+import { buildPortfolioOptimizerReport, PortfolioOptimizerRequest } from "./portfolio-optimizer";
+import { buildPortfolioScenarioReport, CustomPortfolioScenario } from "./portfolio-scenarios";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
+import { buildConstrainedRebalancePlan, ConstrainedRebalancePlanRequest } from "./rebalance-planner";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
-import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, runCompanyResearch } from "./research";
+import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, getSecCompanyClassification, getValuationScenarios, runCompanyResearch } from "./research";
 import { secUserAgentFromEnv } from "./sec-edgar";
 import { authContextFor, authorize, rateLimiter, securityReady, validMutationOrigin, type AuthContext } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
@@ -43,6 +47,7 @@ import { buildStrategyExperimentReport } from "./strategy-report";
 import { parseStrategyReview, withStrategyReviewConfig } from "./strategy-review";
 import { normalizeStrategySchedule, parseStrategyIntervalMinutes, strategyRunIsDue, withNextStrategySchedule } from "./strategy-scheduler";
 import { buildStrategyDecisionMetrics, buildStrategyErrorMetric, buildStrategySpan } from "./strategy-observability";
+import { appendTradeJournalReview, createTradeJournalEntry, journalCandidateFromReceipt, TradeJournalCreateInput, TradeJournalReviewInput } from "./trade-journal";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const store = createStore();
@@ -96,6 +101,7 @@ function authorizeRoute(auth: AuthContext, path: string, method: string) {
   if (method === "GET") return true;
   if (path.startsWith("/api/orders") || path.startsWith("/api/options") || path.startsWith("/api/strategy/crypto/orders") || path.includes("/paper-approval") || path.endsWith("/tick") || path.endsWith("/scheduler/tick")) return authorize(auth, ["trader", "admin"]);
   if (path.startsWith("/api/agent") || path.startsWith("/api/research")) return authorize(auth, ["researcher", "admin"]);
+  if (path.startsWith("/api/trade-journal")) return authorize(auth, ["researcher", "trader", "admin"]);
   if (path.startsWith("/api/watchlists") || path.startsWith("/api/strategy")) return authorize(auth, ["operator", "trader", "admin"]);
   return true;
 }
@@ -122,6 +128,8 @@ let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | nul
 const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
 let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
+type CurrentPortfolioExposure = { equity: number; report: ReturnType<typeof buildPortfolioExposureReport> };
+let portfolioExposureCache: { key: string; expiresAt: number; value: CurrentPortfolioExposure } | null = null;
 const companyMarketCache = new Map<string, { expiresAt: number; value: ReturnType<typeof companyMarketSnapshot> }>();
 let marketDiscoveryCache: { expiresAt: number; value: ReturnType<typeof discoveryDto> } | null = null;
 let marketClockCache: { expiresAt: number; value: any } | null = null;
@@ -135,6 +143,37 @@ const streamEncoder = new TextEncoder();
 const streamSubscribers = new Map<number, { symbols: Set<string>; controller: ReadableStreamDefaultController<Uint8Array> }>();
 const streamSymbolReferences = new Map<string, number>();
 let stockStreamState = "connecting", nextStreamSubscriberId = 1;
+
+async function currentPortfolioExposure(): Promise<CurrentPortfolioExposure> {
+  const [account, allPositions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
+  if (account.equity === undefined || account.cash === undefined) throw new ClientError("Account exposure data unavailable", 502);
+  const positions = allPositions.slice(0, 100), key = JSON.stringify([account.equity, account.cash, positions.map(position => [position.symbol, position.assetClass, position.marketValue])]);
+  if (portfolioExposureCache?.key === key && portfolioExposureCache.expiresAt > Date.now()) return portfolioExposureCache.value;
+  const start = new Date(Date.now() - 150 * 86_400_000), warnings: string[] = [];
+  const benchmarkResult = await Promise.allSettled([alpaca.marketData.getStockBarsFor("SPY", { timeframe: TimeFrame.Day, start, feed: "iex" })]);
+  const benchmarkBars: ExposureBar[] = benchmarkResult[0]?.status === "fulfilled" ? benchmarkResult[0].value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+  if (!benchmarkBars.length) warnings.push("SPY IEX history is unavailable; market-beta exposure remains unavailable.");
+  if (allPositions.length > positions.length) warnings.push(`${allPositions.length - positions.length} positions were omitted by the 100-position exposure bound.`);
+  const exposurePositions = await Promise.all(positions.map(async position => {
+    const assetClass = String(position.assetClass ?? "unknown"), positionWarnings: string[] = [];
+    if (assetClass !== "us_equity") return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, warnings: positionWarnings };
+    const [barsResult, classificationResult] = await Promise.allSettled([
+      alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" }),
+      getSecCompanyClassification(position.symbol),
+    ]);
+    const bars = barsResult.status === "fulfilled" ? barsResult.value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+    if (!bars.length) positionWarnings.push(`${position.symbol} IEX history is unavailable; its return-derived factor contribution is omitted.`);
+    const official = classificationResult.status === "fulfilled" ? classificationResult.value : null;
+    const classification = official?.sic ? { sic: official.sic, industry: official.industry, sourceUrl: official.sourceUrl } : null;
+    if (!classification) positionWarnings.push(`${position.symbol} has no usable SEC SIC classification.`);
+    return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, bars, classification, marketDataSource: bars.length ? "alpaca:iex" : null, warnings: positionWarnings };
+  }));
+  const equity = Number(account.equity);
+  const report = buildPortfolioExposureReport({ equity, cash: Number(account.cash), positions: exposurePositions, benchmarkBars, warnings });
+  const value = { equity, report };
+  portfolioExposureCache = { key, expiresAt: Date.now() + 5 * 60_000, value };
+  return value;
+}
 
 function streamSend(controller: ReadableStreamDefaultController<Uint8Array>, value: unknown) {
   controller.enqueue(streamEncoder.encode(`data: ${JSON.stringify(value)}\n\n`));
@@ -1554,6 +1593,97 @@ Bun.serve({
         const liquidity = positionData.map(item => positionLiquidity(item.position, item.marketSnapshot, item.bars));
         return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), advanced, liquidity, diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
       }
+      if (url.pathname === "/api/portfolio/exposure" && request.method === "GET") {
+        return json((await currentPortfolioExposure()).report);
+      }
+      if (url.pathname === "/api/portfolio/optimizer" && request.method === "GET") {
+        const parsed = PortfolioOptimizerRequest.safeParse(Object.fromEntries(url.searchParams));
+        if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid optimizer request" }, 400);
+        const optimizerRequest = parsed.data;
+        const [account, positions] = await Promise.all([
+          alpaca.trading.account.getAccount(),
+          alpaca.trading.positions.getAllOpenPositions(),
+        ]);
+        if (account.equity === undefined) throw new Error("Account optimizer data unavailable");
+        const equityPositions = positions.filter(position => position.assetClass === "us_equity" && Number(position.qty) > 0 && Number(position.marketValue) > 0).slice(0, 50);
+        const start = new Date(Date.now() - Math.max(90, optimizerRequest.minObservations * 3) * 86_400_000);
+        const positionData = await Promise.all(equityPositions.map(async position => {
+          const bars = await alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" });
+          return { symbol: position.symbol, marketValue: Number(position.marketValue), closes: bars.map(bar => Number(bar.close)).filter(value => Number.isFinite(value) && value > 0) };
+        }));
+        const report = buildPortfolioOptimizerReport({ equity: Number(account.equity), positions: positionData, request: optimizerRequest, asOf: new Date().toISOString() });
+        const omittedNonEquity = positions.length - equityPositions.length;
+        const warnings = omittedNonEquity > 0 ? [...report.warnings, `${omittedNonEquity} non-long-US-equity or non-positive position${omittedNonEquity === 1 ? " was" : "s were"} omitted from optimizer proposals.`] : report.warnings;
+        store.event("portfolio.optimizer.generated", actor, { proposals: report.proposals.map(proposal => proposal.id), constraints: report.constraints, optimizedSymbols: report.coverage.optimizedSymbols });
+        return json({ ...report, warnings });
+      }
+      if (url.pathname === "/api/portfolio/scenarios" && (request.method === "GET" || request.method === "POST")) {
+        let custom;
+        if (request.method === "POST") {
+          if (!allow(`${actor}:portfolio-scenarios`, 30)) return json({ error: "Portfolio scenario rate limit exceeded" }, 429);
+          const input = await requestJson(request);
+          const parsed = CustomPortfolioScenario.safeParse(typeof input === "object" && input !== null ? (input as { custom?: unknown }).custom : undefined);
+          if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid custom scenario" }, 400);
+          custom = parsed.data;
+        }
+        const exposure = await currentPortfolioExposure();
+        return json(buildPortfolioScenarioReport({
+          equity: exposure.equity,
+          asOf: exposure.report.asOf,
+          custom,
+          positions: exposure.report.positions.map(position => ({ symbol: position.symbol, marketValue: position.marketValue, assetClass: position.assetClass, sector: position.sector, sic: position.sic, volatility20dPercent: position.factors.volatility20dPercent })),
+        }));
+      }
+      if (url.pathname === "/api/portfolio/rebalance-plan" && request.method === "POST") {
+        if (!allow(`${actor}:portfolio-rebalance-plan`, 20)) return json({ error: "Rebalance planner rate limit exceeded" }, 429);
+        const parsed = ConstrainedRebalancePlanRequest.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid rebalance plan request" }, 400);
+        const plannerRequest = parsed.data;
+        const targetSymbols = [...new Set(plannerRequest.targets.map(target => target.symbol))];
+        const [sync, account, positions, recentOrders, marketRows] = await Promise.all([
+          syncAccountActivities(),
+          alpaca.trading.account.getAccount(),
+          alpaca.trading.positions.getAllOpenPositions(),
+          alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
+          Promise.all(targetSymbols.map(async symbol => {
+            const [asset, price] = await Promise.all([
+              alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }),
+              alpaca.marketData.getLatestPrice(symbol),
+            ]);
+            return { symbol, asset, price };
+          })),
+        ]);
+        if (account.equity === undefined || account.cash === undefined) throw new Error("Account risk data unavailable");
+        if (recentOrders.length >= 500) throw new Error("The complete order window could not be verified");
+        const short = positions.find(position => Number(position.qty) < -1e-8 || Number(position.marketValue) < -1e-8);
+        if (short) return json({ error: `Current short positions are not supported by this planner (${short.symbol})` }, 400);
+        for (const row of marketRows) {
+          if (!row.asset.tradable || row.asset._class !== "us_equity") return json({ error: `${row.symbol} is not a tradable US stock or ETF` }, 400);
+          if (typeof row.price !== "number" || !Number.isFinite(row.price) || row.price <= 0) return json({ error: `No valid current price for ${row.symbol}` }, 400);
+        }
+        const market = marketRows.map(row => ({ symbol: row.symbol, price: row.price as number, fractionable: Boolean(row.asset.fractionable) }));
+        const marketBySymbol = new Map(market.map(row => [row.symbol, row]));
+        const ledger = ledgerSummary(store.activities(5_000), sync.truncated);
+        const taxLotsComplete = !ledger.activityHistoryTruncated && ledger.unmatchedSellQuantity <= 1e-8 && ledger.unresolvedCorporateActions.length === 0;
+        const plan = buildConstrainedRebalancePlan({
+          request: plannerRequest,
+          account: { equity: Number(account.equity), cash: Number(account.cash) },
+          positions: positions.map(position => {
+            const symbol = String(position.symbol).toUpperCase();
+            const currentPrice = Number(position.currentPrice);
+            return { symbol, qty: Number(position.qty), marketValue: Number(position.marketValue), price: Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : undefined, fractionable: marketBySymbol.get(symbol)?.fractionable };
+          }),
+          market,
+          openLots: ledger.openLots,
+          taxLotsComplete,
+          taxEvidenceWarnings: ledger.warnings,
+          currentTurnoverNotional: rollingTurnover(recentOrders),
+          policyMaxTurnoverPercent: store.operationsPolicy().maxDailyTurnoverPercent,
+          asOf: new Date().toISOString(),
+        });
+        store.event("portfolio.rebalance_plan.created", actor, { targets: plannerRequest.targets, withinConstraints: plan.withinConstraints, legs: plan.legs, bindingConstraints: plan.bindingConstraints, taxEvidenceStatus: plan.tax.evidenceStatus });
+        return json(plan);
+      }
       if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
         const limit = Number(url.searchParams.get("limit") ?? 30);
         if (!Number.isInteger(limit) || limit < 1 || limit > 366) return json({ error: "Snapshot limit must be 1 to 366" }, 400);
@@ -1590,7 +1720,7 @@ Bun.serve({
         const output = await runPortfolioCopilot(alpaca, parsed.data);
         store.plan(planId, parsed.data, output, actor);
         const auditHash = store.decisionAuditTrail(planId).at(-1)?.entryHash ?? null;
-        store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length, auditHash });
+        store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length, actionableIdeas: output.ideas.filter(idea => idea.actionable).length, auditHash });
         return json({ planId, intent: parsed.data, auditHash, ...output });
       }
       if (url.pathname === "/api/agent/questions" && request.method === "POST") {
@@ -1605,6 +1735,59 @@ Bun.serve({
       if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
         const plan = store.getPlan(url.pathname.split("/").pop() ?? "");
         return plan ? json(plan) : json({ error: "Plan not found" }, 404);
+      }
+      if (url.pathname === "/api/trade-journal" && request.method === "GET") {
+        const entries = store.tradeJournalEntries();
+        const journaledReceipts = new Set(entries.map(entry => entry.receiptId));
+        const eligibleReceipts = store.receipts(100)
+          .map(receipt => journalCandidateFromReceipt(receipt.id, receipt))
+          .filter(candidate => candidate !== null && !journaledReceipts.has(candidate.receiptId));
+        return json({ entries, eligibleReceipts, asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/trade-journal" && request.method === "POST") {
+        if (!allow(`${actor}:trade-journal-create`, 30)) return json({ error: "Trade journal rate limit exceeded" }, 429);
+        const parsed = TradeJournalCreateInput.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: "Receipt, thesis, and invalidation are required" }, 400);
+        if (store.tradeJournalEntryForReceipt(parsed.data.receiptId)) return json({ error: "This receipt already has a journal entry" }, 409);
+        const receipt = store.getReceipt(parsed.data.receiptId);
+        if (!receipt) return json({ error: "Receipt not found" }, 404);
+        const candidate = journalCandidateFromReceipt(parsed.data.receiptId, receipt);
+        if (!candidate) return json({ error: "Only standard stock-order receipts can start a trade journal entry" }, 400);
+        const entry = createTradeJournalEntry(candidate, parsed.data, actor);
+        store.addTradeJournalEntry(entry, actor);
+        store.event("trade_journal.created", actor, { journalId: entry.id, receiptId: entry.receiptId, orderId: entry.orderId, symbol: entry.symbol, side: entry.side });
+        return json({ entry }, 201);
+      }
+      const tradeJournalReviewMatch = url.pathname.match(/^\/api\/trade-journal\/([^/]+)\/reviews$/);
+      if (tradeJournalReviewMatch && request.method === "POST") {
+        if (!allow(`${actor}:trade-journal-review`, 60)) return json({ error: "Trade journal review rate limit exceeded" }, 429);
+        const journalId = decodeURIComponent(tradeJournalReviewMatch[1]!);
+        const current = store.getTradeJournalEntry(journalId);
+        if (!current) return json({ error: "Trade journal entry not found" }, 404);
+        const parsed = TradeJournalReviewInput.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: "A thesis status and review note are required" }, 400);
+        if (current.status === "closed") return json({ error: "Closed journal entries cannot be reviewed again" }, 409);
+        const [currentPrice, positions] = await Promise.all([
+          alpaca.marketData.getLatestPrice(current.symbol),
+          alpaca.trading.positions.getAllOpenPositions(),
+        ]);
+        if (typeof currentPrice !== "number" || !Number.isFinite(currentPrice) || currentPrice <= 0) return json({ error: "No valid current price is available for this review" }, 502);
+        const rawPosition = positions.find(position => position.symbol === current.symbol);
+        const numberOrNull = (value: unknown) => { const number = Number(value); return Number.isFinite(number) ? number : null; };
+        const position = rawPosition ? {
+          qty: numberOrNull(rawPosition.qty),
+          averageEntryPrice: numberOrNull(rawPosition.avgEntryPrice),
+          currentPrice: numberOrNull(rawPosition.currentPrice),
+          marketValue: numberOrNull(rawPosition.marketValue),
+          unrealizedProfitLoss: numberOrNull(rawPosition.unrealizedPl),
+          unrealizedReturnPercent: numberOrNull(rawPosition.unrealizedPlpc) === null ? null : numberOrNull(rawPosition.unrealizedPlpc)! * 100,
+        } : null;
+        const receipt = store.getReceipt(current.receiptId);
+        const observedAt = new Date().toISOString();
+        const entry = appendTradeJournalReview(current, parsed.data, { currentPrice, observedAt, receiptStatus: String(receipt?.status ?? "unknown"), position }, actor, observedAt);
+        store.updateTradeJournalEntry(entry, actor);
+        store.event("trade_journal.reviewed", actor, { journalId: entry.id, receiptId: entry.receiptId, symbol: entry.symbol, status: entry.status, reviewId: entry.reviews.at(-1)!.id });
+        return json({ entry });
       }
       if (url.pathname === "/api/research/sec" && request.method === "GET") {
         if (!allow(`${actor}:sec-research`, 30)) return json({ error: "SEC research rate limit exceeded" }, 429);
@@ -1642,6 +1825,12 @@ Bun.serve({
         const peers = String(url.searchParams.get("peers") ?? "");
         try { return json(await getComparableValuations(alpaca, symbol, peers)); }
         catch (error) { return json({ error: error instanceof Error ? error.message : "Invalid comparable valuation request" }, 400); }
+      }
+      if (url.pathname === "/api/research/scenarios" && request.method === "POST") {
+        if (!allow(`${actor}:scenario-research`, 12)) return json({ error: "Scenario valuation rate limit exceeded" }, 429);
+        const input = await requestJson(request);
+        try { return json(await getValuationScenarios(alpaca, String(input.symbol ?? ""), input.scenarios)); }
+        catch (error) { return json({ error: error instanceof Error ? error.message : "Invalid scenario valuation request" }, 400); }
       }
       if (url.pathname === "/api/research/runs" && request.method === "POST") {
         if (!allow(`${actor}:research`, 6)) return json({ error: "Research agent rate limit exceeded" }, 429);
@@ -2000,7 +2189,8 @@ Bun.serve({
         const { symbol, side, planId } = ticket;
         const auctionError = auctionSubmissionError(ticket.timeInForce);
         if (auctionError) return json({ error: auctionError }, 400);
-        if (planId !== undefined && (typeof planId !== "string" || !store.getPlan(planId))) return json({ error: "Valid stored plan id is required" }, 400);
+        const storedPlan = typeof planId === "string" ? store.getPlan(planId) : null;
+        if (planId !== undefined && !storedPlan) return json({ error: "Valid stored plan id is required" }, 400);
         const [account, positions, asset, price, recentOrders, clock, marketSnapshot] = await Promise.all([
           alpaca.trading.account.getAccount(),
           alpaca.trading.positions.getAllOpenPositions(),
@@ -2014,6 +2204,7 @@ Bun.serve({
         if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) return json({ error: "No valid current price" }, 400);
         if (account.equity === undefined || account.cash === undefined) return json({ error: "Account risk data unavailable" }, 502);
         const qty = ticketQuantity(ticket, price);
+        if (storedPlan && !reviewedPlanAllowsOrder(storedPlan, { symbol, side, qty, amountType: ticket.amountType, type: ticket.type, orderClass: ticket.orderClass, timeInForce: ticket.timeInForce, extendedHours: ticket.extendedHours, allowShort: ticket.allowShort })) return json({ error: "Order must exactly match a risk-approved plan draft" }, 400);
         if (!asset.fractionable && !Number.isInteger(qty)) return json({ error: "This asset does not support fractional or dollar-notional orders" }, 400);
         const shortError = ticket.allowShort ? shortCapabilityError(account, asset) : null;
         if (shortError) return json({ error: shortError }, 400);
