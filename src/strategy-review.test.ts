@@ -29,7 +29,6 @@ test("parses a strategy review with actor, timestamp and revision evidence", () 
     },
   });
 });
-
 test("rejects missing review notes and unknown actions", () => {
   expect(() => parseStrategyReview({ action: "skip", note: "Useful note" }, "tester", "shadow")).toThrow("Review action");
   expect(() => parseStrategyReview({ action: "continue", note: "no" }, "tester", "shadow")).toThrow("Review note");
@@ -47,4 +46,3 @@ test("appends review history without mutating unrelated config", () => {
     reviewHistory: [{ action: "continue", note: "old" }, { action: "promote", note: "Promote after beating cash and buy-and-hold" }],
   });
 });
-
