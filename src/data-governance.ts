@@ -1,6 +1,6 @@
 export type DataGovernanceSource = {
   id: string;
-  category: "market_data" | "news" | "fundamentals" | "derived_analytics";
+  category: "market_data" | "news" | "fundamentals" | "identity" | "derived_analytics";
   provider: string;
   coverage: string[];
   currentUse: string[];
@@ -97,6 +97,18 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     evidenceNote: "Finnhub lists free US Company Profile 2, one year of company news, the last four earnings surprises and a 60-call-per-minute allowance for personal use.",
   },
   {
+    id: "openfigi_v3",
+    category: "identity",
+    provider: "OpenFIGI",
+    coverage: ["global financial-instrument identity", "ticker-to-FIGI mapping", "composite FIGI", "share-class FIGI"],
+    currentUse: ["US-equity company identity validation", "canonical research evidence entity IDs", "cross-provider ambiguity warnings"],
+    entitlement: "available",
+    approvedUse: ["Public identifier mapping", "Internal storage and display of FIGI identifiers with source provenance"],
+    restrictions: ["Use OpenFIGI API v3.", "Serialize anonymous requests below 25 per minute and honor rate-limit reset headers.", "Never select the first ticker result when distinct composite identities remain ambiguous."],
+    evidenceUrl: "https://www.openfigi.com/api/documentation",
+    evidenceNote: "OpenFIGI provides public v3 mapping without a key; an optional account key raises request limits. FIGI identifiers are dedicated to the public domain.",
+  },
+  {
     id: "strategy_derived_analytics",
     category: "derived_analytics",
     provider: "AI Broker local calculations",
@@ -125,6 +137,7 @@ export function buildDataGovernanceReport(generatedAt = new Date().toISOString()
       "Before enabling a new data feature, add its provider, coverage, entitlement and restrictions to this registry.",
       "Preserve source/feed/timestamp provenance in derived analytics and decision receipts.",
       "Treat paper-only IEX, limited crypto data, Benzinga news, public-web GDELT signals and optional Finnhub enrichment as internal evidence, not standalone data products.",
+      "Resolve ticker joins through OpenFIGI where possible and retain symbol-only scope when mapping is ambiguous, missing or unavailable.",
       "Re-review paid feed, SIP, OPRA, crypto and news subscriptions before any live-trading deployment.",
     ],
   };

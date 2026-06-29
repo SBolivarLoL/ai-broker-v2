@@ -327,7 +327,7 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Add official macro context from FRED, Treasury Fiscal Data, BLS, and BEA for rates, inflation, labor, GDP, fiscal data, and market-regime context.
 - [x] Add GDELT as a secondary broad news/event source alongside Alpaca/Benzinga, with clear "media signal, not verified fact" labeling.
 - [x] Add optional Finnhub integration for company news/profile/fundamental enrichment, gated behind an API key and free-tier limits.
-- [ ] Add OpenFIGI identity mapping to reduce ticker/security ambiguity before joining data across providers.
+- [x] Add OpenFIGI identity mapping to reduce ticker/security ambiguity before joining data across providers.
 - [x] Define a canonical evidence format and conservative dedupe policy before adding more providers.
 - [ ] Complete the cited company research workspace with comparable-company and valuation tables. Single-company cited analysis exists.
 - [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
@@ -354,6 +354,12 @@ Optional Finnhub enrichment contract:
 - Missing or malformed `FINNHUB_API_KEY` configuration performs no network requests and returns explicit per-endpoint coverage; credentials travel only in `X-Finnhub-Token` headers and never enter source URLs or normalized output.
 - Free-tier use is limited to Company Profile 2, company news and the last four earnings surprises. Requests serialize below 60 calls per minute, retry transient failures once, cache profile/earnings/news independently and preserve successful endpoints when another is unavailable or rate limited.
 - Profile identity must match the requested ticker. Ambiguous market-capitalization units, phone numbers and malformed records are omitted; earnings values are retained exactly without recalculation. Profile and earnings are licensed `provider_record` evidence, company news is article-level `media_signal` evidence, and official SEC records take precedence.
+
+OpenFIGI identity contract:
+
+- Use OpenFIGI API v3 and one bounded `TICKER + US + Equity` mapping job. Anonymous access works without credentials and serializes below 25 requests per minute; an optional `OPENFIGI_API_KEY` is sent only through `X-OPENFIGI-APIKEY`.
+- Normalize only exact-ticker, US-equity, non-derivative results with valid 12-character FIGIs. Collapse venue rows by composite FIGI, then use the Alpaca company name to confirm multiple candidates.
+- A unique match may bind canonical FIGI to market evidence. Ambiguous, no-match, rate-limited and unavailable outcomes never select a FIGI and keep cross-provider joins visibly symbol-scoped.
 - Provider calls use bounded timeout/retry and six-hour success caching. One provider failure cannot erase successful observations from the others, and deterministic regime labels remain descriptive context rather than forecasts or trading signals.
 
 GDELT media-signal contract:
@@ -559,6 +565,8 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 - [Finnhub API documentation](https://finnhub.io/docs/api)
 - [Finnhub plans and free-tier limits](https://finnhub.io/pricing)
 - [Finnhub startup and enterprise licensing](https://finnhub.io/pricing-startups-and-enterprise)
+- [OpenFIGI API v3 documentation and rate limits](https://www.openfigi.com/api/documentation)
+- [OpenFIGI terms and public-domain dedication](https://www.openfigi.com/docs/terms-of-service)
 - [U.S. Treasury Fiscal Data: Debt to the Penny](https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/)
 - [BLS Public Data API](https://www.bls.gov/developers/)
 - [BEA API user guide](https://apps.bea.gov/api/_pdf/bea_web_service_api_user_guide.pdf)

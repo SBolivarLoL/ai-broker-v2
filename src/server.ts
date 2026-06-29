@@ -15,6 +15,7 @@ import { parseStreamSymbols, streamBarDto, streamQuoteDto } from "./market-strea
 import { getStockBarsWithFallback } from "./market-data";
 import { calendarDto, discoveryDto, orderSessionGuidance, parseSymbol, parseWatchlistInput, watchlistDto } from "./market-workspace";
 import { multiAssetDto } from "./multi-asset";
+import { getOpenFigiIdentity } from "./openfigi";
 import { buildReplacementPreview, canCancelOrder, managedOrderDto, OrderTracker, ReplacementInput, signCancelAllPreview, signReplacementPreview, verifyCancelAllPreview, verifyReplacementPreview } from "./order-management";
 import { auctionSubmissionError, linkedOrderError, liquidityPreview, OrderTicket, ticketQuantity, ticketRiskPrice } from "./order-ticket";
 import { signPreview, verifyPreviewFresh, type Preview } from "./orders";
@@ -1614,6 +1615,13 @@ Bun.serve({
         const symbol = String(url.searchParams.get("symbol") ?? "").trim().toUpperCase();
         if (!/^[A-Z.]{1,10}$/.test(symbol)) return json({ error: "A valid stock symbol is required" }, 400);
         return json(await getFinnhubCompanyEnrichment(symbol));
+      }
+      if (url.pathname === "/api/research/openfigi" && request.method === "GET") {
+        if (!allow(`${actor}:openfigi-research`, 30)) return json({ error: "OpenFIGI research rate limit exceeded" }, 429);
+        const symbol = String(url.searchParams.get("symbol") ?? "").trim().toUpperCase();
+        if (!/^[A-Z.]{1,10}$/.test(symbol)) return json({ error: "A valid stock symbol is required" }, 400);
+        const asset = await alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol });
+        return json(await getOpenFigiIdentity(symbol, asset.name ?? symbol));
       }
       if (url.pathname === "/api/research/runs" && request.method === "POST") {
         if (!allow(`${actor}:research`, 6)) return json({ error: "Research agent rate limit exceeded" }, 429);
