@@ -414,7 +414,7 @@ Goal: progress from descriptive risk to decision-grade portfolio construction.
 - [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
 - [x] Rebalancing with taxes/fees/turnover constraints where data permits.
 - [x] Mean-variance and risk-parity proposals with robust constraints.
-- [ ] Policy editor for position, sector, drawdown and turnover limits.
+- [x] Policy editor for position, sector, drawdown and turnover limits.
 
 Portfolio-exposure contract:
 
@@ -444,6 +444,12 @@ Portfolio-optimizer contract:
 - The optimizer returns two target-weight proposals: risk parity from inverse-volatility scores and a mean-variance tilt from shrunk expected return divided by shrunk variance. Daily returns are aligned over the shared available window; expected returns are shrunk halfway to the cross-sectional mean and off-diagonal covariance is shrunk toward zero before scoring.
 - Robust constraints are user-visible: maximum target weight, maximum absolute turnover, cash reserve and minimum observation count. Weight caps are applied before turnover scaling; if the turnover budget prevents full de-risking from an over-cap current holding, the binding constraint remains visible.
 - Outputs include expected annual return, annualized volatility, position-level current/target/delta weights, risk contribution, coverage and warnings. Target drafts can be loaded only into the constrained rebalance planner; basket preview and signed broker submission remain separate downstream checks.
+
+Portfolio-policy contract:
+
+- The Operations guardrails editor persists order-notional, symbol-notional, position-percent, sector-percent, drawdown-percent and daily-turnover-percent limits through the same audited operations policy used by paper order previews.
+- Existing order previews enforce order-notional, symbol exposure, position exposure and daily turnover limits before any paper submission. The policy editor does not bypass the signed preview, idempotency or receipt boundary.
+- Portfolio-policy evaluation treats position and sector limits as gross exposure against account equity, drawdown as a positive peak-to-trough percentage and turnover as rolling notional divided by equity. Missing sector or drawdown evidence is left unevaluated rather than guessed.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 
