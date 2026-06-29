@@ -143,6 +143,10 @@ export async function getCompanySecEvidence(rawSymbol: string) {
   return { symbol, companyName: facts.entityName, asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
 }
 
+export function getSecCompanyClassification(rawSymbol: string) {
+  return secEdgarClient().companyClassification(SymbolSchema.parse(rawSymbol));
+}
+
 export async function getSec8KAlerts(rawSymbol: string, lookbackDays = 14, limit = 3) {
   const symbol = SymbolSchema.parse(rawSymbol);
   return secEdgarClient().recent8KAlerts(symbol, lookbackDays, limit);

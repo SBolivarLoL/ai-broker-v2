@@ -406,7 +406,7 @@ Exit gate: agents consistently cite retrieved evidence, abstain when data is mis
 Goal: progress from descriptive risk to decision-grade portfolio construction.
 
 - [x] Historical and parametric 95% daily VaR plus historical expected shortfall.
-- [ ] Factor, sector, industry and asset-class exposure.
+- [x] Factor, sector, industry and asset-class exposure.
 - [x] Correlation matrix calculations and covariance-based portfolio risk contribution.
 - [x] Liquidity risk using live IEX spread, average daily volume and estimated days at 10% ADV.
 - [ ] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
@@ -414,6 +414,13 @@ Goal: progress from descriptive risk to decision-grade portfolio construction.
 - [ ] Rebalancing with taxes/fees/turnover constraints where data permits.
 - [ ] Mean-variance and risk-parity proposals with robust constraints.
 - [ ] Policy editor for position, sector, drawdown and turnover limits.
+
+Portfolio-exposure contract:
+
+- Asset-class exposure uses Alpaca's position `asset_class` plus account cash. Gross and signed net exposure are measured against current account equity.
+- Sector and industry exposure uses each issuer's official SEC submissions SIC code: the broad SIC division is the sector and the SEC SIC description is the industry. These labels are explicitly not presented as GICS or ICB classifications.
+- Market beta is calculated against SPY from date-aligned daily returns with at least 20 observations. Momentum is the close-to-close return over 63 sessions. Volatility is the sample deviation of the latest 20 daily returns annualized with 252 sessions.
+- Factor contributions use signed position market value divided by account equity. Coverage uses gross invested market value, excludes cash, and reports unavailable history rather than imputing a value. Missing SIC classifications remain visibly unclassified.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 
@@ -550,7 +557,7 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 39. [x] Add portfolio/watchlist alerts for material 8-K filings with filing-grounded relevance summaries.
 40. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI. The canonical evidence/dedupe prerequisite is complete.
 41. Add comparable-company valuation and counter-thesis review.
-42. Add factor exposure, expected shortfall and portfolio risk contribution.
+42. [x] Add factor exposure, expected shortfall and portfolio risk contribution.
 43. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
 ## Capability and safety checklist for every new feature
