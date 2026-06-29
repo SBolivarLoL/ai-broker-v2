@@ -26,7 +26,7 @@ import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
-import { getCompanySecEvidence, getSec8KAlerts, runCompanyResearch } from "./research";
+import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, runCompanyResearch } from "./research";
 import { secUserAgentFromEnv } from "./sec-edgar";
 import { authContextFor, authorize, rateLimiter, securityReady, validMutationOrigin, type AuthContext } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
@@ -1622,6 +1622,13 @@ Bun.serve({
         if (!/^[A-Z.]{1,10}$/.test(symbol)) return json({ error: "A valid stock symbol is required" }, 400);
         const asset = await alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol });
         return json(await getOpenFigiIdentity(symbol, asset.name ?? symbol));
+      }
+      if (url.pathname === "/api/research/comparables" && request.method === "GET") {
+        if (!allow(`${actor}:comparable-research`, 12)) return json({ error: "Comparable valuation rate limit exceeded" }, 429);
+        const symbol = String(url.searchParams.get("symbol") ?? "");
+        const peers = String(url.searchParams.get("peers") ?? "");
+        try { return json(await getComparableValuations(alpaca, symbol, peers)); }
+        catch (error) { return json({ error: error instanceof Error ? error.message : "Invalid comparable valuation request" }, 400); }
       }
       if (url.pathname === "/api/research/runs" && request.method === "POST") {
         if (!allow(`${actor}:research`, 6)) return json({ error: "Research agent rate limit exceeded" }, 429);

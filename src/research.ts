@@ -1,6 +1,7 @@
 import { Agent, Runner, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
+import { buildComparableValuationRow, comparableValuationTable, parseComparableSymbols } from "./comparable-valuation";
 import { canonicalEvidence, dedupeEvidence, type CanonicalEvidence, type CanonicalEvidenceInput } from "./evidence";
 import { getFinnhubCompanyEnrichment } from "./finnhub";
 import { getGdeltCompanySignals } from "./gdelt";
@@ -144,6 +145,28 @@ export async function getCompanySecEvidence(rawSymbol: string) {
 export async function getSec8KAlerts(rawSymbol: string, lookbackDays = 14, limit = 3) {
   const symbol = SymbolSchema.parse(rawSymbol);
   return secEdgarClient().recent8KAlerts(symbol, lookbackDays, limit);
+}
+
+export async function getComparableValuations(alpaca: Alpaca, rawSubject: string, rawPeers: string | string[]) {
+  const { subject, peers, symbols } = parseComparableSymbols(rawSubject, rawPeers);
+  const sec = secEdgarClient();
+  const settled = await Promise.allSettled(symbols.map(async symbol => {
+    const [company, price] = await Promise.all([
+      sec.company(symbol),
+      alpaca.marketData.getLatestPrice(symbol),
+    ]);
+    if (typeof price !== "number") throw new Error("Current market price is unavailable");
+    const facts = await sec.companyFacts(company);
+    return buildComparableValuationRow(company, facts, price, new Date().toISOString(), symbol === subject);
+  }));
+  const results: Array<ReturnType<typeof buildComparableValuationRow>> = [];
+  const warnings: string[] = [];
+  settled.forEach((result, index) => {
+    const symbol = symbols[index]!;
+    if (result.status === "fulfilled") results.push(result.value);
+    else warnings.push(`${symbol} valuation inputs are unavailable: ${result.reason instanceof Error ? result.reason.message : "provider request failed"}`);
+  });
+  return comparableValuationTable(subject, peers, results, warnings);
 }
 
 export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runId = crypto.randomUUID()) {
