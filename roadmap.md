@@ -332,7 +332,7 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Complete the cited company research workspace with comparable-company and valuation tables.
 - [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
 - [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
-- [ ] Natural-language portfolio Q&A backed only by typed tools.
+- [x] Natural-language portfolio Q&A backed only by typed tools.
 - [ ] Bull/base/bear valuation and scenario memos.
 - [ ] Counter-thesis/risk-agent review before actionable suggestions.
 - [ ] Trade journal with thesis drift and post-trade review.
@@ -367,6 +367,12 @@ Comparable valuation contract:
 - Current Alpaca IEX price, directly reported annual SEC revenue/net income/diluted EPS, latest SEC stockholders' equity and latest SEC shares outstanding remain separate canonical inputs. Derived market capitalization, annual P/S, diluted P/E, P/B, revenue growth and net margin cite those inputs and disclose formulas.
 - Fiscal periods are visible per cell. Missing facts, non-positive valuation denominators, mismatched annual periods and unavailable providers produce unavailable cells or partial rows; no fourth quarter, trailing period, peer median or market-cap input is synthesized.
 - Provider calls use bounded timeout/retry and six-hour success caching. One provider failure cannot erase successful observations from the others, and deterministic regime labels remain descriptive context rather than forecasts or trading signals.
+
+Portfolio Q&A contract:
+
+- Questions are bounded to 3-500 characters and run through a dedicated read-only agent with typed portfolio, deterministic risk, price, daily-bar, licensed-news, asset/market-status and open-order tools. It has no simulation, preview, order, cancellation or credential tool.
+- Every answer is a bounded list of claims, and every claim must cite evidence IDs returned during that exact run. Invented IDs, unsafe certainty language and malformed output trip the output guardrail.
+- Tool results are the only permitted data source. Missing coverage is returned as an explicit limitation; question text and news are treated as untrusted data and cannot expand tool or execution authority.
 
 GDELT media-signal contract:
 

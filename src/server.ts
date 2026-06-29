@@ -2,7 +2,7 @@ import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import { companyMarketSnapshot } from "./company-market";
-import { Intent, runPortfolioCopilot } from "./copilot";
+import { Intent, PortfolioQuestion, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
 import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 import { buildCryptoOrderPreview, cryptoOrderMarketFromSnapshot, CryptoOrderTicket, signCryptoOrderPreview, verifyCryptoOrderPreview, type CryptoOrderPreview } from "./crypto-order-ticket";
 import { buildDataGovernanceReport } from "./data-governance";
@@ -1588,6 +1588,15 @@ Bun.serve({
         const auditHash = store.decisionAuditTrail(planId).at(-1)?.entryHash ?? null;
         store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length, auditHash });
         return json({ planId, intent: parsed.data, auditHash, ...output });
+      }
+      if (url.pathname === "/api/agent/questions" && request.method === "POST") {
+        if (!allow(`${actor}:portfolio-question`, 20)) return json({ error: "Portfolio Q&A rate limit exceeded" }, 429);
+        if (!process.env.OPENAI_API_KEY) return json({ error: "Add OPENAI_API_KEY to .env to enable portfolio Q&A" }, 503);
+        const parsed = PortfolioQuestion.safeParse((await requestJson(request)).question);
+        if (!parsed.success) return json({ error: "Question must be between 3 and 500 characters" }, 400);
+        const output = await runPortfolioQuestion(alpaca, parsed.data);
+        store.event("agent.portfolio_question.answered", actor, { evidence: [...new Set(output.claims.flatMap(claim => claim.evidence))], claims: output.claims.length });
+        return json({ question: parsed.data, ...output, asOf: new Date().toISOString() });
       }
       if (url.pathname.startsWith("/api/agent/plans/") && request.method === "GET") {
         const plan = store.getPlan(url.pathname.split("/").pop() ?? "");

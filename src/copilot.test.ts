@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SIMULATION_POLICY_VERSION, type SimulationAuthority, validCopilotOutput } from "./copilot";
+import { PortfolioQuestion, SIMULATION_POLICY_VERSION, type SimulationAuthority, validCopilotOutput, validPortfolioQuestionOutput } from "./copilot";
 
 const base = { symbol: "SPY", thesis: "Diversifies exposure", risk: "Can fall", invalidation: "Risk changes", confidence: 60 };
 const output = (idea: object) => ({ summary: "Paper portfolio review", ideas: [idea, idea, idea] });
@@ -56,4 +56,14 @@ test("reduce maps to an exact sell simulation and passive ideas cannot claim one
 
   expect(validCopilotOutput(output(actionableIdea({ action: "reduce" })), evidence, simulations, 1_000)).toBe(true);
   expect(validCopilotOutput(output({ ...base, action: "watch", suggestedQty: 0, simulationId, evidence: ["risk:current", evidenceId] }), evidence, simulations, 1_000)).toBe(false);
+});
+
+test("portfolio Q&A accepts only bounded questions and typed-tool citations", () => {
+  const evidence = new Set(["portfolio:current", "risk:current"]);
+  const answer = { claims: [{ text: "AAPL is the largest position.", evidence: ["risk:current"] }], limitations: [] };
+  expect(validPortfolioQuestionOutput(answer, evidence)).toBe(true);
+  expect(validPortfolioQuestionOutput({ ...answer, claims: [{ ...answer.claims[0], evidence: ["invented"] }] }, evidence)).toBe(false);
+  expect(validPortfolioQuestionOutput({ ...answer, claims: [{ ...answer.claims[0], text: "This is a guaranteed return." }] }, evidence)).toBe(false);
+  expect(PortfolioQuestion.safeParse("What is my largest position?").success).toBe(true);
+  expect(PortfolioQuestion.safeParse("x".repeat(501)).success).toBe(false);
 });
