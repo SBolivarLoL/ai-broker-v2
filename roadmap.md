@@ -409,7 +409,7 @@ Goal: progress from descriptive risk to decision-grade portfolio construction.
 - [x] Factor, sector, industry and asset-class exposure.
 - [x] Correlation matrix calculations and covariance-based portfolio risk contribution.
 - [x] Liquidity risk using live IEX spread, average daily volume and estimated days at 10% ADV.
-- [ ] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
+- [x] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
 - [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
 - [ ] Rebalancing with taxes/fees/turnover constraints where data permits.
 - [ ] Mean-variance and risk-parity proposals with robust constraints.
@@ -421,6 +421,13 @@ Portfolio-exposure contract:
 - Sector and industry exposure uses each issuer's official SEC submissions SIC code: the broad SIC division is the sector and the SEC SIC description is the industry. These labels are explicitly not presented as GICS or ICB classifications.
 - Market beta is calculated against SPY from date-aligned daily returns with at least 20 observations. Momentum is the close-to-close return over 63 sessions. Volatility is the sample deviation of the latest 20 daily returns annualized with 252 sessions.
 - Factor contributions use signed position market value divided by account equity. Coverage uses gross invested market value, excludes cash, and reports unavailable history rather than imputing a value. Missing SIC classifications remain visibly unclassified.
+
+Portfolio-scenario contract:
+
+- The rate scenario applies an explicit illustrative return shock for every broad SEC SIC division under a parallel 200-basis-point rate increase. The technology scenario applies -25% to SIC ranges 3570-3579, 3660-3679, 4810-4899 and 7370-7379, and -8% to other classified US equities.
+- The volatility scenario applies a one-day three-sigma downside from each position's annualized 20-session realized volatility, capped at -35%. Missing volatility or classification leaves that position uncovered and contributing zero, with gross invested coverage reported.
+- Scenario P&L uses signed current market value, so shorts respond in the opposite direction; cash remains unchanged. The output retains every position shock, rationale, estimated P&L, assumptions, resulting equity and explicit linear-model limitations.
+- Custom scenarios accept 1-20 unique held symbols with shocks bounded from -100% to +100%. Unknown or duplicate symbols fail validation instead of creating synthetic exposure.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 

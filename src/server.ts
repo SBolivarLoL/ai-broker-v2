@@ -24,6 +24,7 @@ import { OptionOrderTicket, optionOrderRisk, signOptionOrderPreview, signOptionP
 import { evaluateOperationsPolicy, type OperationsPolicyEvaluation } from "./operations-policy";
 import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { buildPortfolioExposureReport, type ExposureBar } from "./portfolio-exposure";
+import { buildPortfolioScenarioReport, CustomPortfolioScenario } from "./portfolio-scenarios";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
@@ -125,7 +126,8 @@ let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | nul
 const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
 let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
-let portfolioExposureCache: { key: string; expiresAt: number; value: ReturnType<typeof buildPortfolioExposureReport> } | null = null;
+type CurrentPortfolioExposure = { equity: number; report: ReturnType<typeof buildPortfolioExposureReport> };
+let portfolioExposureCache: { key: string; expiresAt: number; value: CurrentPortfolioExposure } | null = null;
 const companyMarketCache = new Map<string, { expiresAt: number; value: ReturnType<typeof companyMarketSnapshot> }>();
 let marketDiscoveryCache: { expiresAt: number; value: ReturnType<typeof discoveryDto> } | null = null;
 let marketClockCache: { expiresAt: number; value: any } | null = null;
@@ -139,6 +141,37 @@ const streamEncoder = new TextEncoder();
 const streamSubscribers = new Map<number, { symbols: Set<string>; controller: ReadableStreamDefaultController<Uint8Array> }>();
 const streamSymbolReferences = new Map<string, number>();
 let stockStreamState = "connecting", nextStreamSubscriberId = 1;
+
+async function currentPortfolioExposure(): Promise<CurrentPortfolioExposure> {
+  const [account, allPositions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
+  if (account.equity === undefined || account.cash === undefined) throw new ClientError("Account exposure data unavailable", 502);
+  const positions = allPositions.slice(0, 100), key = JSON.stringify([account.equity, account.cash, positions.map(position => [position.symbol, position.assetClass, position.marketValue])]);
+  if (portfolioExposureCache?.key === key && portfolioExposureCache.expiresAt > Date.now()) return portfolioExposureCache.value;
+  const start = new Date(Date.now() - 150 * 86_400_000), warnings: string[] = [];
+  const benchmarkResult = await Promise.allSettled([alpaca.marketData.getStockBarsFor("SPY", { timeframe: TimeFrame.Day, start, feed: "iex" })]);
+  const benchmarkBars: ExposureBar[] = benchmarkResult[0]?.status === "fulfilled" ? benchmarkResult[0].value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+  if (!benchmarkBars.length) warnings.push("SPY IEX history is unavailable; market-beta exposure remains unavailable.");
+  if (allPositions.length > positions.length) warnings.push(`${allPositions.length - positions.length} positions were omitted by the 100-position exposure bound.`);
+  const exposurePositions = await Promise.all(positions.map(async position => {
+    const assetClass = String(position.assetClass ?? "unknown"), positionWarnings: string[] = [];
+    if (assetClass !== "us_equity") return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, warnings: positionWarnings };
+    const [barsResult, classificationResult] = await Promise.allSettled([
+      alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" }),
+      getSecCompanyClassification(position.symbol),
+    ]);
+    const bars = barsResult.status === "fulfilled" ? barsResult.value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+    if (!bars.length) positionWarnings.push(`${position.symbol} IEX history is unavailable; its return-derived factor contribution is omitted.`);
+    const official = classificationResult.status === "fulfilled" ? classificationResult.value : null;
+    const classification = official?.sic ? { sic: official.sic, industry: official.industry, sourceUrl: official.sourceUrl } : null;
+    if (!classification) positionWarnings.push(`${position.symbol} has no usable SEC SIC classification.`);
+    return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, bars, classification, marketDataSource: bars.length ? "alpaca:iex" : null, warnings: positionWarnings };
+  }));
+  const equity = Number(account.equity);
+  const report = buildPortfolioExposureReport({ equity, cash: Number(account.cash), positions: exposurePositions, benchmarkBars, warnings });
+  const value = { equity, report };
+  portfolioExposureCache = { key, expiresAt: Date.now() + 5 * 60_000, value };
+  return value;
+}
 
 function streamSend(controller: ReadableStreamDefaultController<Uint8Array>, value: unknown) {
   controller.enqueue(streamEncoder.encode(`data: ${JSON.stringify(value)}\n\n`));
@@ -1555,32 +1588,24 @@ Bun.serve({
         return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), advanced, liquidity, diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
       }
       if (url.pathname === "/api/portfolio/exposure" && request.method === "GET") {
-        const [account, allPositions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
-        if (account.equity === undefined || account.cash === undefined) return json({ error: "Account exposure data unavailable" }, 502);
-        const positions = allPositions.slice(0, 100), key = JSON.stringify([account.equity, account.cash, positions.map(position => [position.symbol, position.assetClass, position.marketValue])]);
-        if (portfolioExposureCache?.key === key && portfolioExposureCache.expiresAt > Date.now()) return json(portfolioExposureCache.value);
-        const start = new Date(Date.now() - 150 * 86_400_000), warnings: string[] = [];
-        const benchmarkResult = await Promise.allSettled([alpaca.marketData.getStockBarsFor("SPY", { timeframe: TimeFrame.Day, start, feed: "iex" })]);
-        const benchmarkBars: ExposureBar[] = benchmarkResult[0]?.status === "fulfilled" ? benchmarkResult[0].value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
-        if (!benchmarkBars.length) warnings.push("SPY IEX history is unavailable; market-beta exposure remains unavailable.");
-        if (allPositions.length > positions.length) warnings.push(`${allPositions.length - positions.length} positions were omitted by the 100-position exposure bound.`);
-        const exposurePositions = await Promise.all(positions.map(async position => {
-          const assetClass = String(position.assetClass ?? "unknown"), positionWarnings: string[] = [];
-          if (assetClass !== "us_equity") return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, warnings: positionWarnings };
-          const [barsResult, classificationResult] = await Promise.allSettled([
-            alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" }),
-            getSecCompanyClassification(position.symbol),
-          ]);
-          const bars = barsResult.status === "fulfilled" ? barsResult.value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
-          if (!bars.length) positionWarnings.push(`${position.symbol} IEX history is unavailable; its return-derived factor contribution is omitted.`);
-          const official = classificationResult.status === "fulfilled" ? classificationResult.value : null;
-          const classification = official?.sic ? { sic: official.sic, industry: official.industry, sourceUrl: official.sourceUrl } : null;
-          if (!classification) positionWarnings.push(`${position.symbol} has no usable SEC SIC classification.`);
-          return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, bars, classification, marketDataSource: bars.length ? "alpaca:iex" : null, warnings: positionWarnings };
+        return json((await currentPortfolioExposure()).report);
+      }
+      if (url.pathname === "/api/portfolio/scenarios" && (request.method === "GET" || request.method === "POST")) {
+        let custom;
+        if (request.method === "POST") {
+          if (!allow(`${actor}:portfolio-scenarios`, 30)) return json({ error: "Portfolio scenario rate limit exceeded" }, 429);
+          const input = await requestJson(request);
+          const parsed = CustomPortfolioScenario.safeParse(typeof input === "object" && input !== null ? (input as { custom?: unknown }).custom : undefined);
+          if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid custom scenario" }, 400);
+          custom = parsed.data;
+        }
+        const exposure = await currentPortfolioExposure();
+        return json(buildPortfolioScenarioReport({
+          equity: exposure.equity,
+          asOf: exposure.report.asOf,
+          custom,
+          positions: exposure.report.positions.map(position => ({ symbol: position.symbol, marketValue: position.marketValue, assetClass: position.assetClass, sector: position.sector, sic: position.sic, volatility20dPercent: position.factors.volatility20dPercent })),
         }));
-        const value = buildPortfolioExposureReport({ equity: Number(account.equity), cash: Number(account.cash), positions: exposurePositions, benchmarkBars, warnings });
-        portfolioExposureCache = { key, expiresAt: Date.now() + 5 * 60_000, value };
-        return json(value);
       }
       if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
         const limit = Number(url.searchParams.get("limit") ?? 30);
