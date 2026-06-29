@@ -56,18 +56,21 @@ type FactEntry = {
 type MetricDefinition = {
   id: string;
   label: string;
+  taxonomy: "us-gaap" | "dei";
   concepts: string[];
   unit: string;
   kind: "duration" | "instant";
 };
 
 const METRICS: MetricDefinition[] = [
-  { id: "revenue", label: "Revenue", concepts: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"], unit: "USD", kind: "duration" },
-  { id: "net_income", label: "Net income", concepts: ["NetIncomeLoss"], unit: "USD", kind: "duration" },
-  { id: "diluted_eps", label: "Diluted EPS", concepts: ["EarningsPerShareDiluted"], unit: "USD/shares", kind: "duration" },
-  { id: "assets", label: "Total assets", concepts: ["Assets"], unit: "USD", kind: "instant" },
-  { id: "liabilities", label: "Total liabilities", concepts: ["Liabilities"], unit: "USD", kind: "instant" },
-  { id: "cash", label: "Cash and equivalents", concepts: ["CashAndCashEquivalentsAtCarryingValue"], unit: "USD", kind: "instant" },
+  { id: "revenue", label: "Revenue", taxonomy: "us-gaap", concepts: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"], unit: "USD", kind: "duration" },
+  { id: "net_income", label: "Net income", taxonomy: "us-gaap", concepts: ["NetIncomeLoss"], unit: "USD", kind: "duration" },
+  { id: "diluted_eps", label: "Diluted EPS", taxonomy: "us-gaap", concepts: ["EarningsPerShareDiluted"], unit: "USD/shares", kind: "duration" },
+  { id: "assets", label: "Total assets", taxonomy: "us-gaap", concepts: ["Assets"], unit: "USD", kind: "instant" },
+  { id: "liabilities", label: "Total liabilities", taxonomy: "us-gaap", concepts: ["Liabilities"], unit: "USD", kind: "instant" },
+  { id: "cash", label: "Cash and equivalents", taxonomy: "us-gaap", concepts: ["CashAndCashEquivalentsAtCarryingValue"], unit: "USD", kind: "instant" },
+  { id: "stockholders_equity", label: "Stockholders' equity", taxonomy: "us-gaap", concepts: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"], unit: "USD", kind: "instant" },
+  { id: "shares_outstanding", label: "Shares outstanding", taxonomy: "dei", concepts: ["EntityCommonStockSharesOutstanding"], unit: "shares", kind: "instant" },
 ];
 
 function durationDays(entry: FactEntry) {
@@ -131,7 +134,7 @@ function observations(company: SecCompany, concept: string, unit: string, kind: 
 
 function metricFacts(facts: SecFacts, definition: MetricDefinition) {
   for (const concept of definition.concepts) {
-    const fact = facts.facts["us-gaap"]?.[concept];
+    const fact = facts.facts[definition.taxonomy]?.[concept];
     const entries = fact?.units[definition.unit];
     if (fact && entries?.length) return { concept, entries };
   }
