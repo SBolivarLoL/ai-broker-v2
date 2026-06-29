@@ -23,10 +23,11 @@ import { OptionChainQuery, optionChainDto, optionPortfolioGreeks } from "./optio
 import { OptionOrderTicket, optionOrderRisk, signOptionOrderPreview, signOptionPositionAction, verifyOptionOrderPreview, verifyOptionPositionAction } from "./option-order";
 import { evaluateOperationsPolicy, type OperationsPolicyEvaluation } from "./operations-policy";
 import { buildPortfolioSnapshot } from "./portfolio-snapshot";
+import { buildPortfolioExposureReport, type ExposureBar } from "./portfolio-exposure";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
-import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, getValuationScenarios, runCompanyResearch } from "./research";
+import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, getSecCompanyClassification, getValuationScenarios, runCompanyResearch } from "./research";
 import { secUserAgentFromEnv } from "./sec-edgar";
 import { authContextFor, authorize, rateLimiter, securityReady, validMutationOrigin, type AuthContext } from "./security";
 import { searchAssets, type SearchableAsset } from "./search";
@@ -124,6 +125,7 @@ let activitySyncRequest: Promise<{ imported: number; truncated: boolean }> | nul
 const orderTracker = new OrderTracker();
 let orderRecoveryRequest: Promise<void> | null = null;
 let portfolioCaptureRequest: Promise<ReturnType<typeof buildPortfolioSnapshot>> | null = null;
+let portfolioExposureCache: { key: string; expiresAt: number; value: ReturnType<typeof buildPortfolioExposureReport> } | null = null;
 const companyMarketCache = new Map<string, { expiresAt: number; value: ReturnType<typeof companyMarketSnapshot> }>();
 let marketDiscoveryCache: { expiresAt: number; value: ReturnType<typeof discoveryDto> } | null = null;
 let marketClockCache: { expiresAt: number; value: any } | null = null;
@@ -1551,6 +1553,34 @@ Bun.serve({
         const advanced = advancedPortfolioRisk(snapshot.equity, positionData.map(item => ({ symbol: item.position.symbol, weight: Number(item.position.marketValue) / snapshot.equity, closes: item.bars.map(bar => bar.close) })), benchmarkBars.map(bar => bar.close));
         const liquidity = positionData.map(item => positionLiquidity(item.position, item.marketSnapshot, item.bars));
         return json({ ...snapshot, ...historicalRisk(history), ...valueAtRisk95(snapshot.equity, history), advanced, liquidity, diversification: diversificationScore(snapshot.hhi, snapshot.largestPositionPercent), stressTests: stressTests(snapshot.equity, snapshot.cash, snapshot.weights), asOf: new Date().toISOString() });
+      }
+      if (url.pathname === "/api/portfolio/exposure" && request.method === "GET") {
+        const [account, allPositions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
+        if (account.equity === undefined || account.cash === undefined) return json({ error: "Account exposure data unavailable" }, 502);
+        const positions = allPositions.slice(0, 100), key = JSON.stringify([account.equity, account.cash, positions.map(position => [position.symbol, position.assetClass, position.marketValue])]);
+        if (portfolioExposureCache?.key === key && portfolioExposureCache.expiresAt > Date.now()) return json(portfolioExposureCache.value);
+        const start = new Date(Date.now() - 150 * 86_400_000), warnings: string[] = [];
+        const benchmarkResult = await Promise.allSettled([alpaca.marketData.getStockBarsFor("SPY", { timeframe: TimeFrame.Day, start, feed: "iex" })]);
+        const benchmarkBars: ExposureBar[] = benchmarkResult[0]?.status === "fulfilled" ? benchmarkResult[0].value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+        if (!benchmarkBars.length) warnings.push("SPY IEX history is unavailable; market-beta exposure remains unavailable.");
+        if (allPositions.length > positions.length) warnings.push(`${allPositions.length - positions.length} positions were omitted by the 100-position exposure bound.`);
+        const exposurePositions = await Promise.all(positions.map(async position => {
+          const assetClass = String(position.assetClass ?? "unknown"), positionWarnings: string[] = [];
+          if (assetClass !== "us_equity") return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, warnings: positionWarnings };
+          const [barsResult, classificationResult] = await Promise.allSettled([
+            alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" }),
+            getSecCompanyClassification(position.symbol),
+          ]);
+          const bars = barsResult.status === "fulfilled" ? barsResult.value.map(bar => ({ date: new Date(bar.timestamp).toISOString().slice(0, 10), close: Number(bar.close) })) : [];
+          if (!bars.length) positionWarnings.push(`${position.symbol} IEX history is unavailable; its return-derived factor contribution is omitted.`);
+          const official = classificationResult.status === "fulfilled" ? classificationResult.value : null;
+          const classification = official?.sic ? { sic: official.sic, industry: official.industry, sourceUrl: official.sourceUrl } : null;
+          if (!classification) positionWarnings.push(`${position.symbol} has no usable SEC SIC classification.`);
+          return { symbol: position.symbol, marketValue: Number(position.marketValue), assetClass, bars, classification, marketDataSource: bars.length ? "alpaca:iex" : null, warnings: positionWarnings };
+        }));
+        const value = buildPortfolioExposureReport({ equity: Number(account.equity), cash: Number(account.cash), positions: exposurePositions, benchmarkBars, warnings });
+        portfolioExposureCache = { key, expiresAt: Date.now() + 5 * 60_000, value };
+        return json(value);
       }
       if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
         const limit = Number(url.searchParams.get("limit") ?? 30);

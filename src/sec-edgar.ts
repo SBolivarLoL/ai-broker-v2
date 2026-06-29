@@ -9,6 +9,16 @@ export type SecCompany = {
   title: string;
 };
 
+export type SecCompanyClassification = {
+  symbol: string;
+  companyName: string;
+  cik: string;
+  sic: string | null;
+  industry: string | null;
+  sourceUrl: string;
+  retrievedAt: string;
+};
+
 export type SecFiling = {
   form: string;
   filed: string;
@@ -89,6 +99,8 @@ export type Sec8KAlertResult = {
 
 type SecSubmissions = {
   name: string;
+  sic?: string | number;
+  sicDescription?: string;
   filings: {
     recent: {
       accessionNumber: string[];
@@ -431,6 +443,15 @@ export class SecEdgarClient {
 
   async companyFacts(company: SecCompany) {
     return this.request<SecFacts>(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, "json", this.jsonCacheTtlMs);
+  }
+
+  async companyClassification(symbol: string): Promise<SecCompanyClassification> {
+    const company = await this.company(symbol);
+    const submission = await this.submissions(company);
+    const rawSic = String(submission.sic ?? "").trim();
+    const sic = /^\d{1,4}$/.test(rawSic) ? rawSic.padStart(4, "0") : null;
+    const industry = sic ? String(submission.sicDescription ?? "").replace(/[\t\r\n ]+/g, " ").trim().slice(0, 200) || null : null;
+    return { symbol: company.ticker, companyName: submission.name, cik: company.cik, sic, industry, sourceUrl: `https://data.sec.gov/submissions/CIK${company.cik}.json`, retrievedAt: new Date(this.now()).toISOString() };
   }
 
   async recentFilings(symbol: string, limit = 12) {

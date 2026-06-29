@@ -54,6 +54,20 @@ test("SEC client requires a declared contact and retries transient responses wit
   expect(delays).toContain(250);
 });
 
+test("reads official SIC classification from SEC submissions", async () => {
+  const now = Date.parse("2026-06-29T12:00:00.000Z");
+  const client = new SecEdgarClient({
+    userAgent: "AI Broker research ops@broker.test",
+    minIntervalMs: 100,
+    now: () => now,
+    sleep: async () => {},
+    fetchImpl: async input => String(input).endsWith("company_tickers.json")
+      ? Response.json({ 0: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." } })
+      : Response.json({ name: "Apple Inc.", sic: "3571", sicDescription: "Electronic Computers", filings: { recent: { accessionNumber: [], filingDate: [], reportDate: [], form: [], primaryDocument: [] } } }),
+  });
+  expect(await client.companyClassification("AAPL")).toEqual({ symbol: "AAPL", companyName: "Apple Inc.", cik: "0000320193", sic: "3571", industry: "Electronic Computers", sourceUrl: "https://data.sec.gov/submissions/CIK0000320193.json", retrievedAt: "2026-06-29T12:00:00.000Z" });
+});
+
 test("builds accession-linked filing evidence from official archive paths", async () => {
   let now = Date.parse("2026-06-28T10:00:00.000Z");
   const annualHtml = `<html><body><h2>Item 1A. Risk Factors</h2><p>${paragraph("Annual risk", 12)}</p><h2>Item 1B. Unresolved Staff Comments</h2><h2>Item 7. Management's Discussion and Analysis</h2><p>${paragraph("Annual MD&A", 12)}</p><h2>Item 7A. Quantitative Disclosures</h2></body></html>`;
