@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed: 2026-06-29
+Last reviewed: 2026-06-30
 
 This document is the build map for turning AI Broker into a serious personal investing and paper-trading workstation. Alpaca supplies brokerage state, execution, and market data. Deterministic application code owns calculations and safety policy. OpenAI agents may research, explain, compare, and draft actions, but they do not bypass the order preview and approval boundary.
 
@@ -15,6 +15,7 @@ This document is the build map for turning AI Broker into a serious personal inv
 7. Strategy automation starts in shadow mode, graduates to paper-only automation only after explicit run-level approval, and remains bounded by budget, exposure, loss, stale-data, and kill-switch policy.
 8. Every strategy decision is reconstructable from versioned code, input data, derived features, weights, thresholds, risk checks, and paper-fill evidence.
 9. Paper results are treated as experimental evidence, not proof of live performance; strategy evaluation must model fees, spread, slippage, latency, missed fills, and liquidity limits.
+10. Backend behavior is validated through deterministic unit, regression, system, function, or API tests; browser/computer-use checks are reserved for UI rendering, layout, accessibility, and interaction wiring.
 
 ## What Alpaca can power
 

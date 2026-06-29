@@ -1,6 +1,7 @@
 # Validation record
 
 Validated on 22 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
+Last updated on 30 June 2026 for branch consolidation and test-hardening policy.
 
 | Objective | Evidence | Result |
 | --- | --- | --- |
@@ -28,6 +29,12 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=<owned-symbol> bun run sm
 
 The last two commands mutate only the Alpaca paper account. They use deliberately unreachable limit prices, cancel the exact returned order ID in `finally`, and fail unless cancellation reconciles.
 
+## Test policy
+
+- Unit, regression, system, function, and API tests own backend behavior, calculations, strategy decisions, data-quality handling, and paper-order safety.
+- Browser or computer-use validation is reserved for UI-specific changes: rendering, layout, accessibility, responsive behavior, and interaction wiring.
+- UI changes that depend on backend logic should add or reuse non-UI tests for the logic first, then use browser validation only for the visible workflow.
+
 ## Verified invariants
 
 - Runtime and CLI both hard-code paper mode; there is no live-trading switch.
@@ -38,7 +45,7 @@ The last two commands mutate only the Alpaca paper account. They use deliberatel
 - Alpaca receives the app idempotency key as `clientOrderId`.
 - Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
 - No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.
-- `bun run check` passes 86 tests across 21 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
+- `bun run check` passes 216 tests across 56 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
 
 ## Production boundary
 
