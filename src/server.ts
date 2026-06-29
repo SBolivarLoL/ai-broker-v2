@@ -24,6 +24,7 @@ import { OptionOrderTicket, optionOrderRisk, signOptionOrderPreview, signOptionP
 import { evaluateOperationsPolicy, type OperationsPolicyEvaluation } from "./operations-policy";
 import { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import { buildPortfolioExposureReport, type ExposureBar } from "./portfolio-exposure";
+import { buildPortfolioOptimizerReport, PortfolioOptimizerRequest } from "./portfolio-optimizer";
 import { buildPortfolioScenarioReport, CustomPortfolioScenario } from "./portfolio-scenarios";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
@@ -1590,6 +1591,27 @@ Bun.serve({
       }
       if (url.pathname === "/api/portfolio/exposure" && request.method === "GET") {
         return json((await currentPortfolioExposure()).report);
+      }
+      if (url.pathname === "/api/portfolio/optimizer" && request.method === "GET") {
+        const parsed = PortfolioOptimizerRequest.safeParse(Object.fromEntries(url.searchParams));
+        if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid optimizer request" }, 400);
+        const optimizerRequest = parsed.data;
+        const [account, positions] = await Promise.all([
+          alpaca.trading.account.getAccount(),
+          alpaca.trading.positions.getAllOpenPositions(),
+        ]);
+        if (account.equity === undefined) throw new Error("Account optimizer data unavailable");
+        const equityPositions = positions.filter(position => position.assetClass === "us_equity" && Number(position.qty) > 0 && Number(position.marketValue) > 0).slice(0, 50);
+        const start = new Date(Date.now() - Math.max(90, optimizerRequest.minObservations * 3) * 86_400_000);
+        const positionData = await Promise.all(equityPositions.map(async position => {
+          const bars = await alpaca.marketData.getStockBarsFor(position.symbol, { timeframe: TimeFrame.Day, start, feed: "iex" });
+          return { symbol: position.symbol, marketValue: Number(position.marketValue), closes: bars.map(bar => Number(bar.close)).filter(value => Number.isFinite(value) && value > 0) };
+        }));
+        const report = buildPortfolioOptimizerReport({ equity: Number(account.equity), positions: positionData, request: optimizerRequest, asOf: new Date().toISOString() });
+        const omittedNonEquity = positions.length - equityPositions.length;
+        const warnings = omittedNonEquity > 0 ? [...report.warnings, `${omittedNonEquity} non-long-US-equity or non-positive position${omittedNonEquity === 1 ? " was" : "s were"} omitted from optimizer proposals.`] : report.warnings;
+        store.event("portfolio.optimizer.generated", actor, { proposals: report.proposals.map(proposal => proposal.id), constraints: report.constraints, optimizedSymbols: report.coverage.optimizedSymbols });
+        return json({ ...report, warnings });
       }
       if (url.pathname === "/api/portfolio/scenarios" && (request.method === "GET" || request.method === "POST")) {
         let custom;

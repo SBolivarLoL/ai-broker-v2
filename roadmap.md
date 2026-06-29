@@ -412,7 +412,7 @@ Goal: progress from descriptive risk to decision-grade portfolio construction.
 - [x] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
 - [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
 - [x] Rebalancing with taxes/fees/turnover constraints where data permits.
-- [ ] Mean-variance and risk-parity proposals with robust constraints.
+- [x] Mean-variance and risk-parity proposals with robust constraints.
 - [ ] Policy editor for position, sector, drawdown and turnover limits.
 
 Portfolio-exposure contract:
@@ -436,6 +436,13 @@ Constrained rebalance contract:
 - Tax estimates use imported Alpaca FILL activities and dated FIFO open lots. The app follows IRS holding-period framing that assets held more than one year may be long-term and otherwise short-term, based on [IRS Topic 409](https://www.irs.gov/taxtopics/tc409) and [IRS Publication 550](https://www.irs.gov/publications/p550); Alpaca account activities provide transaction time, quantity, price and side evidence from [Alpaca Account Activities](https://docs.alpaca.markets/reference/getaccountactivities-1). User-entered tax rates apply only to positive lot gains.
 - Explicit max-tax caps use binary-search scaling over FIFO lot consumption because gains are non-linear across lots. If imported activity history is truncated, unmatched, affected by unresolved corporate actions, or lacks enough lots for a planned sale, a max-tax request is reported as unverifiable and no basket draft is produced.
 - Fractionable symbols round down to six decimals and whole-share-only symbols round down to whole shares. Legs below the requested minimum notional are omitted. A basket draft is produced only when all constraints are verifiable and there are 2-10 executable legs; the existing signed basket preview still performs fresh quote, asset, liquidity, risk and operations-policy checks before any paper order can be submitted.
+
+Portfolio-optimizer contract:
+
+- `GET /api/portfolio/optimizer` is read-only and uses current long US-equity holdings only. It does not infer new symbols, does not short, does not use leverage and never creates orders. Non-US-equity, non-positive and insufficient-history positions are omitted with explicit warnings.
+- The optimizer returns two target-weight proposals: risk parity from inverse-volatility scores and a mean-variance tilt from shrunk expected return divided by shrunk variance. Daily returns are aligned over the shared available window; expected returns are shrunk halfway to the cross-sectional mean and off-diagonal covariance is shrunk toward zero before scoring.
+- Robust constraints are user-visible: maximum target weight, maximum absolute turnover, cash reserve and minimum observation count. Weight caps are applied before turnover scaling; if the turnover budget prevents full de-risking from an over-cap current holding, the binding constraint remains visible.
+- Outputs include expected annual return, annualized volatility, position-level current/target/delta weights, risk contribution, coverage and warnings. Target drafts can be loaded only into the constrained rebalance planner; basket preview and signed broker submission remain separate downstream checks.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 
