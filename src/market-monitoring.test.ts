@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { monitoringCorporateActions, monitoringEventClusters, monitoringNews } from "./market-monitoring";
+import { monitoringCorporateActions, monitoringEventClusters, monitoringNews, monitoringSecFilings } from "./market-monitoring";
+import type { Sec8KAlertEvidence } from "./sec-edgar";
 
 const positions = [{ symbol: "AAPL", qty: "10" }];
 const watchlists = [{ id: "growth", name: "Growth", assets: [{ symbol: "MSFT" }] }];
@@ -40,4 +41,22 @@ test("clusters earnings, dividend and corporate-action timelines without inventi
   const clusters = monitoringEventClusters(news, actions);
   expect(clusters.find(cluster => cluster.kind === "earnings")).toMatchObject({ symbol: "AAPL", count: 2 });
   expect(clusters.find(cluster => cluster.kind === "dividend")?.timeline[0]?.source).toBe("corporate_action");
+});
+
+test("scopes SEC 8-K alerts and prioritizes material filing items", () => {
+  const base = {
+    companyName: "Apple Inc.", form: "8-K", reportDate: "2026-06-27", sourceUrl: "https://www.sec.gov/a", indexUrl: "https://www.sec.gov/a-index",
+    relevanceSummary: "Grounded filing excerpt.", items: [], retrievedAt: "2026-06-29T12:00:00.000Z",
+  };
+  const alerts = monitoringSecFilings([
+    { ...base, id: "sec:8k:AAPL:critical", symbol: "AAPL", filed: "2026-06-28", accession: "critical", importance: "critical", primaryItem: { code: "1.05", label: "Material Cybersecurity Incidents" } },
+    { ...base, id: "sec:8k:MSFT:standard", symbol: "MSFT", filed: "2026-06-29", accession: "standard", importance: "standard", primaryItem: { code: "7.01", label: "Regulation FD Disclosure" } },
+    { ...base, id: "sec:8k:TSLA:ignore", symbol: "TSLA", filed: "2026-06-29", accession: "ignore", importance: "high", primaryItem: { code: "1.01", label: "Material Agreement" } },
+  ] as Sec8KAlertEvidence[], positions, watchlists);
+  expect(alerts.map(alert => alert.accession)).toEqual(["critical", "standard"]);
+  expect(alerts[0]?.relevance.portfolio).toBe(true);
+  expect(alerts[1]?.relevance.watchlists).toEqual([{ id: "growth", name: "Growth" }]);
+  const clusters = monitoringEventClusters([], [], alerts);
+  expect(clusters.find(cluster => cluster.symbol === "MSFT")).toMatchObject({ kind: "sec_8k", count: 1 });
+  expect(clusters.find(cluster => cluster.symbol === "AAPL")?.timeline[0]?.source).toBe("sec_8k");
 });

@@ -1,6 +1,9 @@
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import type { LedgerActivity, LedgerCategory } from "./ledger";
+import { DEFAULT_OPERATIONS_POLICY, parseOperationsPolicy, type OperationsPolicy } from "./operations-policy";
+import { EncryptedSecret, SecretName, secretMetadata } from "./secret-vault";
 
 export type RiskReservationStatus = "reserved" | "submitted" | "filled" | "canceled" | "rejected" | "released";
 export type RiskReservation = {
@@ -61,6 +64,14 @@ export type StrategyDecisionInput = {
   draftOrder?: unknown;
   paperOrderId?: string | null;
 };
+export type StrategyDecisionFilter = {
+  symbol?: string | null;
+  decision?: StrategyDecisionKind | null;
+  strategyId?: string | null;
+  strategyVersion?: string | null;
+  blockReason?: string | null;
+  orderOutcome?: string | null;
+};
 export type StrategyOrderInput = {
   id: string;
   runId: string;
@@ -76,15 +87,164 @@ export type StrategyMetricInput = {
   unit: string;
   asOf: string;
 };
+export type StrategyAuditInput = {
+  runId: string;
+  kind: string;
+  actor: string;
+  subject: string;
+  strategyId?: string | null;
+  strategyVersion?: string | null;
+  policyVersion?: string | null;
+  configHash?: string | null;
+  before?: unknown;
+  after?: unknown;
+  metadata?: unknown;
+  retentionDays?: number;
+  createdAt?: string;
+};
+export type StoredOperationsPolicy = OperationsPolicy & { updatedAt: string | null; updatedBy: string | null };
+export type DecisionAuditInput = {
+  subjectId: string;
+  kind: string;
+  actor: string;
+  payload?: unknown;
+  retentionDays?: number;
+  createdAt?: string;
+};
+export type SchemaMigration = { id: string; name: string; checksum: string };
+
+const SCHEMA_MIGRATIONS: SchemaMigration[] = [
+  { id: "0001", name: "core events submissions receipts plans", checksum: "sha256:core-events-submissions-receipts-plans-v1" },
+  { id: "0002", name: "risk reservations", checksum: "sha256:risk-reservations-v1" },
+  { id: "0003", name: "ledger and portfolio snapshots", checksum: "sha256:ledger-portfolio-snapshots-v1" },
+  { id: "0004", name: "research runs and metrics", checksum: "sha256:research-runs-v1" },
+  { id: "0005", name: "strategy lab runs decisions orders metrics notes", checksum: "sha256:strategy-lab-v1" },
+  { id: "0006", name: "strategy hash chained audit log", checksum: "sha256:strategy-audit-v1" },
+  { id: "0007", name: "operations policy", checksum: "sha256:operations-policy-v1" },
+  { id: "0008", name: "decision receipt audit log", checksum: "sha256:decision-audit-v1" },
+  { id: "0009", name: "operational readiness exports", checksum: "sha256:operational-readiness-v1" },
+  { id: "0010", name: "encrypted secret vault", checksum: "sha256:encrypted-secret-vault-v1" },
+];
+
+function mapStrategyDecisionRow(row: any) {
+  const draftOrder = row.draftOrder ? JSON.parse(row.draftOrder) : null;
+  const order = row.orderId ? {
+    id: row.orderId,
+    paperOrderId: row.orderPaperOrderId,
+    status: row.orderStatus,
+    payload: row.orderPayload ? JSON.parse(row.orderPayload) : null,
+    createdAt: row.orderCreatedAt,
+    updatedAt: row.orderUpdatedAt,
+  } : null;
+  return {
+    ...row,
+    features: JSON.parse(row.features),
+    weights: JSON.parse(row.weights),
+    thresholds: JSON.parse(row.thresholds),
+    riskChecks: JSON.parse(row.riskChecks),
+    dataSnapshotIds: JSON.parse(row.dataSnapshotIds),
+    draftOrder,
+    order,
+    orderOutcome: order?.status ?? (row.paperOrderId ? "linked" : draftOrder ? "drafted" : "none"),
+  };
+}
+
+function decisionMatchesFilter(decision: ReturnType<typeof mapStrategyDecisionRow>, filter: StrategyDecisionFilter) {
+  if (filter.orderOutcome && decision.orderOutcome !== filter.orderOutcome) return false;
+  if (!filter.blockReason) return true;
+  const needle = filter.blockReason.toLowerCase();
+  const reasons: string[] = Array.isArray(decision.riskChecks?.reasons) ? decision.riskChecks.reasons.map((reason: unknown) => String(reason)) : [];
+  return reasons.some(reason => reason.toLowerCase().includes(needle)) || String(decision.reason).toLowerCase().includes(needle);
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+}
+
+function hashAuditEntry(entry: Record<string, unknown>) {
+  return `sha256:${createHash("sha256").update(canonicalJson(entry)).digest("hex")}`;
+}
+
+function hashBytes(bytes: Buffer | Uint8Array) {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function mapStrategyAuditRow(row: any) {
+  return {
+    id: row.id,
+    runId: row.runId,
+    kind: row.kind,
+    actor: row.actor,
+    subject: row.subject,
+    strategyId: row.strategyId,
+    strategyVersion: row.strategyVersion,
+    policyVersion: row.policyVersion,
+    configHash: row.configHash,
+    before: row.beforePayload ? JSON.parse(row.beforePayload) : null,
+    after: row.afterPayload ? JSON.parse(row.afterPayload) : null,
+    metadata: row.metadata ? JSON.parse(row.metadata) : {},
+    previousHash: row.previousHash,
+    entryHash: row.entryHash,
+    retentionUntil: row.retentionUntil,
+    createdAt: row.createdAt,
+  };
+}
+
+function mapDecisionAuditRow(row: any) {
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    kind: row.kind,
+    actor: row.actor,
+    payload: row.payload ? JSON.parse(row.payload) : null,
+    previousHash: row.previousHash,
+    entryHash: row.entryHash,
+    retentionUntil: row.retentionUntil,
+    createdAt: row.createdAt,
+  };
+}
 
 export function createStore(filename = "data/app.db") {
   if (filename !== ":memory:") mkdirSync("data", { recursive: true });
   const db = new Database(filename, { create: true, strict: true });
   db.run("PRAGMA journal_mode = WAL");
   db.run("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, type TEXT NOT NULL, actor TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  db.run(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
   db.run("CREATE TABLE IF NOT EXISTS submissions (idempotency_key TEXT PRIMARY KEY, order_id TEXT, response TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
   db.run("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
   db.run("CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, intent TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  db.run(`CREATE TABLE IF NOT EXISTS operations_policy (
+    id TEXT PRIMARY KEY CHECK(id = 'global'),
+    payload TEXT NOT NULL,
+    updated_by TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS encrypted_secrets (
+    name TEXT PRIMARY KEY,
+    envelope TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS decision_audit_log (
+    id INTEGER PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    previous_hash TEXT,
+    entry_hash TEXT NOT NULL UNIQUE,
+    retention_until TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS decision_audit_log_subject ON decision_audit_log(subject_id, id)");
   db.run(`CREATE TABLE IF NOT EXISTS risk_reservations (
     reservation_key TEXT PRIMARY KEY,
     symbol TEXT NOT NULL,
@@ -207,6 +367,28 @@ export function createStore(filename = "data/app.db") {
     note TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  db.run(`CREATE TABLE IF NOT EXISTS strategy_audit_log (
+    id INTEGER PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES strategy_runs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    strategy_id TEXT,
+    strategy_version TEXT,
+    policy_version TEXT,
+    config_hash TEXT,
+    before_payload TEXT,
+    after_payload TEXT,
+    metadata TEXT NOT NULL,
+    previous_hash TEXT,
+    entry_hash TEXT NOT NULL UNIQUE,
+    retention_until TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.run("CREATE INDEX IF NOT EXISTS strategy_audit_log_run ON strategy_audit_log(run_id, id)");
+  const migrationInsert = db.query(`INSERT INTO schema_migrations (id, name, checksum) VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, checksum=excluded.checksum`);
+  for (const migration of SCHEMA_MIGRATIONS) migrationInsert.run(migration.id, migration.name, migration.checksum);
   const snapshotColumns = db.query("PRAGMA table_info(portfolio_snapshots)").all() as { name: string }[];
   if (snapshotColumns.some(column => column.name === "captured_at")) db.transaction(() => {
     db.run("ALTER TABLE portfolio_snapshots RENAME TO portfolio_snapshots_legacy");
@@ -255,9 +437,59 @@ export function createStore(filename = "data/app.db") {
   });
   const activitySelect = `SELECT activity_id AS id, type, sub_type AS subType, category, status, occurred_at AS occurredAt,
     symbol, side, quantity, price, amount, order_id AS orderId, corporate_action AS corporateActionJson FROM account_activities`;
+  const strategyAuditSelect = `SELECT id, run_id AS runId, kind, actor, subject, strategy_id AS strategyId, strategy_version AS strategyVersion,
+    policy_version AS policyVersion, config_hash AS configHash, before_payload AS beforePayload, after_payload AS afterPayload,
+    metadata, previous_hash AS previousHash, entry_hash AS entryHash, retention_until AS retentionUntil, created_at AS createdAt FROM strategy_audit_log`;
+  const decisionAuditSelect = `SELECT id, subject_id AS subjectId, kind, actor, payload, previous_hash AS previousHash,
+    entry_hash AS entryHash, retention_until AS retentionUntil, created_at AS createdAt FROM decision_audit_log`;
+  const mapEventRow = (row: any) => ({ id: row.id, type: row.type, actor: row.actor, payload: JSON.parse(row.payload), createdAt: row.createdAt });
+  const encryptedSecretRow = (row: any) => ({
+    name: row.name,
+    envelope: EncryptedSecret.parse(JSON.parse(row.envelope)),
+    updatedBy: row.updatedBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+  const operationsPolicy = (): StoredOperationsPolicy => {
+    const row = db.query("SELECT payload, updated_by AS updatedBy, updated_at AS updatedAt FROM operations_policy WHERE id = 'global'").get() as { payload: string; updatedBy: string | null; updatedAt: string } | null;
+    const policy = parseOperationsPolicy(row ? JSON.parse(row.payload) : DEFAULT_OPERATIONS_POLICY);
+    return { ...policy, updatedAt: row?.updatedAt ?? null, updatedBy: row?.updatedBy ?? null };
+  };
+  const decisionAudit = (input: DecisionAuditInput) => {
+    if (!input.subjectId || !input.kind || !input.actor) throw new Error("Invalid decision audit entry");
+    const createdAt = input.createdAt ?? new Date().toISOString();
+    const createdDate = new Date(createdAt);
+    if (!Number.isFinite(createdDate.getTime())) throw new Error("Invalid decision audit timestamp");
+    const retentionDays = Number.isFinite(input.retentionDays) && input.retentionDays! > 0 ? input.retentionDays! : 365 * 7;
+    const retentionUntil = new Date(createdDate.getTime() + retentionDays * 86_400_000).toISOString();
+    const previous = db.query("SELECT entry_hash AS entryHash FROM decision_audit_log ORDER BY id DESC LIMIT 1").get() as { entryHash: string } | null;
+    const payload = input.payload ?? {};
+    const hashInput = {
+      schemaVersion: "decision-audit-v1",
+      subjectId: input.subjectId,
+      kind: input.kind,
+      actor: input.actor,
+      payload,
+      previousHash: previous?.entryHash ?? null,
+      retentionUntil,
+      createdAt,
+    };
+    const entryHash = hashAuditEntry(hashInput);
+    db.query(`INSERT INTO decision_audit_log (subject_id, kind, actor, payload, previous_hash, entry_hash, retention_until, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.subjectId, input.kind, input.actor, JSON.stringify(payload), previous?.entryHash ?? null, entryHash, retentionUntil, createdAt);
+    return mapDecisionAuditRow(db.query(`${decisionAuditSelect} WHERE entry_hash = ?`).get(entryHash));
+  };
   return {
     event(type: string, actor: string, payload: unknown) {
       db.query("INSERT INTO events (type, actor, payload) VALUES (?, ?, ?)").run(type, actor, JSON.stringify(payload));
+    },
+    events(limit = 100, type?: string) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) throw new Error("Event limit is out of range");
+      const rows = type
+        ? db.query("SELECT id, type, actor, payload, created_at AS createdAt FROM events WHERE type = ? ORDER BY id DESC LIMIT ?").all(type, limit)
+        : db.query("SELECT id, type, actor, payload, created_at AS createdAt FROM events ORDER BY id DESC LIMIT ?").all(limit);
+      return (rows as any[]).map(mapEventRow);
     },
     submission(key: string) {
       const row = db.query("SELECT response FROM submissions WHERE idempotency_key = ?").get(key) as { response: string } | null;
@@ -291,6 +523,42 @@ export function createStore(filename = "data/app.db") {
     },
     receipt(id: string, payload: unknown) {
       db.query("INSERT INTO receipts (id, payload) VALUES (?, ?)").run(id, JSON.stringify(payload));
+      const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+      decisionAudit({ subjectId: id, kind: `receipt.${String(record.kind ?? "decision")}`, actor: String(record.advisor ?? "system"), payload });
+    },
+    operationsPolicy,
+    updateOperationsPolicy(actor: string, patch: unknown) {
+      if (!actor) throw new Error("Operations policy actor is required");
+      const current = operationsPolicy();
+      const { updatedAt: _updatedAt, updatedBy: _updatedBy, ...currentPolicy } = current;
+      const next = parseOperationsPolicy({ ...currentPolicy, ...(patch && typeof patch === "object" ? patch : {}) });
+      db.query(`INSERT INTO operations_policy (id, payload, updated_by, updated_at) VALUES ('global', ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`)
+        .run(JSON.stringify(next), actor);
+      return operationsPolicy();
+    },
+    upsertEncryptedSecret(name: string, envelope: EncryptedSecret, actor: string) {
+      const parsedName = SecretName.parse(name);
+      const parsedEnvelope = EncryptedSecret.parse(envelope);
+      if (!actor) throw new Error("Encrypted secret actor is required");
+      db.query(`INSERT INTO encrypted_secrets (name, envelope, updated_by) VALUES (?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET envelope=excluded.envelope, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`)
+        .run(parsedName, JSON.stringify(parsedEnvelope), actor);
+      const row = encryptedSecretRow(db.query("SELECT name, envelope, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt FROM encrypted_secrets WHERE name = ?").get(parsedName));
+      return secretMetadata(row.name, row.envelope, row.updatedBy, row.updatedAt);
+    },
+    encryptedSecret(name: string) {
+      const row = db.query("SELECT name, envelope, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt FROM encrypted_secrets WHERE name = ?").get(SecretName.parse(name)) as any;
+      return row ? encryptedSecretRow(row) : null;
+    },
+    encryptedSecretMetadata(limit = 100) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) throw new Error("Encrypted secret limit is out of range");
+      return (db.query("SELECT name, envelope, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt FROM encrypted_secrets ORDER BY name LIMIT ?").all(limit) as any[])
+        .map(encryptedSecretRow)
+        .map(row => secretMetadata(row.name, row.envelope, row.updatedBy, row.updatedAt));
+    },
+    deleteEncryptedSecret(name: string) {
+      return db.query("DELETE FROM encrypted_secrets WHERE name = ?").run(SecretName.parse(name)).changes === 1;
     },
     getReceipt(id: string) {
       const row = db.query("SELECT payload FROM receipts WHERE id = ?").get(id) as { payload: string } | null;
@@ -312,8 +580,9 @@ export function createStore(filename = "data/app.db") {
         }
       }
     },
-    plan(id: string, intent: string, payload: unknown) {
+    plan(id: string, intent: string, payload: unknown, actor = "agent") {
       db.query("INSERT INTO plans (id, intent, payload) VALUES (?, ?, ?)").run(id, intent, JSON.stringify(payload));
+      decisionAudit({ subjectId: id, kind: "agent.plan", actor, payload: { intent, ...(payload && typeof payload === "object" ? payload as Record<string, unknown> : { payload }) } });
     },
     getPlan(id: string) {
       const row = db.query("SELECT intent, payload, created_at FROM plans WHERE id = ?").get(id) as { intent: string; payload: string; created_at: string } | null;
@@ -363,6 +632,13 @@ export function createStore(filename = "data/app.db") {
     updateStrategyRunStatus(id: string, status: StrategyRunStatus, notes?: string | null) {
       return db.query("UPDATE strategy_runs SET status = ?, notes = COALESCE(?, notes), updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(status, notes ?? null, id).changes === 1;
     },
+    updateStrategyRunConfig(id: string, config: unknown, configHash?: string | null) {
+      return db.query("UPDATE strategy_runs SET config = ?, config_hash = COALESCE(?, config_hash), updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(JSON.stringify(config), configHash ?? null, id).changes === 1;
+    },
+    approveStrategyRunPaper(id: string, budget: number, config: unknown, configHash?: string | null) {
+      if (!Number.isFinite(budget) || budget <= 0) throw new Error("Invalid paper strategy budget");
+      return db.query("UPDATE strategy_runs SET status = 'paper', budget = ?, config = ?, config_hash = COALESCE(?, config_hash), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('shadow', 'paused')").run(budget, JSON.stringify(config), configHash ?? null, id).changes === 1;
+    },
     getStrategyRun(id: string) {
       const row = db.query("SELECT id, strategy_id AS strategyId, strategy_version AS strategyVersion, status, config_hash AS configHash, policy_version AS policyVersion, symbols, budget, config, notes, created_at AS createdAt, updated_at AS updatedAt FROM strategy_runs WHERE id = ?").get(id) as any;
       return row ? { ...row, symbols: JSON.parse(row.symbols), config: JSON.parse(row.config) } : null;
@@ -384,31 +660,44 @@ export function createStore(filename = "data/app.db") {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(input.id, input.traceId, input.runId, input.symbol, input.decision, JSON.stringify(input.features), JSON.stringify(input.weights), JSON.stringify(input.thresholds), JSON.stringify(input.riskChecks), JSON.stringify(input.dataSnapshotIds), input.rawSignal, input.riskAdjustedSignal, input.targetPosition, input.reason, input.draftOrder === undefined ? null : JSON.stringify(input.draftOrder), input.paperOrderId ?? null);
     },
-    strategyDecisions(runId: string, limit = 50) {
+    strategyDecisions(runId: string, limit = 50, filter: StrategyDecisionFilter = {}) {
       if (!runId || !Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error("Strategy decision query is out of range");
-      return (db.query(`SELECT id, trace_id AS traceId, run_id AS runId, symbol, decision, features, weights, thresholds, risk_checks AS riskChecks, data_snapshot_ids AS dataSnapshotIds,
-        raw_signal AS rawSignal, risk_adjusted_signal AS riskAdjustedSignal, target_position AS targetPosition, reason, draft_order AS draftOrder, paper_order_id AS paperOrderId, created_at AS createdAt
-        FROM strategy_decisions WHERE run_id = ? ORDER BY created_at DESC LIMIT ?`).all(runId, limit) as any[])
-        .map(row => ({ ...row, features: JSON.parse(row.features), weights: JSON.parse(row.weights), thresholds: JSON.parse(row.thresholds), riskChecks: JSON.parse(row.riskChecks), dataSnapshotIds: JSON.parse(row.dataSnapshotIds), draftOrder: row.draftOrder ? JSON.parse(row.draftOrder) : null }));
+      const clauses = ["sd.run_id = ?"], params: (string | number | null)[] = [runId];
+      if (filter.symbol) { clauses.push("sd.symbol = ?"); params.push(filter.symbol); }
+      if (filter.decision) { clauses.push("sd.decision = ?"); params.push(filter.decision); }
+      if (filter.strategyId) { clauses.push("sr.strategy_id = ?"); params.push(filter.strategyId); }
+      if (filter.strategyVersion) { clauses.push("sr.strategy_version = ?"); params.push(filter.strategyVersion); }
+      const rawLimit = filter.blockReason || filter.orderOutcome ? 500 : limit;
+      const rows = db.query(`SELECT sd.id, sd.trace_id AS traceId, sd.run_id AS runId, sd.symbol, sd.decision, sd.features, sd.weights, sd.thresholds, sd.risk_checks AS riskChecks, sd.data_snapshot_ids AS dataSnapshotIds,
+        sd.raw_signal AS rawSignal, sd.risk_adjusted_signal AS riskAdjustedSignal, sd.target_position AS targetPosition, sd.reason, sd.draft_order AS draftOrder, sd.paper_order_id AS paperOrderId, sd.created_at AS createdAt,
+        sr.strategy_id AS strategyId, sr.strategy_version AS strategyVersion,
+        so.id AS orderId, so.paper_order_id AS orderPaperOrderId, so.status AS orderStatus, so.payload AS orderPayload, so.created_at AS orderCreatedAt, so.updated_at AS orderUpdatedAt
+        FROM strategy_decisions sd
+        JOIN strategy_runs sr ON sr.id = sd.run_id
+        LEFT JOIN strategy_orders so ON so.decision_id = sd.id
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY sd.created_at DESC LIMIT ?`).all(...params, rawLimit) as any[];
+      return rows.map(mapStrategyDecisionRow).filter(decision => decisionMatchesFilter(decision, filter)).slice(0, limit);
     },
     getStrategyDecisionTrace(traceId: string) {
-      const row = db.query(`SELECT id, trace_id AS traceId, run_id AS runId, symbol, decision, features, weights, thresholds, risk_checks AS riskChecks, data_snapshot_ids AS dataSnapshotIds,
-        raw_signal AS rawSignal, risk_adjusted_signal AS riskAdjustedSignal, target_position AS targetPosition, reason, draft_order AS draftOrder, paper_order_id AS paperOrderId, created_at AS createdAt
-        FROM strategy_decisions WHERE trace_id = ?`).get(traceId) as any;
+      const row = db.query(`SELECT sd.id, sd.trace_id AS traceId, sd.run_id AS runId, sd.symbol, sd.decision, sd.features, sd.weights, sd.thresholds, sd.risk_checks AS riskChecks, sd.data_snapshot_ids AS dataSnapshotIds,
+        sd.raw_signal AS rawSignal, sd.risk_adjusted_signal AS riskAdjustedSignal, sd.target_position AS targetPosition, sd.reason, sd.draft_order AS draftOrder, sd.paper_order_id AS paperOrderId, sd.created_at AS createdAt,
+        sr.strategy_id AS strategyId, sr.strategy_version AS strategyVersion,
+        so.id AS orderId, so.paper_order_id AS orderPaperOrderId, so.status AS orderStatus, so.payload AS orderPayload, so.created_at AS orderCreatedAt, so.updated_at AS orderUpdatedAt
+        FROM strategy_decisions sd
+        JOIN strategy_runs sr ON sr.id = sd.run_id
+        LEFT JOIN strategy_orders so ON so.decision_id = sd.id
+        WHERE sd.trace_id = ?`).get(traceId) as any;
       if (!row) return null;
-      const dataSnapshotIds = JSON.parse(row.dataSnapshotIds) as string[];
+      const decision = mapStrategyDecisionRow(row);
+      const dataSnapshotIds = decision.dataSnapshotIds as string[];
       const snapshots = dataSnapshotIds.length
         ? db.query(`SELECT id, run_id AS runId, symbol, source, feed, observed_at AS observedAt, stale, latency_ms AS latencyMs, payload, created_at AS createdAt
           FROM strategy_data_snapshots WHERE id IN (${dataSnapshotIds.map(() => "?").join(",")})`).all(...dataSnapshotIds) as any[]
         : [];
       return {
-        ...row,
-        features: JSON.parse(row.features),
-        weights: JSON.parse(row.weights),
-        thresholds: JSON.parse(row.thresholds),
-        riskChecks: JSON.parse(row.riskChecks),
+        ...decision,
         dataSnapshotIds,
-        draftOrder: row.draftOrder ? JSON.parse(row.draftOrder) : null,
         snapshots: snapshots.map(snapshot => ({ ...snapshot, stale: Boolean(snapshot.stale), payload: JSON.parse(snapshot.payload) })),
       };
     },
@@ -419,6 +708,18 @@ export function createStore(filename = "data/app.db") {
         ON CONFLICT(id) DO UPDATE SET status=excluded.status, payload=excluded.payload, updated_at=CURRENT_TIMESTAMP`)
         .run(input.id, input.runId, input.decisionId, input.paperOrderId, input.status, JSON.stringify(input.payload));
     },
+    reconcileStrategyOrder(paperOrderId: string, status: string, payloadPatch: Record<string, unknown>) {
+      if (!paperOrderId || !status) throw new Error("Invalid strategy order reconciliation");
+      const row = db.query("SELECT payload FROM strategy_orders WHERE paper_order_id = ?").get(paperOrderId) as { payload: string } | null;
+      if (!row) return false;
+      const payload = { ...JSON.parse(row.payload), ...payloadPatch };
+      return db.query("UPDATE strategy_orders SET status = ?, payload = ?, updated_at = CURRENT_TIMESTAMP WHERE paper_order_id = ?").run(status, JSON.stringify(payload), paperOrderId).changes > 0;
+    },
+    strategyOrders(runId: string) {
+      if (!runId) throw new Error("Strategy run id is required");
+      return (db.query("SELECT id, run_id AS runId, decision_id AS decisionId, paper_order_id AS paperOrderId, status, payload, created_at AS createdAt, updated_at AS updatedAt FROM strategy_orders WHERE run_id = ? ORDER BY created_at DESC").all(runId) as any[])
+        .map(row => ({ ...row, payload: JSON.parse(row.payload) }));
+    },
     strategyMetric(input: StrategyMetricInput) {
       if (!input.runId || !input.name || !Number.isFinite(input.value) || !input.unit || !input.asOf) throw new Error("Invalid strategy metric");
       db.query(`INSERT INTO strategy_metrics (run_id, name, value, unit, as_of) VALUES (?, ?, ?, ?, ?)
@@ -428,9 +729,155 @@ export function createStore(filename = "data/app.db") {
     strategyMetrics(runId: string) {
       return db.query("SELECT run_id AS runId, name, value, unit, as_of AS asOf, created_at AS createdAt FROM strategy_metrics WHERE run_id = ? ORDER BY as_of DESC, name").all(runId);
     },
+    allStrategyMetrics(limit = 500) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5_000) throw new Error("Strategy metric limit is out of range");
+      return db.query("SELECT run_id AS runId, name, value, unit, as_of AS asOf, created_at AS createdAt FROM strategy_metrics ORDER BY as_of DESC, created_at DESC, name LIMIT ?").all(limit);
+    },
     strategyNote(runId: string, actor: string, note: string) {
       if (!runId || !actor || !note.trim()) throw new Error("Invalid strategy note");
       db.query("INSERT INTO strategy_notes (run_id, actor, note) VALUES (?, ?, ?)").run(runId, actor, note.trim());
+    },
+    strategyNotes(runId: string) {
+      if (!runId) throw new Error("Strategy run id is required");
+      return db.query("SELECT actor, note, created_at AS createdAt FROM strategy_notes WHERE run_id = ? ORDER BY created_at DESC, id DESC").all(runId);
+    },
+    strategyAudit(input: StrategyAuditInput) {
+      if (!input.runId || !input.kind || !input.actor || !input.subject) throw new Error("Invalid strategy audit entry");
+      const createdAt = input.createdAt ?? new Date().toISOString();
+      const createdDate = new Date(createdAt);
+      if (!Number.isFinite(createdDate.getTime())) throw new Error("Invalid strategy audit timestamp");
+      const retentionDays = Number.isFinite(input.retentionDays) && input.retentionDays! > 0 ? input.retentionDays! : 365 * 7;
+      const retentionUntil = new Date(createdDate.getTime() + retentionDays * 86_400_000).toISOString();
+      const previous = db.query("SELECT entry_hash AS entryHash FROM strategy_audit_log WHERE run_id = ? ORDER BY id DESC LIMIT 1").get(input.runId) as { entryHash: string } | null;
+      const beforePayload = input.before === undefined ? null : JSON.stringify(input.before);
+      const afterPayload = input.after === undefined ? null : JSON.stringify(input.after);
+      const metadata = input.metadata ?? {};
+      const metadataPayload = JSON.stringify(metadata);
+      const hashInput = {
+        schemaVersion: "strategy-audit-v1",
+        runId: input.runId,
+        kind: input.kind,
+        actor: input.actor,
+        subject: input.subject,
+        strategyId: input.strategyId ?? null,
+        strategyVersion: input.strategyVersion ?? null,
+        policyVersion: input.policyVersion ?? null,
+        configHash: input.configHash ?? null,
+        before: input.before ?? null,
+        after: input.after ?? null,
+        metadata,
+        previousHash: previous?.entryHash ?? null,
+        retentionUntil,
+        createdAt,
+      };
+      const entryHash = hashAuditEntry(hashInput);
+      db.query(`INSERT INTO strategy_audit_log (run_id, kind, actor, subject, strategy_id, strategy_version, policy_version, config_hash, before_payload, after_payload, metadata, previous_hash, entry_hash, retention_until, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(input.runId, input.kind, input.actor, input.subject, input.strategyId ?? null, input.strategyVersion ?? null, input.policyVersion ?? null, input.configHash ?? null, beforePayload, afterPayload, metadataPayload, previous?.entryHash ?? null, entryHash, retentionUntil, createdAt);
+      const row = db.query(`${strategyAuditSelect} WHERE entry_hash = ?`).get(entryHash) as any;
+      return mapStrategyAuditRow(row);
+    },
+    strategyAuditTrail(runId: string) {
+      if (!runId) throw new Error("Strategy run id is required");
+      return (db.query(`${strategyAuditSelect} WHERE run_id = ? ORDER BY id`).all(runId) as any[]).map(mapStrategyAuditRow);
+    },
+    verifyStrategyAuditTrail(runId: string) {
+      if (!runId) throw new Error("Strategy run id is required");
+      const entries = (db.query(`${strategyAuditSelect} WHERE run_id = ? ORDER BY id`).all(runId) as any[]).map(mapStrategyAuditRow);
+      let previousHash: string | null = null;
+      const invalid = entries.find(entry => {
+        const hash = hashAuditEntry({
+          schemaVersion: "strategy-audit-v1",
+          runId: entry.runId,
+          kind: entry.kind,
+          actor: entry.actor,
+          subject: entry.subject,
+          strategyId: entry.strategyId ?? null,
+          strategyVersion: entry.strategyVersion ?? null,
+          policyVersion: entry.policyVersion ?? null,
+          configHash: entry.configHash ?? null,
+          before: entry.before ?? null,
+          after: entry.after ?? null,
+          metadata: entry.metadata ?? {},
+          previousHash,
+          retentionUntil: entry.retentionUntil,
+          createdAt: entry.createdAt,
+        });
+        const broken = entry.previousHash !== previousHash || entry.entryHash !== hash;
+        previousHash = entry.entryHash;
+        return broken;
+      });
+      return { valid: !invalid, entries: entries.length, invalidEntryId: invalid?.id ?? null };
+    },
+    decisionAudit,
+    decisionAuditTrail(subjectId?: string, limit = 100) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) throw new Error("Decision audit limit is out of range");
+      const rows = subjectId
+        ? db.query(`${decisionAuditSelect} WHERE subject_id = ? ORDER BY id LIMIT ?`).all(subjectId, limit)
+        : db.query(`${decisionAuditSelect} ORDER BY id DESC LIMIT ?`).all(limit);
+      return (rows as any[]).map(mapDecisionAuditRow);
+    },
+    verifyDecisionAuditTrail() {
+      const entries = (db.query(`${decisionAuditSelect} ORDER BY id`).all() as any[]).map(mapDecisionAuditRow);
+      let previousHash: string | null = null;
+      const invalid = entries.find(entry => {
+        const hash = hashAuditEntry({
+          schemaVersion: "decision-audit-v1",
+          subjectId: entry.subjectId,
+          kind: entry.kind,
+          actor: entry.actor,
+          payload: entry.payload ?? {},
+          previousHash,
+          retentionUntil: entry.retentionUntil,
+          createdAt: entry.createdAt,
+        });
+        const broken = entry.previousHash !== previousHash || entry.entryHash !== hash;
+        previousHash = entry.entryHash;
+        return broken;
+      });
+      return { valid: !invalid, entries: entries.length, invalidEntryId: invalid?.id ?? null };
+    },
+    schemaMigrations() {
+      const rows = db.query("SELECT id, name, checksum, applied_at AS appliedAt FROM schema_migrations ORDER BY id").all() as any[];
+      return rows.map(row => ({ ...row, expected: SCHEMA_MIGRATIONS.some(migration => migration.id === row.id && migration.checksum === row.checksum) }));
+    },
+    databaseBackup() {
+      const bytes = db.serialize();
+      return { bytes, metadata: { sizeBytes: bytes.byteLength, sha256: hashBytes(bytes), createdAt: new Date().toISOString(), migrations: SCHEMA_MIGRATIONS.length } };
+    },
+    observabilityExport(limit = 500) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5_000) throw new Error("Observability export limit is out of range");
+      const spans = this.events(limit, "otel.span").map(event => event.payload);
+      const recentEvents = this.events(Math.min(limit, 1_000));
+      return {
+        generatedAt: new Date().toISOString(),
+        migrations: this.schemaMigrations(),
+        operationsPolicy: operationsPolicy(),
+        decisionAuditVerification: this.verifyDecisionAuditTrail(),
+        spans,
+        strategyMetrics: this.allStrategyMetrics(limit),
+        recentEvents,
+      };
+    },
+    incidentPacket(limit = 200) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1_000) throw new Error("Incident packet limit is out of range");
+      const patterns = [/error/i, /failed/i, /rejected/i, /kill_switch/i, /blocked/i, /incident/i, /stale/i];
+      const recentEvents = this.events(Math.min(limit * 2, 1_000)).filter(event => patterns.some(pattern => pattern.test(event.type))).slice(0, limit);
+      return {
+        generatedAt: new Date().toISOString(),
+        severity: recentEvents.some(event => /error|failed|rejected|kill_switch/i.test(event.type)) ? "review" : "normal",
+        runbook: [
+          "Freeze new order flow with the global operations kill switch if broker state, data quality or audit integrity is uncertain.",
+          "Download a database backup before changing policy, code or broker state.",
+          "Export observability evidence and review recent errors, rejected orders, stale data and audit verification.",
+          "Reconcile open broker orders and strategy paper orders before clearing the incident.",
+          "Record the resolution reason in the operations policy or affected strategy review.",
+        ],
+        migrations: this.schemaMigrations(),
+        operationsPolicy: operationsPolicy(),
+        decisionAuditVerification: this.verifyDecisionAuditTrail(),
+        recentEvents,
+      };
     },
     close() { db.close(); },
   };

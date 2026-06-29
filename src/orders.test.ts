@@ -36,6 +36,9 @@ test("submission idempotency and receipts persist", () => {
   expect(store.receipts()).toHaveLength(2);
   store.plan("plan-1", "balanced_growth", { summary: "Balanced" });
   expect(store.getPlan("plan-1")).toMatchObject({ id: "plan-1", intent: "balanced_growth", summary: "Balanced" });
+  expect(store.decisionAuditTrail("receipt-2")).toMatchObject([{ kind: "receipt.decision", actor: "system", payload: { orderId: "order-1", status: "accepted" } }]);
+  expect(store.decisionAuditTrail("plan-1")).toMatchObject([{ kind: "agent.plan", actor: "agent", payload: { intent: "balanced_growth", summary: "Balanced" } }]);
+  expect(store.verifyDecisionAuditTrail()).toEqual({ valid: true, entries: 3, invalidEntryId: null });
   store.close();
 });
 

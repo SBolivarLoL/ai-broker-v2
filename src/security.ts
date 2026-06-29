@@ -1,17 +1,44 @@
 import { timingSafeEqual } from "node:crypto";
 
 type Env = Record<string, string | undefined>;
+export type AuthRole = "viewer" | "researcher" | "trader" | "operator" | "admin";
+export type AuthContext = { actor: string; email: string; roles: AuthRole[] };
 
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const knownRoles = new Set<AuthRole>(["viewer", "researcher", "trader", "operator", "admin"]);
+const roleOrder: AuthRole[] = ["viewer", "researcher", "trader", "operator", "admin"];
 
-export function actorFor(request: Request, env: Env = process.env) {
-  if (env.NODE_ENV !== "production") return "demo-advisor";
+function parseRoles(value: string | null | undefined): AuthRole[] {
+  const roles = String(value ?? "").split(/[,\s]+/).map(role => role.trim().toLowerCase()).filter((role): role is AuthRole => knownRoles.has(role as AuthRole));
+  return [...new Set<AuthRole>(roles.length ? roles : ["viewer"])];
+}
+
+function expandedRoles(roles: AuthRole[]) {
+  const roleSet = new Set<AuthRole>(["viewer", ...roles]);
+  if (roleSet.has("admin")) return [...roleOrder];
+  return roleOrder.filter(role => roleSet.has(role));
+}
+
+export function authContextFor(request: Request, env: Env = process.env): AuthContext {
+  if (env.NODE_ENV !== "production") return { actor: "demo-advisor", email: "demo-advisor", roles: [...roleOrder] };
   const secret = env.AUTH_PROXY_SECRET ?? "";
   const supplied = request.headers.get("x-auth-proxy-secret") ?? "";
   const email = request.headers.get("x-auth-request-email")?.toLowerCase() ?? "";
   const domain = env.AUTHORIZED_EMAIL_DOMAIN?.toLowerCase();
   if (secret.length < 32 || !same(secret, supplied) || !domain || !email.endsWith(`@${domain}`)) throw new Error("Unauthorized");
-  return email;
+  const adminEmails = new Set(String(env.AUTHORIZED_ADMIN_EMAILS ?? "").toLowerCase().split(",").map(item => item.trim()).filter(Boolean));
+  const rawRoles = request.headers.get(env.AUTH_PROXY_ROLES_HEADER ?? "x-auth-request-roles") ?? request.headers.get("x-auth-request-groups");
+  const roles = adminEmails.has(email) ? ["admin" as const] : parseRoles(rawRoles);
+  return { actor: email, email, roles: expandedRoles(roles) };
+}
+
+export function actorFor(request: Request, env: Env = process.env) {
+  return authContextFor(request, env).actor;
+}
+
+export function authorize(context: AuthContext, allowed: AuthRole[]) {
+  if (!allowed.some(role => context.roles.includes(role))) throw new Error("Forbidden");
+  return true;
 }
 
 export function validMutationOrigin(request: Request, env: Env = process.env) {
@@ -21,7 +48,7 @@ export function validMutationOrigin(request: Request, env: Env = process.env) {
 }
 
 export function securityReady(env: Env = process.env) {
-  return env.NODE_ENV !== "production" || Boolean(env.APP_ORIGIN && env.AUTHORIZED_EMAIL_DOMAIN && (env.AUTH_PROXY_SECRET?.length ?? 0) >= 32);
+  return env.NODE_ENV !== "production" || Boolean(env.APP_ORIGIN && env.AUTHORIZED_EMAIL_DOMAIN && (env.AUTH_PROXY_SECRET?.length ?? 0) >= 32 && (env.SECRET_VAULT_KEY?.length ?? 0) >= 32);
 }
 
 export function rateLimiter(windowMs = 60_000, maximumKeys = 10_000) {

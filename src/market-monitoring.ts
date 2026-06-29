@@ -1,3 +1,5 @@
+import type { Sec8KAlertEvidence } from "./sec-edgar";
+
 export type MonitoringPosition = { symbol: string; qty: string | number };
 export type MonitoringWatchlist = { id: string; name: string; assets: { symbol: string }[] };
 
@@ -68,6 +70,16 @@ export function monitoringCorporateActions(envelope: Record<string, any[] | unde
     .sort((a, b) => Number(b.relevance.portfolio) - Number(a.relevance.portfolio) || a.eventDate!.localeCompare(b.eventDate!)).slice(0, 20);
 }
 
+const secImportanceRank = { standard: 1, high: 2, critical: 3 } as const;
+
+export function monitoringSecFilings(alerts: Sec8KAlertEvidence[], positions: MonitoringPosition[], watchlists: MonitoringWatchlist[]) {
+  const held = new Set(positions.map(position => position.symbol.toUpperCase()));
+  return alerts.map(alert => ({ ...alert, relevance: scopeFor([alert.symbol], held, watchlists) }))
+    .filter(alert => alert.relevance.portfolio || alert.relevance.watchlists.length)
+    .sort((a, b) => secImportanceRank[b.importance] - secImportanceRank[a.importance] || b.filed.localeCompare(a.filed) || a.symbol.localeCompare(b.symbol))
+    .slice(0, 20);
+}
+
 const eventKind = (text: string) => {
   if (/earnings|revenue|guidance|quarter|results/i.test(text)) return "earnings";
   if (/dividend|distribution/i.test(text)) return "dividend";
@@ -77,10 +89,11 @@ const eventKind = (text: string) => {
   return "company_update";
 };
 
-export function monitoringEventClusters(news: ReturnType<typeof monitoringNews>, actions: ReturnType<typeof monitoringCorporateActions>) {
+export function monitoringEventClusters(news: ReturnType<typeof monitoringNews>, actions: ReturnType<typeof monitoringCorporateActions>, filings: ReturnType<typeof monitoringSecFilings> = []) {
   const entries = [
     ...news.flatMap(article => article.relevantSymbols.map(symbol => ({ symbol, kind: eventKind(`${article.headline} ${article.summary}`), at: article.createdAt!, label: article.headline, source: "news" as const, id: String(article.id) }))),
     ...actions.map(action => ({ symbol: action.symbol, kind: action.type === "cashDividends" ? "dividend" : "corporate_action", at: action.eventDate!, label: action.label, source: "corporate_action" as const, id: action.id })),
+    ...filings.map(filing => ({ symbol: filing.symbol, kind: "sec_8k", at: `${filing.filed}T00:00:00.000Z`, label: `Item ${filing.primaryItem.code}: ${filing.primaryItem.label}`, source: "sec_8k" as const, id: filing.id })),
   ];
   const grouped = new Map<string, typeof entries>();
   for (const entry of entries) {

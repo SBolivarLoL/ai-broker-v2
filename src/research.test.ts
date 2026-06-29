@@ -1,12 +1,20 @@
 import { expect, test } from "bun:test";
+import { canonicalEvidence } from "./evidence";
 import { evaluateResearch, validResearchOutput, type ResearchEvidence } from "./research";
 import { createStore } from "./store";
 
+const source = (id: string, title: string, url: string, category: ResearchEvidence["category"], data: unknown): ResearchEvidence => canonicalEvidence({
+  id, provider: id.startsWith("sec:") ? "sec" : "alpaca", sourceId: id, category,
+  authority: id.startsWith("sec:") ? "official" : category === "news" ? "licensed_provider" : "regulated_broker",
+  claimStatus: id.startsWith("sec:") ? "official_record" : category === "news" ? "media_signal" : "broker_observation",
+  title, url, asOf: "2026-01-01", retrievedAt: "2026-01-01", entityIds: { symbol: "AAPL" }, data,
+});
+
 const sources: ResearchEvidence[] = [
-  { id: "market:AAPL", title: "Market", url: "https://example.com/market", asOf: "2026-01-01", category: "market", data: { currentPrice: 200, annualizedVolatilityPercent: 24 } },
-  { id: "sec:facts:AAPL", title: "Facts", url: "https://example.com/facts", asOf: "2026-01-01", category: "fundamentals", data: { revenue: { value: 1000 } } },
-  { id: "sec:filings:AAPL", title: "Filings", url: "https://example.com/filings", asOf: "2026-01-01", category: "filings", data: { filings: [{ form: "10-K" }] } },
-  { id: "news:AAPL", title: "News", url: "https://example.com/news", asOf: "2026-01-01", category: "news", data: { articles: [] } },
+  source("market:AAPL", "Market", "https://example.com/market", "market", { currentPrice: 200, annualizedVolatilityPercent: 24 }),
+  source("sec:facts:AAPL", "Facts", "https://example.com/facts", "fundamentals", { revenue: { value: 1000 } }),
+  source("sec:filings:AAPL", "Filings", "https://example.com/filings", "filings", { filings: [{ form: "10-K" }] }),
+  source("news:AAPL", "News", "https://example.com/news", "news", { articles: [] }),
 ];
 const claim = (text: string, evidence = ["sec:facts:AAPL"]) => ({ text, evidence });
 const output = (overrides: object = {}) => ({

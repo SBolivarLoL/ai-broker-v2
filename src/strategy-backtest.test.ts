@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buyAndHoldStrategy, cashStrategy, meanReversionStrategy, movingAverageTrendStrategy, runBacktest, strategyFromId, timeSlicedAccumulationStrategy, walkForwardWindows } from "./strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, runBacktest, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "./strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -64,9 +64,105 @@ test("mean reversion enters on oversold z-score and exits near mean", () => {
   expect(decisions[4]?.targetExposure).toBe(0);
 });
 
+test("breakout momentum requires prior high and volume confirmation", () => {
+  const breakoutBars = [
+    { timestamp: "2026-01-01T00:00:00Z", high: 100, close: 95, volume: 100 },
+    { timestamp: "2026-01-02T00:00:00Z", high: 101, close: 100, volume: 100 },
+    { timestamp: "2026-01-03T00:00:00Z", high: 102, close: 101, volume: 100 },
+    { timestamp: "2026-01-04T00:00:00Z", high: 104, close: 103, volume: 220 },
+    { timestamp: "2026-01-05T00:00:00Z", high: 104, close: 94, volume: 120 },
+  ];
+  const strategy = breakoutMomentumStrategy({ lookback: 3, volumeLookback: 3, volumeMultiple: 1.5, stopLossPercent: 5, exposure: 0.8 });
+  const decisions = breakoutBars.map((_, index) => strategy(breakoutBars, index));
+  expect(decisions[2]).toMatchObject({ targetExposure: 0, reason: "waiting for breakout history" });
+  expect(decisions[3]).toMatchObject({ targetExposure: 0.8, reason: "breakout and volume confirmed", features: { priorHigh: 102, volumeRatio: 2.2 }, thresholds: { lookback: 3, volumeMultiple: 1.5 } });
+  expect(decisions[4]).toMatchObject({ targetExposure: 0, reason: "breakout stop hit" });
+});
+
+test("volatility filter enters only when realized volatility is inside the configured band", () => {
+  const calmBars = [100, 101, 102, 103].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const jumpyBars = [100, 120, 90, 130].map((close, index) => ({ timestamp: `2026-02-0${index + 1}T00:00:00Z`, close }));
+  const calm = volatilityFilterStrategy({ lookback: 3, maxVolatilityPercent: 2, exposure: 0.6 });
+  const jumpy = volatilityFilterStrategy({ lookback: 3, maxVolatilityPercent: 2, exposure: 0.6 });
+
+  expect(calm(calmBars, 2)).toMatchObject({ targetExposure: 0, reason: "waiting for volatility history" });
+  expect(calm(calmBars, 3)).toMatchObject({ targetExposure: 0.6, reason: "realized volatility inside risk band" });
+  expect(jumpy(jumpyBars, 3)).toMatchObject({ targetExposure: 0, reason: "realized volatility outside risk band" });
+});
+
+test("BTC/ETH relative strength compares primary and peer returns", () => {
+  const btcBars = [100, 105, 120].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const ethBars = [100, 102, 104].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const strategy = btcEthRelativeStrengthStrategy({ lookback: 2, minRelativeStrengthPercent: 5, exposure: 0.7 }, { histories: { "BTC/USD": btcBars, "ETH/USD": ethBars } }, "BTC/USD");
+
+  const strong = strategy(btcBars, 2);
+  expect(strong).toMatchObject({
+    targetExposure: 0.7,
+    reason: "primary crypto outperforming BTC/ETH peer",
+    thresholds: { lookback: 2, minRelativeStrengthPercent: 5, primarySymbol: "BTC/USD", peerSymbol: "ETH/USD" },
+  });
+  expect(strong.features?.primaryReturnPercent).toBeCloseTo(20);
+  expect(strong.features?.peerReturnPercent).toBeCloseTo(4);
+  expect(strong.features?.relativeStrengthPercent).toBeCloseTo(16);
+
+  const weak = btcEthRelativeStrengthStrategy({ lookback: 2, minRelativeStrengthPercent: 5 }, { histories: { "BTC/USD": ethBars, "ETH/USD": btcBars } }, "BTC/USD");
+  expect(weak(ethBars, 2)).toMatchObject({ targetExposure: 0, reason: "BTC/ETH peer stronger or edge below threshold" });
+});
+
+test("order-book liquidity scout requires tight spread and visible depth", () => {
+  const scoutBars = [{ timestamp: "2026-01-01T00:00:00Z", close: 100 }];
+  const liquid = orderBookLiquidityScoutStrategy({ exposure: 0.5, maxSpreadBps: 250, minVisibleAskNotional: 100, minVisibleBidNotional: 100 }, {
+    snapshots: {
+      "BTC/USD": {
+        payload: {
+          orderbook: {
+            bids: [{ p: 99, s: 2 }],
+            asks: [{ p: 101, s: 2 }],
+          },
+        },
+      },
+    },
+  }, "BTC/USD");
+  expect(liquid(scoutBars, 0)).toMatchObject({
+    targetExposure: 0.5,
+    reason: "order-book liquidity meets scout thresholds",
+    features: { bid: 99, ask: 101, visibleAskNotional: 202, visibleBidNotional: 198 },
+  });
+
+  const thin = orderBookLiquidityScoutStrategy({ minVisibleAskNotional: 1_000, minVisibleBidNotional: 100 }, {
+    snapshots: { "BTC/USD": { payload: { orderbook: { b: [{ p: 99, s: 2 }], a: [{ p: 101, s: 2 }] } } } },
+  }, "BTC/USD");
+  expect(thin(scoutBars, 0)).toMatchObject({ targetExposure: 0, reason: "order-book liquidity below scout thresholds" });
+
+  expect(orderBookLiquidityScoutStrategy({}, {}, "BTC/USD")(scoutBars, 0)).toMatchObject({ targetExposure: 0, reason: "waiting for order-book liquidity snapshot" });
+});
+
 test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(strategyFromId("time-sliced-accumulation", { slices: 2 })(bars, 0).targetExposure).toBe(0.5);
   expect(typeof strategyFromId("moving-average-trend", { fast: 2, slow: 3 })).toBe("function");
   expect(typeof strategyFromId("mean-reversion", { lookback: 3 })).toBe("function");
+  expect(typeof strategyFromId("breakout-momentum", { lookback: 3 })).toBe("function");
+  expect(typeof strategyFromId("volatility-filter", { lookback: 3 })).toBe("function");
+  expect(typeof strategyFromId("btc-eth-relative-strength", { lookback: 2 })).toBe("function");
+  expect(typeof strategyFromId("order-book-liquidity-scout", { maxSpreadBps: 100 })).toBe("function");
   expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
+});
+
+test("strategy plugins expose deterministic prepare features decide risk orders and attribution steps", () => {
+  const trendBars = [1, 2, 3, 4].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
+  const plugin = strategyPluginFromId("moving-average-trend", { fast: 2, slow: 3, exposure: 0.75 });
+  const evaluation = evaluateStrategyPlugin(plugin, trendBars, trendBars.length - 1, "BTC/USD");
+
+  expect(plugin).toMatchObject({ id: "moving-average-trend", version: "strategy-plugin-v1" });
+  for (const step of ["prepare", "features", "decide", "riskAdjust", "orders", "attribution"] as const) expect(typeof plugin[step]).toBe("function");
+  expect(evaluation).toMatchObject({
+    targetExposure: 0.75,
+    reason: "fast average above slow average",
+    features: { fastAverage: 3.5, slowAverage: 3 },
+    weights: { trend: 1 },
+    thresholds: { fast: 2, slow: 3, exposure: 0.75 },
+    risk: { allowed: true, rawTargetExposure: 0.75, riskAdjustedSignal: 0.75, reasons: [] },
+    orders: [{ type: "target_exposure", targetExposure: 0.75 }],
+    attribution: { windows: ["1h", "1d", "7d"], baselines: ["cash", "buy-and-hold"] },
+  });
 });
