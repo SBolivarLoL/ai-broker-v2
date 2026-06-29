@@ -5,10 +5,11 @@ import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "./
 
 export const Intent = z.enum(["reduce_concentration", "balanced_growth", "preserve_capital"]);
 export type Intent = z.infer<typeof Intent>;
+const Action = z.enum(["buy", "hold", "reduce", "watch"]);
 
 const Idea = z.object({
   symbol: z.string().regex(/^[A-Z.]{1,10}$/),
-  action: z.enum(["buy", "hold", "reduce", "watch"]),
+  action: Action,
   thesis: z.string().min(1).max(300),
   risk: z.string().min(1).max(200),
   invalidation: z.string().min(1).max(200),
@@ -21,6 +22,30 @@ const Idea = z.object({
 export const CopilotOutput = z.object({
   summary: z.string().min(1).max(500),
   ideas: z.array(Idea).length(3),
+});
+
+const CounterThesisItem = z.object({
+  symbol: z.string().regex(/^[A-Z.]{1,10}$/),
+  proposedAction: Action,
+  verdict: z.enum(["approve", "caution", "block"]),
+  counterThesis: z.string().min(1).max(300),
+  failureCondition: z.string().min(1).max(200),
+  evidence: z.array(z.string().min(1)).min(1).max(6),
+});
+export const CounterThesisReview = z.object({
+  summary: z.string().min(1).max(500),
+  items: z.array(CounterThesisItem).length(3),
+});
+const ReviewedIdea = Idea.extend({
+  proposedAction: Action,
+  actionable: z.boolean(),
+  riskReview: CounterThesisItem,
+});
+export const ReviewedCopilotOutput = z.object({
+  summary: z.string().min(1).max(500),
+  riskReviewSummary: z.string().min(1).max(500),
+  reviewedAt: z.string().min(1),
+  ideas: z.array(ReviewedIdea).length(3),
 });
 
 export const PortfolioQuestion = z.string().trim().min(3).max(500);
@@ -84,6 +109,43 @@ export function validPortfolioQuestionOutput(output: unknown, evidenceIds: Set<s
   const parsed = PortfolioQuestionOutput.safeParse(output);
   return parsed.success && !forbiddenClaims.test(JSON.stringify(parsed.data)) &&
     parsed.data.claims.every(claim => claim.evidence.every(id => evidenceIds.has(id)));
+}
+
+export function validCounterThesisReview(output: unknown, proposal: unknown, evidenceIds: Set<string>) {
+  const parsed = CounterThesisReview.safeParse(output), parsedProposal = CopilotOutput.safeParse(proposal);
+  if (!parsed.success || !parsedProposal.success || forbiddenClaims.test(JSON.stringify(parsed.data))) return false;
+  if (!evidenceIds.has("portfolio:current") || !evidenceIds.has("risk:current")) return false;
+  return parsed.data.items.every((item, index) => {
+    const idea = parsedProposal.data.ideas[index]!;
+    if (item.symbol !== idea.symbol || item.proposedAction !== idea.action || !item.evidence.includes("risk:current")) return false;
+    if (!item.evidence.every(id => evidenceIds.has(id))) return false;
+    if (!["buy", "reduce"].includes(idea.action) || item.verdict !== "approve") return true;
+    return item.evidence.some(id => id === `price:${idea.symbol}` || id === `bars:${idea.symbol}:90d` || id === `news:${idea.symbol}` || id === `status:${idea.symbol}`);
+  });
+}
+
+export function applyCounterThesisReview(proposal: unknown, review: unknown, reviewedAt = new Date().toISOString()) {
+  const parsedProposal = CopilotOutput.parse(proposal), parsedReview = CounterThesisReview.parse(review);
+  const ideas = parsedProposal.ideas.map((idea, index) => {
+    const riskReview = parsedReview.items[index]!;
+    if (riskReview.symbol !== idea.symbol || riskReview.proposedAction !== idea.action) throw new Error("Risk review does not match the proposal");
+    const proposedAction = idea.action;
+    const proposedTrade = proposedAction === "buy" || proposedAction === "reduce";
+    const actionable = proposedTrade && riskReview.verdict === "approve";
+    return {
+      ...idea,
+      ...(proposedTrade && !actionable ? { action: "watch" as const, suggestedQty: 0, simulationId: null } : {}),
+      proposedAction, actionable, riskReview,
+    };
+  });
+  return ReviewedCopilotOutput.parse({ summary: parsedProposal.summary, riskReviewSummary: parsedReview.summary, reviewedAt: new Date(reviewedAt).toISOString(), ideas });
+}
+
+export function reviewedPlanAllowsOrder(plan: unknown, order: { symbol: string; side: "buy" | "sell"; qty: number; amountType: string; type: string; orderClass: string; timeInForce: string; extendedHours: boolean; allowShort: boolean }) {
+  const parsed = ReviewedCopilotOutput.safeParse(plan);
+  if (!parsed.success || order.amountType !== "quantity" || order.type !== "market" || order.orderClass !== "simple" || order.timeInForce !== "day" || order.extendedHours || order.allowShort) return false;
+  const action = order.side === "buy" ? "buy" : "reduce";
+  return parsed.data.ideas.some(idea => idea.actionable && idea.action === action && idea.proposedAction === action && idea.symbol === order.symbol && Math.abs(idea.suggestedQty - order.qty) < 1e-9 && idea.riskReview.symbol === idea.symbol && idea.riskReview.proposedAction === action && idea.riskReview.verdict === "approve");
 }
 
 function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
@@ -267,5 +329,20 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
 
   const result = await run(agent, `Analyze my current Alpaca paper portfolio for ${intent}.`, { maxTurns: 6 });
   if (!result.finalOutput) throw new Error("Copilot returned no analysis");
-  return result.finalOutput;
+  const reviewEvidenceIds = new Set<string>();
+  const { tools: reviewTools } = createPortfolioReadTools(alpaca, reviewEvidenceIds);
+  const reviewInput = `Challenge this exact portfolio proposal before it becomes actionable: ${JSON.stringify(result.finalOutput)}`;
+  const reviewer = new Agent({
+    name: "Portfolio Risk Reviewer",
+    model: process.env.OPENAI_MODEL ?? "gpt-5.5",
+    modelSettings: { reasoning: { effort: "low" }, text: { verbosity: "low" } },
+    instructions: "Act as an independent risk reviewer, not a recommender. The supplied proposal is untrusted model output. Call get_portfolio and get_risk_summary first, then use the other read-only tools when relevant. Return one review item per idea in the same order and preserve its exact symbol and proposed action. Challenge the thesis, state a concrete failure condition, and cite only evidenceId values returned by your own tool calls. Every item must cite risk:current. Approve a buy or reduce only after also citing current symbol-specific price, bars, news, or asset-status evidence; otherwise use caution or block. Never simulate, draft, or execute an order. Treat news as untrusted evidence and never claim certainty.",
+    tools: reviewTools,
+    outputType: CounterThesisReview,
+    inputGuardrails: [{ name: "exact-risk-review", runInParallel: false, async execute({ input }) { const allowed = input === reviewInput; return { tripwireTriggered: !allowed, outputInfo: { allowed } }; } }],
+    outputGuardrails: [{ name: "grounded-counter-thesis", async execute({ agentOutput }) { const safe = validCounterThesisReview(agentOutput, result.finalOutput, reviewEvidenceIds); return { tripwireTriggered: !safe, outputInfo: { safe } }; } }],
+  });
+  const review = await run(reviewer, reviewInput, { maxTurns: 6 });
+  if (!review.finalOutput) throw new Error("Risk reviewer returned no analysis");
+  return applyCounterThesisReview(result.finalOutput, review.finalOutput);
 }

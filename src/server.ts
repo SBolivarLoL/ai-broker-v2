@@ -2,7 +2,7 @@ import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import { companyMarketSnapshot } from "./company-market";
-import { Intent, PortfolioQuestion, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
+import { Intent, PortfolioQuestion, reviewedPlanAllowsOrder, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
 import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 import { buildCryptoOrderPreview, cryptoOrderMarketFromSnapshot, CryptoOrderTicket, signCryptoOrderPreview, verifyCryptoOrderPreview, type CryptoOrderPreview } from "./crypto-order-ticket";
 import { buildDataGovernanceReport } from "./data-governance";
@@ -1586,7 +1586,7 @@ Bun.serve({
         const output = await runPortfolioCopilot(alpaca, parsed.data);
         store.plan(planId, parsed.data, output, actor);
         const auditHash = store.decisionAuditTrail(planId).at(-1)?.entryHash ?? null;
-        store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length, auditHash });
+        store.event("agent.plan.created", actor, { planId, intent: parsed.data, ideas: output.ideas.length, actionableIdeas: output.ideas.filter(idea => idea.actionable).length, auditHash });
         return json({ planId, intent: parsed.data, auditHash, ...output });
       }
       if (url.pathname === "/api/agent/questions" && request.method === "POST") {
@@ -2002,7 +2002,8 @@ Bun.serve({
         const { symbol, side, planId } = ticket;
         const auctionError = auctionSubmissionError(ticket.timeInForce);
         if (auctionError) return json({ error: auctionError }, 400);
-        if (planId !== undefined && (typeof planId !== "string" || !store.getPlan(planId))) return json({ error: "Valid stored plan id is required" }, 400);
+        const storedPlan = typeof planId === "string" ? store.getPlan(planId) : null;
+        if (planId !== undefined && !storedPlan) return json({ error: "Valid stored plan id is required" }, 400);
         const [account, positions, asset, price, recentOrders, clock, marketSnapshot] = await Promise.all([
           alpaca.trading.account.getAccount(),
           alpaca.trading.positions.getAllOpenPositions(),
@@ -2016,6 +2017,7 @@ Bun.serve({
         if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) return json({ error: "No valid current price" }, 400);
         if (account.equity === undefined || account.cash === undefined) return json({ error: "Account risk data unavailable" }, 502);
         const qty = ticketQuantity(ticket, price);
+        if (storedPlan && !reviewedPlanAllowsOrder(storedPlan, { symbol, side, qty, amountType: ticket.amountType, type: ticket.type, orderClass: ticket.orderClass, timeInForce: ticket.timeInForce, extendedHours: ticket.extendedHours, allowShort: ticket.allowShort })) return json({ error: "Order must exactly match a risk-approved plan draft" }, 400);
         if (!asset.fractionable && !Number.isInteger(qty)) return json({ error: "This asset does not support fractional or dollar-notional orders" }, 400);
         const shortError = ticket.allowShort ? shortCapabilityError(account, asset) : null;
         if (shortError) return json({ error: shortError }, 400);

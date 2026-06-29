@@ -334,7 +334,7 @@ Goal: provide better decision preparation, not magical predictions.
 - [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
 - [x] Natural-language portfolio Q&A backed only by typed tools.
 - [x] Bull/base/bear valuation and scenario memos.
-- [ ] Counter-thesis/risk-agent review before actionable suggestions.
+- [x] Counter-thesis/risk-agent review before actionable suggestions.
 - [ ] Trade journal with thesis drift and post-trade review.
 - [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
 
@@ -379,6 +379,12 @@ Scenario valuation contract:
 - Bear, base and bull cases use a fixed 12-month horizon and user-entered revenue-growth, net-margin and P/E assumptions ordered from low to high. The application does not infer assumptions, probabilities or company guidance.
 - Mechanical implied prices use directly reported annual SEC revenue, latest SEC shares outstanding and the current Alpaca IEX price. Each memo cites those inputs plus separate derived scenario evidence and exposes every formula.
 - Missing or non-positive revenue/shares and non-positive projected earnings stay unavailable. Outputs explicitly warn about dilution/share-class limits and remain scenarios rather than forecasts or recommendations.
+
+Counter-thesis review contract:
+
+- Every Guided Rebalance proposal is challenged by a second agent with an independent set of typed read-only tools. It must inspect current portfolio and deterministic risk evidence; approving a trade also requires current symbol-specific price, bars, news or asset-status evidence.
+- Review output preserves the exact proposed symbol/action, cites only evidence retrieved during the review run, and states a counter-thesis plus failure condition. Invalid or ungrounded review output fails the entire plan closed.
+- Buy/reduce ideas marked caution or block are downgraded to watch with zero quantity and no simulation authority. Only approved ideas expose a draft, and the stored plan can bind only an exact quantity, side and symbol on a simple DAY market ticket before fresh preview/submission checks.
 
 GDELT media-signal contract:
 
