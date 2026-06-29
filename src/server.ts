@@ -1,6 +1,7 @@
 import { Alpaca, TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 import { benchmarkAttribution, diversificationScore, performancePoints, performanceSummary, stressTests, valueAtRisk95 } from "./analytics";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
+import { riskReservationStatusForBrokerStatus, workingBrokerOrderStatuses } from "./broker-status";
 import { companyMarketSnapshot } from "./company-market";
 import { Intent, PortfolioQuestion, reviewedPlanAllowsOrder, runPortfolioCopilot, runPortfolioQuestion } from "./copilot";
 import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
@@ -334,7 +335,7 @@ function reconcileOrder(order: any) {
   if (order.id && order.status) store.reconcileOrder(order.id, order.status);
   if (order.id && order.status) store.reconcileStrategyOrder(order.id, order.status, { broker: managedOrderDto(order), brokerReconciledAt: new Date().toISOString() });
   if (!order.clientOrderId || !order.status) return;
-  const riskStatus = riskStatusForBrokerStatus(order.status);
+  const riskStatus = riskReservationStatusForBrokerStatus(order.status);
   if (riskStatus) store.finishRiskReservation(order.clientOrderId, riskStatus);
 }
 
@@ -359,15 +360,8 @@ async function capturePortfolioSnapshot() {
   return portfolioCaptureRequest;
 }
 
-const workingStatuses = new Set(["new", "accepted", "pending_new", "pending_replace", "accepted_for_bidding", "partially_filled", "held", "calculated", "stopped"]);
-const canceledStatuses = new Set(["canceled", "expired", "replaced"]);
-const riskStatusForBrokerStatus = (status: unknown) => {
-  const value = String(status ?? "");
-  return value === "filled" ? "filled" : value === "rejected" ? "rejected" : canceledStatuses.has(value) ? "canceled" : null;
-};
-
 async function pendingBrokerOrders(orders: any[], candidatePrices: Map<string, number>) {
-  const working = orders.filter(order => workingStatuses.has(String(order.status)));
+  const working = orders.filter(order => workingBrokerOrderStatuses.has(String(order.status)));
   const symbols = [...new Set(working.map(order => String(order.symbol)))];
   const prices = new Map(await Promise.all(symbols.map(async symbol => [symbol, candidatePrices.get(symbol) ?? await alpaca.marketData.getLatestPrice(symbol)] as const)));
   return working.map(order => {
@@ -2030,7 +2024,7 @@ Bun.serve({
         }
         if (!order.id) { store.finishRiskReservation(idempotencyKey, "released"); store.releaseSubmission(idempotencyKey); throw new Error("Alpaca returned an option order without an id"); }
         store.markRiskSubmitted(idempotencyKey, order.id);
-        const riskStatus = riskStatusForBrokerStatus(order.status);
+        const riskStatus = riskReservationStatusForBrokerStatus(order.status);
         if (riskStatus) store.finishRiskReservation(idempotencyKey, riskStatus);
         orderTracker.update(order);
         const receiptId = crypto.randomUUID(), response = { ...managedOrderDto(order), receiptId };
@@ -2163,7 +2157,7 @@ Bun.serve({
             }
             if (!order.id) throw new Error("Alpaca returned an order without an id");
             store.markRiskSubmitted(reservationKeys[index]!, order.id);
-            const riskStatus = riskStatusForBrokerStatus(order.status);
+            const riskStatus = riskReservationStatusForBrokerStatus(order.status);
             if (riskStatus) store.finishRiskReservation(reservationKeys[index]!, riskStatus);
             orderTracker.update(order);
             results.push({ symbol: leg.symbol, side: leg.side, qty: leg.qty, orderId: order.id, status: String(order.status) });
@@ -2316,7 +2310,7 @@ Bun.serve({
           throw new Error("Alpaca returned an order without an id");
         }
         if (!store.markRiskSubmitted(idempotencyKey, order.id)) console.error("risk reservation transition failed", { idempotencyKey, orderId: order.id });
-        const riskStatus = riskStatusForBrokerStatus(order.status);
+        const riskStatus = riskReservationStatusForBrokerStatus(order.status);
         if (riskStatus) store.finishRiskReservation(idempotencyKey, riskStatus);
         const receiptId = crypto.randomUUID();
         const response = { ...managedOrderDto(order), receiptId };
