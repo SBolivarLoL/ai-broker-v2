@@ -7,10 +7,13 @@ export const DEFAULT_OPERATIONS_POLICY = {
   maxOrderNotional: 2_500,
   maxSymbolExposureNotional: 10_000,
   maxPortfolioExposurePercent: 20,
+  maxSectorExposurePercent: 40,
+  maxDrawdownPercent: 20,
   maxDailyTurnoverPercent: 10,
 } as const;
 
 const optionalPositive = z.preprocess(value => value === "" || value === null || value === undefined ? undefined : value, z.coerce.number().positive().finite().optional());
+const optionalPercent = z.preprocess(value => value === "" || value === null || value === undefined ? undefined : value, z.coerce.number().positive().finite().max(100).optional());
 
 export const OperationsPolicy = z.object({
   schemaVersion: z.literal("operations-policy-v1").default(DEFAULT_OPERATIONS_POLICY.schemaVersion),
@@ -22,8 +25,10 @@ export const OperationsPolicy = z.object({
   }).default(DEFAULT_OPERATIONS_POLICY.globalKillSwitch),
   maxOrderNotional: optionalPositive.default(DEFAULT_OPERATIONS_POLICY.maxOrderNotional),
   maxSymbolExposureNotional: optionalPositive.default(DEFAULT_OPERATIONS_POLICY.maxSymbolExposureNotional),
-  maxPortfolioExposurePercent: optionalPositive.default(DEFAULT_OPERATIONS_POLICY.maxPortfolioExposurePercent),
-  maxDailyTurnoverPercent: optionalPositive.default(DEFAULT_OPERATIONS_POLICY.maxDailyTurnoverPercent),
+  maxPortfolioExposurePercent: optionalPercent.default(DEFAULT_OPERATIONS_POLICY.maxPortfolioExposurePercent),
+  maxSectorExposurePercent: optionalPercent.default(DEFAULT_OPERATIONS_POLICY.maxSectorExposurePercent),
+  maxDrawdownPercent: optionalPercent.default(DEFAULT_OPERATIONS_POLICY.maxDrawdownPercent),
+  maxDailyTurnoverPercent: optionalPercent.default(DEFAULT_OPERATIONS_POLICY.maxDailyTurnoverPercent),
 }).superRefine((policy, context) => {
   if (policy.globalKillSwitch.active && !policy.globalKillSwitch.reason.trim()) {
     context.addIssue({ code: "custom", path: ["globalKillSwitch", "reason"], message: "A kill-switch reason is required" });
@@ -57,7 +62,26 @@ export type OperationsPolicyEvaluation = {
     resultingPortfolioExposurePercent: number;
     dailyTurnoverPercent: number;
     reducesExposure: boolean;
-    limits: Pick<OperationsPolicy, "maxOrderNotional" | "maxSymbolExposureNotional" | "maxPortfolioExposurePercent" | "maxDailyTurnoverPercent">;
+    limits: Pick<OperationsPolicy, "maxOrderNotional" | "maxSymbolExposureNotional" | "maxPortfolioExposurePercent" | "maxSectorExposurePercent" | "maxDrawdownPercent" | "maxDailyTurnoverPercent">;
+  };
+};
+
+export type PortfolioPolicyPosition = { symbol: string; marketValue: string | number; sector?: string | null };
+export type PortfolioPolicySector = { label: string; grossPercent?: string | number | null; grossValue?: string | number | null };
+export type PortfolioPolicyEvaluation = {
+  allowed: boolean;
+  reasons: string[];
+  runbook: string[];
+  evidence: {
+    schemaVersion: string;
+    equity: number;
+    largestPositionPercent: number;
+    largestPositionSymbol: string | null;
+    largestSectorPercent: number;
+    largestSector: string | null;
+    drawdownPercent: number | null;
+    dailyTurnoverPercent: number | null;
+    limits: Pick<OperationsPolicy, "maxPortfolioExposurePercent" | "maxSectorExposurePercent" | "maxDrawdownPercent" | "maxDailyTurnoverPercent">;
   };
 };
 
@@ -99,7 +123,7 @@ function runbookFor(reasons: string[]) {
     steps.add("Leave submissions blocked, review open orders, and record the incident reason before re-enabling trading.");
     steps.add("Check the latest order receipts, strategy audit trail, alerts, and broker reconciliation state.");
   }
-  if (reasons.some(reason => reason.endsWith("_limit"))) {
+  if (reasons.some(reason => reason.startsWith("max_") || reason.endsWith("_limit"))) {
     steps.add("Reduce the order size or exposure, then rerun preview with fresh account and market data.");
     steps.add("Escalate only after documenting why the cap should change and who approved it.");
   }
@@ -168,6 +192,67 @@ export function evaluateOperationsPolicy(input: {
         maxOrderNotional: policy.maxOrderNotional,
         maxSymbolExposureNotional: policy.maxSymbolExposureNotional,
         maxPortfolioExposurePercent: policy.maxPortfolioExposurePercent,
+        maxSectorExposurePercent: policy.maxSectorExposurePercent,
+        maxDrawdownPercent: policy.maxDrawdownPercent,
+        maxDailyTurnoverPercent: policy.maxDailyTurnoverPercent,
+      },
+    },
+  };
+}
+
+export function evaluatePortfolioPolicy(input: {
+  policy?: unknown;
+  equity: string | number;
+  positions: PortfolioPolicyPosition[];
+  sectors?: PortfolioPolicySector[];
+  drawdownPercent?: string | number | null;
+  dailyTurnover?: string | number | null;
+}): PortfolioPolicyEvaluation {
+  const policy = parseOperationsPolicy(input.policy);
+  const equity = finite(input.equity);
+  if (equity === null || equity <= 0) throw new Error("Valid portfolio equity is required");
+  const positions = input.positions.map(position => ({ ...position, marketValue: finite(position.marketValue) ?? 0 }));
+  const largestPosition = positions.reduce<{ symbol: string | null; percent: number }>((largest, position) => {
+    const percent = Math.abs(position.marketValue) / equity * 100;
+    return percent > largest.percent ? { symbol: position.symbol, percent } : largest;
+  }, { symbol: null, percent: 0 });
+  const sectors = input.sectors?.length
+    ? input.sectors.map(sector => ({ label: sector.label, percent: finite(sector.grossPercent) ?? ((finite(sector.grossValue) ?? 0) / equity * 100) }))
+    : [...positions.reduce((groups, position) => {
+      if (!position.sector) return groups;
+      groups.set(position.sector, (groups.get(position.sector) ?? 0) + Math.abs(position.marketValue));
+      return groups;
+    }, new Map<string, number>())].map(([label, grossValue]) => ({ label, percent: grossValue / equity * 100 }));
+  const largestSector = sectors.reduce<{ label: string | null; percent: number }>((largest, sector) => sector.percent > largest.percent ? { label: sector.label, percent: sector.percent } : largest, { label: null, percent: 0 });
+  const drawdown = finite(input.drawdownPercent);
+  const dailyTurnover = finite(input.dailyTurnover);
+  const dailyTurnoverPercent = dailyTurnover === null ? null : dailyTurnover / equity * 100;
+  const reasons: string[] = [];
+
+  if (policy.globalKillSwitch.active) reasons.push("global_kill_switch");
+  if (largestPosition.percent > policy.maxPortfolioExposurePercent) reasons.push("max_position_limit");
+  if (largestSector.percent > policy.maxSectorExposurePercent) reasons.push("max_sector_limit");
+  if (drawdown !== null && drawdown > policy.maxDrawdownPercent) reasons.push("max_drawdown_limit");
+  if (dailyTurnoverPercent !== null && dailyTurnoverPercent > policy.maxDailyTurnoverPercent) reasons.push("max_daily_turnover");
+
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    allowed: uniqueReasons.length === 0,
+    reasons: uniqueReasons,
+    runbook: runbookFor(uniqueReasons),
+    evidence: {
+      schemaVersion: policy.schemaVersion,
+      equity,
+      largestPositionPercent: largestPosition.percent,
+      largestPositionSymbol: largestPosition.symbol,
+      largestSectorPercent: largestSector.percent,
+      largestSector: largestSector.label,
+      drawdownPercent: drawdown,
+      dailyTurnoverPercent,
+      limits: {
+        maxPortfolioExposurePercent: policy.maxPortfolioExposurePercent,
+        maxSectorExposurePercent: policy.maxSectorExposurePercent,
+        maxDrawdownPercent: policy.maxDrawdownPercent,
         maxDailyTurnoverPercent: policy.maxDailyTurnoverPercent,
       },
     },

@@ -40,7 +40,7 @@ This is the challenge's central explainability file. The product is an internal-
 - Portfolio monitoring checks up to 12 held/watchlist symbols for supported 8-K items filed in the previous 14 days. Deterministic item labels and severity order drive alerts; each alert retains a bounded primary-document excerpt, content hash, accession, filed/report dates, official document/index links and explicit portfolio/watchlist scope. Item 9.01 is supporting evidence rather than a standalone alert, and no filing sentiment is inferred.
 - A deterministic output guardrail rejects invented evidence IDs, certainty claims, and actionable quantities unless an opaque simulation authority exactly matches the idea's symbol, side, quantity, policy version, state snapshot and expiry.
 - The server is the only order boundary. A browser confirmation alone is never sufficient.
-- A persisted global operations policy can activate an app-wide kill switch and enforce order-notional, symbol-exposure, portfolio-exposure and turnover caps across equity, basket, option, crypto and approved strategy paper orders.
+- A persisted global operations policy can activate an app-wide kill switch, edit order-notional, symbol-notional, position-percent, sector-percent, drawdown-percent and turnover limits, and enforce order-notional, symbol-exposure, position-exposure and turnover caps across equity, basket, option, crypto and approved strategy paper orders.
 - `alpaca-ts-alpha` is the runtime integration. Alpaca CLI is used only for independent diagnostics and read-only smoke checks.
 
 ## Order policy
