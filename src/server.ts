@@ -27,6 +27,7 @@ import { buildPortfolioExposureReport, type ExposureBar } from "./portfolio-expo
 import { buildPortfolioScenarioReport, CustomPortfolioScenario } from "./portfolio-scenarios";
 import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
 import { RebalanceBasket, signRebalanceBasketPreview, simulateRebalanceBasket, verifyRebalanceBasketPreview } from "./rebalance-basket";
+import { buildConstrainedRebalancePlan, ConstrainedRebalancePlanRequest } from "./rebalance-planner";
 import { historicalRisk, portfolioHistory, riskSnapshot, rollingTurnover, simulateTrade } from "./risk";
 import { getCompanySecEvidence, getComparableValuations, getSec8KAlerts, getSecCompanyClassification, getValuationScenarios, runCompanyResearch } from "./research";
 import { secUserAgentFromEnv } from "./sec-edgar";
@@ -1606,6 +1607,56 @@ Bun.serve({
           custom,
           positions: exposure.report.positions.map(position => ({ symbol: position.symbol, marketValue: position.marketValue, assetClass: position.assetClass, sector: position.sector, sic: position.sic, volatility20dPercent: position.factors.volatility20dPercent })),
         }));
+      }
+      if (url.pathname === "/api/portfolio/rebalance-plan" && request.method === "POST") {
+        if (!allow(`${actor}:portfolio-rebalance-plan`, 20)) return json({ error: "Rebalance planner rate limit exceeded" }, 429);
+        const parsed = ConstrainedRebalancePlanRequest.safeParse(await requestJson(request));
+        if (!parsed.success) return json({ error: parsed.error.issues[0]?.message ?? "Invalid rebalance plan request" }, 400);
+        const plannerRequest = parsed.data;
+        const targetSymbols = [...new Set(plannerRequest.targets.map(target => target.symbol))];
+        const [sync, account, positions, recentOrders, marketRows] = await Promise.all([
+          syncAccountActivities(),
+          alpaca.trading.account.getAccount(),
+          alpaca.trading.positions.getAllOpenPositions(),
+          alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
+          Promise.all(targetSymbols.map(async symbol => {
+            const [asset, price] = await Promise.all([
+              alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }),
+              alpaca.marketData.getLatestPrice(symbol),
+            ]);
+            return { symbol, asset, price };
+          })),
+        ]);
+        if (account.equity === undefined || account.cash === undefined) throw new Error("Account risk data unavailable");
+        if (recentOrders.length >= 500) throw new Error("The complete order window could not be verified");
+        const short = positions.find(position => Number(position.qty) < -1e-8 || Number(position.marketValue) < -1e-8);
+        if (short) return json({ error: `Current short positions are not supported by this planner (${short.symbol})` }, 400);
+        for (const row of marketRows) {
+          if (!row.asset.tradable || row.asset._class !== "us_equity") return json({ error: `${row.symbol} is not a tradable US stock or ETF` }, 400);
+          if (typeof row.price !== "number" || !Number.isFinite(row.price) || row.price <= 0) return json({ error: `No valid current price for ${row.symbol}` }, 400);
+        }
+        const market = marketRows.map(row => ({ symbol: row.symbol, price: row.price as number, fractionable: Boolean(row.asset.fractionable) }));
+        const marketBySymbol = new Map(market.map(row => [row.symbol, row]));
+        const ledger = ledgerSummary(store.activities(5_000), sync.truncated);
+        const taxLotsComplete = !ledger.activityHistoryTruncated && ledger.unmatchedSellQuantity <= 1e-8 && ledger.unresolvedCorporateActions.length === 0;
+        const plan = buildConstrainedRebalancePlan({
+          request: plannerRequest,
+          account: { equity: Number(account.equity), cash: Number(account.cash) },
+          positions: positions.map(position => {
+            const symbol = String(position.symbol).toUpperCase();
+            const currentPrice = Number(position.currentPrice);
+            return { symbol, qty: Number(position.qty), marketValue: Number(position.marketValue), price: Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : undefined, fractionable: marketBySymbol.get(symbol)?.fractionable };
+          }),
+          market,
+          openLots: ledger.openLots,
+          taxLotsComplete,
+          taxEvidenceWarnings: ledger.warnings,
+          currentTurnoverNotional: rollingTurnover(recentOrders),
+          policyMaxTurnoverPercent: store.operationsPolicy().maxDailyTurnoverPercent,
+          asOf: new Date().toISOString(),
+        });
+        store.event("portfolio.rebalance_plan.created", actor, { targets: plannerRequest.targets, withinConstraints: plan.withinConstraints, legs: plan.legs, bindingConstraints: plan.bindingConstraints, taxEvidenceStatus: plan.tax.evidenceStatus });
+        return json(plan);
       }
       if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
         const limit = Number(url.searchParams.get("limit") ?? 30);

@@ -17,6 +17,7 @@ describe("account activity ledger", () => {
       fill("3", "2026-01-03T00:00:00.000Z", "sell", 3, 130),
     ]);
     expect(summary).toMatchObject({ realizedProceeds: 390, realizedCostBasis: 320, realizedProfitLoss: 70, tradeCount: 3 });
+    expect(summary.openLots).toEqual([{ symbol: "AAPL", quantity: 1, price: 120, acquiredAt: "2026-01-02T00:00:00.000Z" }]);
   });
 
   test("preserves total FIFO basis across an explicit forward split", () => {

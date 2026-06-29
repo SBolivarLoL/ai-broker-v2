@@ -49,6 +49,8 @@ export type LedgerActivity = {
   corporateAction?: CorporateActionDetails | null;
 };
 
+export type FifoLot = { symbol: string; quantity: number; price: number; acquiredAt: string };
+
 const dividendTypes = new Set(["CGD", "DIV", "DIVCGL", "DIVCGS", "DIVFT", "DIVNRA", "DIVROC", "DIVTW", "DIVTXEX"]);
 const feeTypes = new Set(["CFEE", "DIVFEE", "FEE", "PTC"]);
 const interestTypes = new Set(["INT", "INTNRA", "INTTW"]);
@@ -122,7 +124,7 @@ export function normalizeActivity(activity: BrokerActivity): LedgerActivity {
 
 export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
   const executed = activities.filter(activity => activity.status !== "canceled");
-  const lots = new Map<string, { quantity: number; price: number }[]>();
+  const lots = new Map<string, Omit<FifoLot, "symbol">[]>();
   let realizedProfitLoss = 0, realizedProceeds = 0, realizedCostBasis = 0, unmatchedSellQuantity = 0;
   let corporateActionsApplied = 0;
   const unresolvedCorporateActions: { id: string; type: string; subType: string | null; symbol: string | null; reason: string }[] = [];
@@ -169,7 +171,7 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
     const symbolLots = lots.get(activity.symbol) ?? [];
     lots.set(activity.symbol, symbolLots);
     if (activity.side === "buy") {
-      symbolLots.push({ quantity: activity.quantity, price: activity.price });
+      symbolLots.push({ quantity: activity.quantity, price: activity.price, acquiredAt: activity.occurredAt });
       continue;
     }
     let remaining = activity.quantity;
@@ -191,6 +193,7 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
   if (unmatchedSellQuantity > 1e-10) warnings.push("Some sales predate the imported purchase history; realized P&L excludes their unmatched quantity.");
   if (corporateActionsApplied) warnings.push(`${corporateActionsApplied} corporate action${corporateActionsApplied === 1 ? " was" : "s were"} applied to open FIFO lots while preserving total cost basis.`);
   if (unresolvedCorporateActions.length) warnings.push(`${unresolvedCorporateActions.length} corporate action${unresolvedCorporateActions.length === 1 ? " requires" : "s require"} manual cost-basis review before relying on realized P&L.`);
+  const openLots = [...lots.entries()].flatMap(([symbol, symbolLots]) => symbolLots.map(lot => ({ symbol, ...lot }))).filter(lot => lot.quantity > 1e-10).sort((left, right) => left.symbol.localeCompare(right.symbol) || left.acquiredAt.localeCompare(right.acquiredAt));
   return {
     activityCount: executed.length,
     tradeCount: executed.filter(activity => activity.category === "trade").length,
@@ -204,6 +207,9 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
     totalCashImpact: executed.reduce((sum, activity) => sum + activity.amount, 0),
     corporateActionsApplied,
     unresolvedCorporateActions,
+    openLots,
+    unmatchedSellQuantity,
+    activityHistoryTruncated: truncated,
     warnings,
     method: "FIFO from imported Alpaca fills with explicit split and symbol-change adjustments; informational, not tax reporting",
   };

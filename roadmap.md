@@ -411,7 +411,7 @@ Goal: progress from descriptive risk to decision-grade portfolio construction.
 - [x] Liquidity risk using live IEX spread, average daily volume and estimated days at 10% ADV.
 - [x] Scenario library: rate shock, tech crash, volatility spike and custom shocks.
 - [x] SPY benchmark attribution, alpha, beta, tracking error and information ratio.
-- [ ] Rebalancing with taxes/fees/turnover constraints where data permits.
+- [x] Rebalancing with taxes/fees/turnover constraints where data permits.
 - [ ] Mean-variance and risk-parity proposals with robust constraints.
 - [ ] Policy editor for position, sector, drawdown and turnover limits.
 
@@ -428,6 +428,14 @@ Portfolio-scenario contract:
 - The volatility scenario applies a one-day three-sigma downside from each position's annualized 20-session realized volatility, capped at -35%. Missing volatility or classification leaves that position uncovered and contributing zero, with gross invested coverage reported.
 - Scenario P&L uses signed current market value, so shorts respond in the opposite direction; cash remains unchanged. The output retains every position shock, rationale, estimated P&L, assumptions, resulting equity and explicit linear-model limitations.
 - Custom scenarios accept 1-20 unique held symbols with shocks bounded from -100% to +100%. Unknown or duplicate symbols fail validation instead of creating synthetic exposure.
+
+Constrained rebalance contract:
+
+- `POST /api/portfolio/rebalance-plan` is read-only. It accepts 1-10 unique US-equity target weights whose listed weights total no more than 100%, leaves omitted positions unchanged and treats zero-weight targets as reduce-to-zero requests. It returns projected position weights, planned legs, cash impact, turnover, fee, FIFO gain/loss and tax estimates, warnings and methodology; it never submits broker orders.
+- Target deltas are scaled by the remaining turnover budget using the stricter user-entered cap and persisted operations-policy cap after current rolling 24-hour filled-order turnover. Buy sizing uses current cash after the requested cash buffer and estimated fees, and never assumes sell proceeds are available before execution.
+- Tax estimates use imported Alpaca FILL activities and dated FIFO open lots. The app follows IRS holding-period framing that assets held more than one year may be long-term and otherwise short-term, based on [IRS Topic 409](https://www.irs.gov/taxtopics/tc409) and [IRS Publication 550](https://www.irs.gov/publications/p550); Alpaca account activities provide transaction time, quantity, price and side evidence from [Alpaca Account Activities](https://docs.alpaca.markets/reference/getaccountactivities-1). User-entered tax rates apply only to positive lot gains.
+- Explicit max-tax caps use binary-search scaling over FIFO lot consumption because gains are non-linear across lots. If imported activity history is truncated, unmatched, affected by unresolved corporate actions, or lacks enough lots for a planned sale, a max-tax request is reported as unverifiable and no basket draft is produced.
+- Fractionable symbols round down to six decimals and whole-share-only symbols round down to whole shares. Legs below the requested minimum notional are omitted. A basket draft is produced only when all constraints are verifiable and there are 2-10 executable legs; the existing signed basket preview still performs fresh quote, asset, liquidity, risk and operations-policy checks before any paper order can be submitted.
 
 Exit gate: calculations have fixtures, clear assumptions, confidence limits and independent reconciliation.
 
