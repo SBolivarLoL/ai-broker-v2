@@ -3,7 +3,7 @@ import { buildDataGovernanceReport } from "./data-governance";
 
 test("builds data licensing and subscription governance report", () => {
   const report = buildDataGovernanceReport("2026-06-26T10:00:00.000Z");
-  expect(report.summary).toMatchObject({ totalSources: 7, availableSources: 4 });
+  expect(report.summary).toMatchObject({ totalSources: 8, availableSources: 5 });
   expect(report.summary.blockedForLivePromotion).toContain("alpaca_stock_sip");
   expect(report.sources.find(source => source.id === "alpaca_news_benzinga")).toMatchObject({
     provider: "Alpaca / Benzinga",
@@ -18,6 +18,11 @@ test("builds data licensing and subscription governance report", () => {
     provider: "Finnhub API",
     entitlement: "requires_subscription",
     restrictions: expect.arrayContaining(["Never override official SEC fundamentals with Finnhub enrichment."]),
+  });
+  expect(report.sources.find(source => source.id === "openfigi_v3")).toMatchObject({
+    provider: "OpenFIGI",
+    entitlement: "available",
+    restrictions: expect.arrayContaining(["Never select the first ticker result when distinct composite identities remain ambiguous."]),
   });
   expect(report.sources.every(source => source.evidenceUrl.startsWith("https://"))).toBe(true);
   expect(report.runbook.join(" ")).toContain("Re-review paid feed");
