@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed: 2026-06-24
+Last reviewed: 2026-06-29
 
 This document is the build map for turning AI Broker into a serious personal investing and paper-trading workstation. Alpaca supplies brokerage state, execution, and market data. Deterministic application code owns calculations and safety policy. OpenAI agents may research, explain, compare, and draft actions, but they do not bypass the order preview and approval boundary.
 
@@ -158,10 +158,10 @@ Alpaca distinguishes the Trading, Broker, Market Data and OAuth products in its 
 - `get_strategy_catalog`, `get_strategy_run`, `get_strategy_decision_trace`
 - `get_crypto_bars`, `get_crypto_quotes`, `get_crypto_orderbook_snapshot`
 - `calculate_crypto_features`, `backtest_strategy`, `compare_strategy_runs`
-- `start_shadow_strategy_run`, `pause_strategy_run`, `draft_strategy_config`
+- `start_shadow_strategy_run`, `pause_strategy_run`, `review_strategy_run`, `draft_strategy_config`
 
 Only `draft_order` may produce an order-ticket draft. Actual submission remains a separate deterministic server workflow with explicit user approval.
-Strategy tools may start or pause only shadow runs until the paper strategy runner has a dedicated run-level approval workflow, hard limits, and immutable decision receipts.
+Strategy tools may start or pause shadow runs. Paper strategy execution requires a separate explicit run-level approval workflow, hard limits, decision receipts and paper-only broker submission.
 
 ### AI experiences
 
@@ -174,8 +174,8 @@ Strategy tools may start or pause only shadow runs until the paper strategy runn
 - Trade journal that compares the original thesis with subsequent evidence.
 - Counter-thesis agent that argues against every proposed trade.
 - Post-trade execution review using quote and fill data.
-- Crypto strategy lab with backtest, shadow run, paper run, cohort comparison and strategy-retirement workflows. Initial UI now supports backtests, shadow-run creation and manual shadow ticks.
-- Decision trace explorer showing raw inputs, derived features, signal weights, risk gates, final action and subsequent paper-fill attribution. Initial UI now shows features, thresholds, risk checks, source/feed freshness and raw trace JSON for shadow decisions.
+- Crypto strategy lab with backtest, shadow run, paper run, cohort comparison and strategy-retirement workflows. Initial UI now supports backtests, shadow-run creation, manual and scheduled ticks, explicit paper approval, pause/kill controls, experiment review decisions and report export.
+- Decision trace explorer showing raw inputs, derived features, signal weights, risk gates, final action, paper-order linkage and post-fill attribution. Initial UI now shows features, thresholds, risk checks, source/feed freshness, order outcomes, linked order payloads, attribution and raw trace JSON.
 - Personalized education that explains metrics without presenting certainty.
 
 ## Crypto strategy experiment model
@@ -190,6 +190,8 @@ Goal: run bounded crypto strategies long enough to learn which ideas fit this ac
 4. **Shadow run:** compute live signals and decisions without submitting paper orders; compare intended entries/exits with subsequent market movement and liquidity.
 5. **Paper run:** after explicit run-level approval, submit paper-only crypto orders within strategy budget, max position, max loss, max turnover and stale-data limits.
 6. **Review and promote/retire:** compare against BTC buy-and-hold, cash, equal-weight basket and no-trade baselines; promote only if results remain useful after friction and drawdown stress.
+
+Current implementation checkpoint: Strategy Lab is now a working experiment surface, not just a design target. It supports one-symbol crypto bar backtests, BTC/ETH comparison backtests, a deterministic strategy plugin lifecycle, configurable fee/slippage assumptions, walk-forward windows, breakout momentum with volume confirmation, volatility filtering from realized returns, BTC/ETH relative strength, order-book liquidity scouting, shadow-run creation, manual and scheduled tick evaluation, explicit run-level paper approval, crypto-specific paper risk policy for 24/7 sessions, cash/buying-power, daily loss, drawdown, turnover and error cool-down gates, pause/kill controls, bounded strategy paper crypto market-order submission, standalone signed paper crypto market/limit/stop-limit tickets, persisted data snapshots, order-book replay assumptions for spread, latency, partial fills and missed fills, local OpenTelemetry-shaped span events, persistent strategy metrics, deterministic strategy alerts, hash-chained audit trail with retention metadata, role-aware OIDC proxy authorization, encrypted AES-GCM secret vault metadata, data licensing/subscription governance registry, bounded accession-linked SEC Risk Factors and MD&A evidence through a cached, retrying and fair-access-throttled client, production-governance packet with closed-beta safety targets and a hard live-trading blocker, measured closed-beta evidence export derived from receipts, events, decision audits and strategy reviews, persisted global operations policy for kill-switch, order, exposure and turnover caps across order-entry surfaces, schema migration metadata, serialized SQLite backup export, observability export and incident response packets, hash-chained decision audit entries for receipts and agent plans, decision receipts, trace API lookups, trace filters, order-outcome drilldowns, run dashboard metrics, post-fill attribution windows, active-run P&L/drawdown versus baselines, experiment review decisions and exportable experiment reports. It does not yet support richer automated strategy order types, automated multi-leg crypto rotation, completed external legal/compliance signoff or a completed paper beta with all measured targets passing.
 
 ### Initial strategy catalog
 
@@ -316,17 +318,17 @@ Exit gate: race, partial-fill, gap, nested-order, stale-price and reconnect scen
 Goal: provide better decision preparation, not magical predictions.
 
 - [x] SEC EDGAR ingestion for filings, company facts and XBRL fundamentals.
-- [ ] Retrieve bounded 10-K and 10-Q sections such as Risk Factors and MD&A so research cites filing content, not only filing metadata.
-- [ ] Build comparable annual and quarterly financial trends with exact accession, form, period and filing-URL provenance for every metric.
-- [ ] Centralize SEC request caching, retries, declared user-agent identity and fair-access rate limiting.
-- [ ] Add watchlist alerts for material 8-K filings with concise, filing-grounded relevance summaries.
-- [ ] Continue with the official SEC JSON and filing APIs first; evaluate `edgartools` only when robust section parsing, standardized statements, Form 4 or 13F support justifies an isolated Python worker.
-- [ ] Expand SEC EDGAR evidence beyond filing metadata into filing sections, 8-K alerts, historical financial trends, and accession-linked provenance.
-- [ ] Add official macro context from FRED, Treasury Fiscal Data, BLS, and BEA for rates, inflation, labor, GDP, fiscal data, and market-regime context.
-- [ ] Add GDELT as a secondary broad news/event source alongside Alpaca/Benzinga, with clear "media signal, not verified fact" labeling.
-- [ ] Add optional Finnhub integration for company news/profile/fundamental enrichment, gated behind an API key and free-tier limits.
+- [x] Retrieve bounded 10-K and 10-Q Risk Factors and MD&A sections with accession, locator, source URL, truncation and content-hash evidence.
+- [x] Build comparable annual and quarterly financial trends with exact accession, form, period and filing-URL provenance for every metric.
+- [x] Centralize SEC request caching, transient retries, declared user-agent identity and fair-access throttling below 10 requests per second.
+- [x] Add portfolio/watchlist alerts for material 8-K filings with concise, filing-grounded relevance summaries, bounded item evidence and official accession links.
+- [x] Keep the current SEC integration on official JSON and filing archive APIs; bounded section parsing does not require a Python worker.
+- [x] Expand SEC EDGAR evidence with bounded filing sections, accession-linked historical financial trends and filing-grounded 8-K alerts.
+- [x] Add official macro context from FRED, Treasury Fiscal Data, BLS, and BEA for rates, inflation, labor, GDP, fiscal data, and market-regime context.
+- [x] Add GDELT as a secondary broad news/event source alongside Alpaca/Benzinga, with clear "media signal, not verified fact" labeling.
+- [x] Add optional Finnhub integration for company news/profile/fundamental enrichment, gated behind an API key and free-tier limits.
 - [ ] Add OpenFIGI identity mapping to reduce ticker/security ambiguity before joining data across providers.
-- [ ] Before implementing these sources, define a canonical evidence format and dedupe policy so provider data does not get duplicated or stored in incompatible shapes.
+- [x] Define a canonical evidence format and conservative dedupe policy before adding more providers.
 - [ ] Complete the cited company research workspace with comparable-company and valuation tables. Single-company cited analysis exists.
 - [x] Deterministic news clustering, event timelines and explicit portfolio/watchlist relevance scopes.
 - [x] Sourced earnings-news, dividend and corporate-action monitoring briefs without inferred events.
@@ -335,6 +337,31 @@ Goal: provide better decision preparation, not magical predictions.
 - [ ] Counter-thesis/risk-agent review before actionable suggestions.
 - [ ] Trade journal with thesis drift and post-trade review.
 - [x] Evaluation suite for citations, numerical accuracy, tool use and abstention, with persisted production metrics.
+
+Canonical evidence contract:
+
+- Every record carries provider and provider source IDs, category, authority level, claim status, title, original and canonical URL, as-of/retrieval/publication timestamps, entity IDs, deterministic content hash and JSON-compatible payload.
+- Official records, licensed-provider records, regulated-broker observations, licensed/public media signals and derived analysis remain visibly distinct; media signals are not promoted to verified facts.
+- Deduplication merges only exact provider/source IDs, matching canonical URL plus content hash, or exact content hashes for the same entity and category. Different sections from one document remain distinct; similar headlines or fuzzy text alone never merge.
+
+Official macro context contract:
+
+- Treasury Debt to the Penny and public BLS CPI/unemployment data remain usable without credentials; FRED rates/yield-curve and BEA real-GDP coverage are optional, key-gated and visibly incomplete when not configured.
+- Every observation retains provider, series/table identity, exact period, official source URL, retrieval time and canonical evidence hash. CPI year-over-year is a disclosed deterministic calculation from the latest and year-ago official BLS index values.
+
+Optional Finnhub enrichment contract:
+
+- Missing or malformed `FINNHUB_API_KEY` configuration performs no network requests and returns explicit per-endpoint coverage; credentials travel only in `X-Finnhub-Token` headers and never enter source URLs or normalized output.
+- Free-tier use is limited to Company Profile 2, company news and the last four earnings surprises. Requests serialize below 60 calls per minute, retry transient failures once, cache profile/earnings/news independently and preserve successful endpoints when another is unavailable or rate limited.
+- Profile identity must match the requested ticker. Ambiguous market-capitalization units, phone numbers and malformed records are omitted; earnings values are retained exactly without recalculation. Profile and earnings are licensed `provider_record` evidence, company news is article-level `media_signal` evidence, and official SEC records take precedence.
+- Provider calls use bounded timeout/retry and six-hour success caching. One provider failure cannot erase successful observations from the others, and deterministic regime labels remain descriptive context rather than forecasts or trading signals.
+
+GDELT media-signal contract:
+
+- Company Research uses one exact company-name DOC 2.0 ArticleList query over a three-day window, bounded to 10 newest results. It does not fan out portfolio-wide queries against the rate-limited interactive API.
+- Only headlines identifying the company phrase, a distinctive company token or ticker are retained; broad full-text matches with unestablished headline relevance are counted and omitted. Every retained article is separate canonical `public_web` / `media_signal` evidence with URL, domain, language, source country and publication time. Similar or repeated headlines do not verify an event and are not fuzzy-deduplicated.
+- Requests are serialized at no more than one every five seconds, success-cached for 15 minutes, failure-cached for two minutes and retried once. HTTP 429 or provider failure leaves Alpaca/Benzinga evidence intact and explicitly warns that no absence of events may be inferred.
+- Same-source content changes are retained as explicit revisions with both hashes; higher-authority evidence wins exact cross-provider duplicates, then the most recently retrieved record.
 
 Exit gate: agents consistently cite retrieved evidence, abstain when data is missing and cannot create execution authority.
 
@@ -378,8 +405,10 @@ Goal: make crypto data trustworthy enough for strategy research before enabling 
 - [x] Add historical crypto bar retrieval for BTC/USD, ETH/USD and SOL/USD with timeframe, provider, gap and timezone metadata.
 - [x] Add explicit latest crypto snapshot ingestion for quotes, trades, bars and optional order-book snapshots, bounded by symbol and retention limits.
 - [x] Persist normalized crypto market-data snapshots used by strategy decisions; store source feed, venue/location, timestamp, stale flag and ingestion latency.
-- [ ] Add crypto-specific risk policy: 24/7 sessions, cash-only sizing, max notional, max position, max daily loss, max drawdown, max spread, stale-data gate and cool-down after errors.
-- [ ] Add crypto fee, spread, slippage, latency, partial-fill and missed-fill assumptions for backtests and paper-run analysis.
+- [x] Add initial approved-paper crypto risk gates for budget, max position, max order, min order, max spread, stale-data blocking, approval expiry and kill switch.
+- [x] Complete crypto-specific risk policy for 24/7 session handling, cash/buying-power verification, max daily loss, max drawdown, max daily turnover and cool-down after errors.
+- [x] Add configurable fee and slippage assumptions to historical backtests with close-price execution and explicit result metadata.
+- [x] Add spread, latency, partial-fill, missed-fill and order-book replay assumptions for paper-run analysis.
 - [ ] Keep crypto transfers, perpetual leverage and tokenization disabled until separately approved.
 
 Exit gate: crypto data can be replayed and traced from source snapshot to feature to decision with known gaps and freshness.
@@ -388,47 +417,59 @@ Exit gate: crypto data can be replayed and traced from source snapshot to featur
 
 Goal: implement small, explainable crypto strategies that can be backtested, shadowed, paper-run and compared over time.
 
-- [ ] Create a strategy plugin interface with deterministic `prepare`, `features`, `decide`, `riskAdjust`, `orders` and `attribution` steps.
-- [ ] Add strategy catalog and config UI for the initial strategies: buy-and-hold benchmark, time-sliced accumulation, moving-average trend, breakout momentum, mean reversion, volatility filter, BTC/ETH relative strength and order-book liquidity scout. Initial backtest implementations exist for buy-and-hold, cash, time-sliced accumulation, moving-average trend and mean reversion.
+- [x] Create a strategy plugin interface with deterministic `prepare`, `features`, `decide`, `riskAdjust`, `orders` and `attribution` steps.
+- [x] Add initial strategy catalog and config UI for buy-and-hold, cash, time-sliced accumulation, moving-average trend, breakout momentum, volatility filter and mean reversion.
+- [x] Add breakout momentum implementation using persisted bar highs and volume confirmation.
+- [x] Add volatility filter implementation using realized close-to-close return volatility.
+- [x] Add BTC/ETH relative strength and order-book liquidity scout implementations once the needed basket and order-book replay inputs are persisted.
 - [x] Build historical backtester with walk-forward splits, benchmark comparison, parameter freezing and friction-adjusted metrics.
 - [x] Add explicit shadow-run creation and tick evaluation that stores data snapshots, strategy decisions, decision receipts and trace lookups without submitting orders.
-- [ ] Build shadow-run scheduler that evaluates live signals without placing orders and stores missed/blocked/intended actions.
-- [ ] Add explicit run-level approval for paper strategy automation: symbol universe, budget, max position, max loss, schedule, strategy version and expiry.
-- [ ] Add paper-only crypto order preview/submission path using Alpaca-supported crypto order types, fractional quantity/notional rules and GTC/IOC time-in-force constraints.
-- [ ] Link every strategy paper order to a decision receipt, idempotency key, broker order status and post-fill attribution.
-- [ ] Add strategy dashboard with active runs, P&L versus baselines, drawdown, exposure, stale-data rate, block reasons, fill quality and stop/pause controls.
-- [ ] Add experiment review workflow: promote, continue, pause, retire or revise, with notes explaining what changed and why.
+- [x] Add initial Strategy Lab UI for one-symbol crypto backtests, shadow-run creation, manual ticks, run history and decision drilldowns.
+- [x] Build shadow-run scheduler that evaluates live signals without placing orders and stores missed/blocked/intended actions.
+- [x] Add explicit run-level approval for paper strategy automation: symbol universe, budget, max position, max order, min order, max spread, schedule, strategy version, expiry and pause/kill controls.
+- [x] Add first bounded paper-only crypto market-order runner using notional buys, fractional quantity sells, GTC/IOC time-in-force, stale-data gates and approval expiry.
+- [x] Add standalone paper crypto order preview UI plus broader Alpaca-supported crypto order types beyond the first market-order runner.
+- [x] Link every submitted strategy paper order to a decision receipt, idempotency key, broker order status and trace order outcome.
+- [x] Add post-fill attribution windows and fill-quality analysis for every strategy paper order.
+- [x] Add first Strategy Lab dashboard metrics from persisted evidence: exposure, stale-data rate, block reasons, order outcomes, submitted/fill ratio and estimated fill quality.
+- [x] Add active-run P&L versus baselines and drawdown once post-fill attribution and fill reconciliation exist.
+- [x] Add experiment review workflow: promote, continue, pause, retire or revise, with notes explaining what changed and why.
 
-Exit gate: at least three strategies can run in shadow mode and one can run paper-only with complete decision traces, bounded risk and baseline comparison.
+Exit gate: at least three strategies can run in scheduled shadow mode and one can run paper-only with complete decision traces, bounded risk and baseline comparison.
 
 ### Phase 9 — Decision observability and experiment governance
 
 Goal: make strategy behavior explainable, debuggable and auditable before any broader automation.
 
-- [x] Add first-class `strategy_runs`, `strategy_decisions`, `strategy_data_snapshots`, `strategy_orders`, `strategy_metrics` and `strategy_notes` tables with migrations.
-- [ ] Add OpenTelemetry-compatible spans around market-data ingestion, feature calculation, risk policy, strategy decision, paper-order submission and reconciliation.
-- [ ] Add metric instruments for data freshness, tick latency, decision counts, blocked decisions, stale-data rate, paper fill ratio, spread/slippage estimates, drawdown and strategy errors.
+- [x] Add first-class `strategy_runs`, `strategy_decisions`, `strategy_data_snapshots`, `strategy_orders`, `strategy_metrics` and `strategy_notes` storage.
+- [x] Add OpenTelemetry-compatible spans around market-data ingestion, feature calculation, risk policy, strategy decision, paper-order submission and reconciliation.
+- [x] Add persistent metric instruments for data freshness, tick latency, decision counts, blocked decisions, stale-data rate, paper fill ratio, spread/slippage estimates, drawdown and strategy errors.
 - [x] Add strategy decision trace API that reconstructs features, thresholds, risk checks and persisted market-data snapshots by `trace_id`.
-- [ ] Add decision trace explorer with filters by run, symbol, strategy version, decision, block reason, signal contribution and order outcome.
-- [ ] Add exportable experiment report with config, assumptions, data coverage, metrics, charts, notable decisions and reason-coded failures.
-- [ ] Add immutable audit trail for run approvals, pauses, config changes, strategy code version changes and kill-switch activations.
-- [ ] Add alerting for stale feeds, strategy exceptions, rejected orders, drawdown breaches, runaway turnover, repeated slippage warnings and reconciliation drift.
+- [x] Add initial decision trace explorer showing run decisions, features, thresholds, risk checks, data snapshots, stale flags and raw trace JSON.
+- [x] Add trace filters by run, symbol, strategy version, decision, block reason and order outcome, with linked order drilldowns when present.
+- [x] Add exportable experiment report with config, assumptions, data coverage, metrics, linked orders, notable decisions and reason-coded failures.
+- [x] Add basic audit events and notes for run approvals, pauses, kill-switch activations and review decisions.
+- [x] Add immutable audit trail for config changes, strategy code version changes and production-grade retention.
+- [x] Add alerting for stale feeds, strategy exceptions, rejected orders, drawdown breaches, runaway turnover, repeated slippage warnings and reconciliation drift.
 
 Exit gate: every paper strategy action can be reconstructed without external memory from stored data, traces, metrics and receipts.
 
 ### Phase 10 — Production and possible live trading
 
-- [ ] Real user authentication, authorization and encrypted secret management.
-- [ ] Database migrations, backups, observability export and incident response.
+- [x] Real user authentication, authorization and encrypted secret management.
+- [x] Database migrations, backups, observability export and incident response.
 - [x] Broker order reconciliation polling, authenticated stream recovery, stale-state metadata and daily portfolio snapshot reconciliation.
-- [ ] Immutable audit trail and exportable decision receipts across manual, agent and strategy workflows.
-- [ ] Global kill switch, exposure caps and operational runbooks.
-- [ ] Data licensing and subscription review for market data, news, crypto and derived analytics.
+- [x] Immutable audit trail and exportable decision receipts across manual, agent and strategy workflows.
+- [x] Global kill switch, exposure caps and operational runbooks.
+- [x] Data licensing and subscription review for market data, news, crypto and derived analytics.
+- [x] Closed-beta paper safety targets, exit criteria and evidence checklist.
+- [x] Measured closed-beta evidence report and Operations UI from local receipts, audits, events and strategy reviews.
+- [x] Live-trading hard blocker requiring a separately reviewed deployment mode.
 - [ ] Legal/compliance review for advice, execution, crypto-specific disclosures and automated strategy controls.
-- [ ] Closed beta with paper accounts and measurable safety targets.
-- [ ] Live trading only as a separately reviewed deployment mode after paper strategy governance proves reliable.
+- [ ] Run closed beta with paper accounts and attach measured safety evidence.
+- [ ] Live trading deployment review after paper strategy governance proves reliable.
 
-Capability boundary verified on 24 June 2026: this paper account exposes equity, option and crypto data/trading capabilities. Index and FX endpoints are present but not entitled and are shown as unavailable; Alpaca asset metadata does not provide sector/factor classifications; fixed-income research, crypto transfers, perpetual leverage, tokenization and live trading remain gated rather than silently enabled. Crypto strategy automation is roadmap-only until the dedicated run-level approval, trace, risk and paper-order controls exist.
+Capability boundary verified on 24 June 2026: this paper account exposes equity, option and crypto data/trading capabilities. Index and FX endpoints are present but not entitled and are shown as unavailable; Alpaca asset metadata does not provide sector/factor classifications; fixed-income research, crypto transfers, perpetual leverage, tokenization and live trading remain gated rather than silently enabled. Crypto strategy execution is paper-only, requires explicit run-level approval and remains blocked from live trading, transfers, leverage and tokenization. Production-governance evidence now makes the legal/compliance review, paper closed-beta proof and live-deployment review separate gates instead of implicit code-complete status.
 
 ## Prioritized next build queue
 
@@ -441,14 +482,40 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 7. [x] Build deterministic backtest and walk-forward harness with buy-and-hold and cash baselines.
 8. [x] Implement the first three low-complexity strategies: time-sliced accumulation, moving-average trend and mean reversion.
 9. [x] Add explicit shadow-run creation/tick evaluation, decision receipts and trace API before enabling paper-order automation.
-10. Add recurring shadow-run scheduler and trace explorer UI.
-11. Add run-level paper strategy approval, risk caps, pause/kill controls and one bounded crypto paper-order runner.
-12. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
-13. Add filing-section evidence and accession-linked historical financial trends through the official SEC APIs.
-14. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI, preceded by a canonical evidence/dedupe format.
-15. Add comparable-company valuation and counter-thesis review.
-16. Add factor exposure, expected shortfall and portfolio risk contribution.
-17. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
+10. [x] Add initial Strategy Lab UI for backtests, shadow runs, manual ticks and trace explorer.
+11. [x] Add recurring shadow-run scheduler, trace filters and order-outcome drilldowns.
+12. [x] Add run-level paper strategy approval, risk caps, pause/kill controls and one bounded crypto paper-order runner.
+13. [x] Add exportable strategy experiment report with config, assumptions, linked orders, metrics and reason-coded failures.
+14. [x] Add Strategy Lab dashboard metrics for exposure, stale-data rate, block reasons, order outcomes, fill ratio and fill quality.
+15. [x] Add post-fill attribution windows and fill-quality analysis for every strategy paper order.
+16. [x] Add active-run P&L/drawdown versus baselines.
+17. [x] Add experiment review workflow with continue, pause, retire, revise and promote decisions.
+18. [x] Add deterministic strategy plugin lifecycle for prepare, features, decide, risk, orders and attribution.
+19. [x] Add breakout momentum strategy with prior-high and volume-confirmation evidence.
+20. [x] Add volatility filter strategy with realized-return volatility evidence.
+21. [x] Add local OpenTelemetry-compatible strategy spans and persisted strategy metric instruments.
+22. [x] Add deterministic Strategy Lab alerts for stale feeds, exceptions, rejected orders, drawdown, turnover, slippage and reconciliation drift.
+23. [x] Add crypto-specific paper strategy risk policy for 24/7 sessions, cash/buying-power evidence, daily loss, drawdown, turnover and error cool-down gates.
+24. [x] Add spread, latency, partial-fill, missed-fill and order-book replay assumptions for paper-run analysis.
+25. [x] Add BTC/ETH relative strength and order-book liquidity scout strategy implementations.
+26. [x] Add hash-chained Strategy Lab audit trail for config/status/code-version changes with retention metadata and report export.
+27. [x] Add persisted global operations policy with kill switch, exposure caps, turnover caps, runbook evidence and enforcement across equity, basket, option, crypto and approved strategy paper orders.
+28. [x] Add hash-chained decision audit trail for manual order receipts, strategy decision receipts and agent plans, with receipt-level and global verification endpoints.
+29. [x] Add schema migration metadata, serialized SQLite backup export, bounded observability export and incident response packet endpoints.
+30. [x] Add role-aware OIDC proxy authorization and encrypted AES-GCM secret vault endpoints with metadata-only reads.
+31. [x] Add data licensing/subscription governance registry for Alpaca IEX/SIP, crypto data, Benzinga news and derived analytics with evidence URLs and live-promotion blockers.
+32. [x] Add production-governance report with compliance review packet, paper closed-beta targets and live-trading hard gate.
+33. [x] Add measured closed-beta evidence export and Operations UI with pass, fail and needs-evidence status for every safety target.
+34. Run a paper closed beta until the measured evidence report is ready for exit review.
+35. Complete external legal/compliance review for advice, execution, crypto disclosures and automated strategy controls.
+36. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
+37. [x] Add bounded filing-section evidence and a shared fair-access SEC client through the official SEC APIs.
+38. [x] Add accession-linked annual and quarterly financial trend tables.
+39. [x] Add portfolio/watchlist alerts for material 8-K filings with filing-grounded relevance summaries.
+40. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI. The canonical evidence/dedupe prerequisite is complete.
+41. Add comparable-company valuation and counter-thesis review.
+42. Add factor exposure, expected shortfall and portfolio risk contribution.
+43. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
 ## Capability and safety checklist for every new feature
 
@@ -481,6 +548,24 @@ Capability boundary verified on 24 June 2026: this paper account exposes equity,
 - [Real-time options data](https://docs.alpaca.markets/us/docs/real-time-option-data)
 - [Real-time crypto data](https://docs.alpaca.markets/docs/real-time-crypto-pricing-data)
 - [Crypto orders](https://docs.alpaca.markets/docs/crypto-orders)
+- [SEC EDGAR application programming interfaces](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
+- [SEC developer resources and fair-access guidance](https://www.sec.gov/about/developer-resources)
+- [SEC accessing EDGAR data](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data)
+- [SEC Form 8-K and official item definitions](https://www.sec.gov/files/form8-k.pdf)
+- [FRED API series observations](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+- [FRED API terms of use](https://fred.stlouisfed.org/docs/api/terms_of_use.html)
+- [GDELT DOC 2.0 API documentation](https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/)
+- [GDELT API rate-limiting guidance](https://blog.gdeltproject.org/ukraine-api-rate-limiting-web-ngrams-3-0/)
+- [Finnhub API documentation](https://finnhub.io/docs/api)
+- [Finnhub plans and free-tier limits](https://finnhub.io/pricing)
+- [Finnhub startup and enterprise licensing](https://finnhub.io/pricing-startups-and-enterprise)
+- [U.S. Treasury Fiscal Data: Debt to the Penny](https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/)
+- [BLS Public Data API](https://www.bls.gov/developers/)
+- [BEA API user guide](https://apps.bea.gov/api/_pdf/bea_web_service_api_user_guide.pdf)
+- [SEC Regulation Best Interest small entity compliance guide](https://www.sec.gov/resources-small-businesses/small-business-compliance-guides/regulation-best-interest)
+- [SEC investor alert on automated investment tools](https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-alerts/investor-56)
+- [SEC crypto assets investor spotlight](https://www.investor.gov/additional-resources/spotlight/crypto-assets)
+- [FINRA algorithmic trading topic](https://www.finra.org/rules-guidance/key-topics/algorithmic-trading)
 - [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/concepts/semantic-conventions/)
 - [OpenTelemetry traces](https://opentelemetry.io/docs/concepts/signals/traces/)
 - [OpenTelemetry metrics](https://opentelemetry.io/docs/concepts/signals/metrics/)
