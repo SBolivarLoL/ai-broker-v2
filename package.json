@@ -4,12 +4,18 @@
   "type": "module",
   "scripts": {
     "start": "bun --env-file=.env src/server.ts",
-    "cli": "bun --env-file=.env src/index.ts",
     "check": "bunx tsc --noEmit && bun test",
     "alpaca:doctor": "./scripts/alpaca.sh doctor",
     "smoke:read": "./scripts/alpaca.sh account get >/dev/null && ./scripts/alpaca.sh position list >/dev/null && ./scripts/alpaca.sh order list --status open >/dev/null",
     "smoke:order": "bun --env-file=.env scripts/smoke-order.ts",
-    "eval": "bun test src/risk.test.ts src/orders.test.ts src/security.test.ts src/copilot.test.ts src/eval.test.ts"
+    "smoke:sec": "bun --env-file=.env scripts/sec-smoke.ts",
+    "smoke:macro": "bun --env-file=.env scripts/macro-smoke.ts",
+    "smoke:gdelt": "bun --env-file=.env scripts/gdelt-smoke.ts",
+    "smoke:finnhub": "bun --env-file=.env scripts/finnhub-smoke.ts",
+    "smoke:openfigi": "bun --env-file=.env scripts/openfigi-smoke.ts",
+    "smoke:comparables": "bun --env-file=.env scripts/comparable-smoke.ts",
+    "eval": "bun test src/risk.test.ts src/orders.test.ts src/order-management.test.ts src/security.test.ts src/copilot.test.ts src/eval.test.ts src/research.test.ts",
+    "eval:research": "bun --env-file=.env scripts/research-eval.ts"
   },
   "dependencies": {
     "@alpacahq/alpaca-ts-alpha": "^0.2.0",

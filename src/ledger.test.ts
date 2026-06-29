@@ -17,6 +17,32 @@ describe("account activity ledger", () => {
       fill("3", "2026-01-03T00:00:00.000Z", "sell", 3, 130),
     ]);
     expect(summary).toMatchObject({ realizedProceeds: 390, realizedCostBasis: 320, realizedProfitLoss: 70, tradeCount: 3 });
+    expect(summary.openLots).toEqual([{ symbol: "AAPL", quantity: 1, price: 120, acquiredAt: "2026-01-02T00:00:00.000Z" }]);
+  });
+
+  test("preserves total FIFO basis across an explicit forward split", () => {
+    const split = normalizeActivity({ id: "split", activityType: "SPLIT", activitySubType: "FSPLIT", date: new Date("2026-01-02"), symbol: "AAPL", old_rate: "1", new_rate: "2" });
+    const summary = ledgerSummary([
+      fill("buy", "2026-01-01T00:00:00.000Z", "buy", 10, 100),
+      split,
+      fill("sell", "2026-01-03T00:00:00.000Z", "sell", 10, 60),
+    ]);
+    expect(summary).toMatchObject({ realizedProceeds: 600, realizedCostBasis: 500, realizedProfitLoss: 100, corporateActionsApplied: 1, unresolvedCorporateActions: [] });
+  });
+
+  test("moves FIFO lots across an explicit symbol change", () => {
+    const change = normalizeActivity({ id: "rename", activityType: "NC", activitySubType: "SNC", date: new Date("2026-01-02"), symbol: "META", old_symbol: "FB", new_symbol: "META" });
+    const buy = { ...fill("buy", "2026-01-01T00:00:00.000Z", "buy", 2, 200), symbol: "FB" };
+    const sell = { ...fill("sell", "2026-01-03T00:00:00.000Z", "sell", 2, 250), symbol: "META" };
+    expect(ledgerSummary([buy, change, sell])).toMatchObject({ realizedCostBasis: 400, realizedProfitLoss: 100, corporateActionsApplied: 1 });
+  });
+
+  test("flags unsupported or incomplete corporate actions without guessing basis", () => {
+    const split = normalizeActivity({ id: "split", activityType: "SPLIT", activitySubType: "RSPLIT", date: new Date("2026-01-02"), symbol: "AAPL" });
+    const merger = normalizeActivity({ id: "merger", activityType: "MA", activitySubType: "SMA", date: new Date("2026-01-03"), symbol: "AAPL" });
+    const summary = ledgerSummary([split, merger]);
+    expect(summary).toMatchObject({ corporateActionsApplied: 0 });
+    expect(summary.unresolvedCorporateActions).toHaveLength(2);
   });
 
   test("separates income, fees and transfers and reports incomplete cost basis", () => {
@@ -36,7 +62,15 @@ describe("account activity ledger", () => {
     const activity = fill("fill-1", "2026-01-01T00:00:00Z", "buy", 1, 100);
     store.syncActivities([activity]);
     store.syncActivities([{ ...activity, price: 101, amount: -101 }]);
-    expect(store.activities()).toEqual([{ ...activity, price: 101, amount: -101 }]);
+    expect(store.activities()).toEqual([{ ...activity, price: 101, amount: -101, corporateAction: null }]);
+    store.close();
+  });
+
+  test("persists corporate-action evidence", () => {
+    const store = createStore(":memory:");
+    const activity = normalizeActivity({ id: "split", activityType: "SPLIT", activitySubType: "FSPLIT", date: new Date("2026-01-02"), symbol: "AAPL", group_id: "group", old_qty: "10", new_qty: "20" });
+    store.syncActivities([activity]);
+    expect(store.activities()[0]).toEqual({ ...activity, corporateAction: activity.corporateAction ?? null });
     store.close();
   });
 });
