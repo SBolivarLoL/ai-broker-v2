@@ -7,6 +7,7 @@ import { Intent, PortfolioQuestion, reviewedPlanAllowsOrder, runPortfolioCopilot
 import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 import { buildCryptoOrderPreview, cryptoOrderMarketFromSnapshot, CryptoOrderTicket, signCryptoOrderPreview, verifyCryptoOrderPreview, type CryptoOrderPreview } from "./crypto-order-ticket";
 import { buildDataGovernanceReport } from "./data-governance";
+import { buildFixedIncomeResearchStatus } from "./fixed-income-research";
 import { getFinnhubCompanyEnrichment } from "./finnhub";
 import { getGdeltCompanySignals } from "./gdelt";
 import { ledgerSummary, normalizeActivity, type LedgerCategory } from "./ledger";
@@ -1793,6 +1794,7 @@ Bun.serve({
         if (!allow(`${actor}:macro-research`, 30)) return json({ error: "Macro research rate limit exceeded" }, 429);
         return json(await getOfficialMacroContext());
       }
+      if (url.pathname === "/api/research/fixed-income" && request.method === "GET") return json(buildFixedIncomeResearchStatus());
       if (url.pathname === "/api/research/gdelt" && request.method === "GET") {
         if (!allow(`${actor}:gdelt-research`, 20)) return json({ error: "GDELT research rate limit exceeded" }, 429);
         const symbol = String(url.searchParams.get("symbol") ?? "").trim().toUpperCase();
