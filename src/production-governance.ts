@@ -23,6 +23,22 @@ export type LiveTradingGate = {
   requiredEvidence: string[];
 };
 
+export type DisabledCryptoCapability = {
+  id: "crypto_transfers" | "crypto_perpetual_leverage" | "crypto_tokenization";
+  name: string;
+  available: false;
+  status: "disabled_until_separate_approval";
+  reason: string;
+  requiredApproval: string[];
+};
+
+export type CryptoCapabilityDecision = {
+  id: string;
+  allowed: false;
+  reason: string;
+  requiredApproval: string[];
+};
+
 export type ProductionGovernanceReport = {
   generatedAt: string;
   scope: {
@@ -38,6 +54,12 @@ export type ProductionGovernanceReport = {
     maximumParticipants: number;
     safetyTargets: ClosedBetaSafetyTarget[];
     exitCriteria: string[];
+  };
+  cryptoCapabilityBoundary: {
+    mode: "separately_approved_only";
+    paperCapabilities: string[];
+    disabledCapabilities: DisabledCryptoCapability[];
+    defaultDecision: "deny";
   };
   liveTradingGate: LiveTradingGate;
   summary: {
@@ -186,6 +208,33 @@ const COMPLIANCE_REVIEW: ComplianceReviewDomain[] = [
   },
 ];
 
+const DISABLED_CRYPTO_CAPABILITIES: DisabledCryptoCapability[] = [
+  {
+    id: "crypto_transfers",
+    name: "Crypto wallets, transfers and whitelisted addresses",
+    available: false,
+    status: "disabled_until_separate_approval",
+    reason: "Wallet movement, custody and funding flows are outside the personal paper-trading scope.",
+    requiredApproval: ["custody_security_review", "funding_fraud_controls", "external_legal_compliance_signoff"],
+  },
+  {
+    id: "crypto_perpetual_leverage",
+    name: "Crypto perpetual futures, leverage and funding-rate execution",
+    available: false,
+    status: "disabled_until_separate_approval",
+    reason: "Perpetuals and leverage require venue-level risk controls, liquidation modeling and a separate product review.",
+    requiredApproval: ["leverage_risk_model", "venue_microstructure_review", "external_legal_compliance_signoff"],
+  },
+  {
+    id: "crypto_tokenization",
+    name: "Tokenized products and synthetic crypto assets",
+    available: false,
+    status: "disabled_until_separate_approval",
+    reason: "Tokenized products are not part of the approved broker capability set for this paper account.",
+    requiredApproval: ["asset_availability_review", "jurisdiction_review", "external_legal_compliance_signoff"],
+  },
+];
+
 const CLOSED_BETA_TARGETS: ClosedBetaSafetyTarget[] = [
   {
     id: "paper_only_execution",
@@ -257,6 +306,17 @@ function riskReasons(value: Record<string, unknown>) {
 
 function isPaperStrategyDecision(decision: ClosedBetaEvidenceInput["strategyDecisions"][number]) {
   return decision.riskChecks.mode === "paper" || Boolean(decision.paperOrderId) || Boolean(decision.riskChecks.submittedOrder);
+}
+
+export function evaluateCryptoCapabilityRequest(id: string): CryptoCapabilityDecision {
+  const capability = DISABLED_CRYPTO_CAPABILITIES.find(item => item.id === id);
+  if (capability) return { id: capability.id, allowed: false, reason: capability.reason, requiredApproval: capability.requiredApproval };
+  return {
+    id,
+    allowed: false,
+    reason: "Unknown crypto capabilities fail closed until they are added to the production-governance boundary.",
+    requiredApproval: ["explicit_capability_record", "external_legal_compliance_signoff"],
+  };
 }
 
 function receiptLooksLikeSubmittedOrder(receipt: Record<string, unknown>) {
@@ -385,6 +445,17 @@ export function buildProductionGovernanceReport(env: Record<string, string | und
         "External legal/compliance review has accepted, rejected or rewritten the advice, execution, crypto and automation controls.",
         "Live trading remains disabled unless a separate deployment review creates and approves a new gate.",
       ],
+    },
+    cryptoCapabilityBoundary: {
+      mode: "separately_approved_only",
+      paperCapabilities: [
+        "crypto_market_data",
+        "crypto_spot_paper_order_tickets",
+        "crypto_strategy_shadow_runs",
+        "crypto_strategy_paper_orders",
+      ],
+      disabledCapabilities: DISABLED_CRYPTO_CAPABILITIES,
+      defaultDecision: "deny",
     },
     liveTradingGate: {
       requested: liveRequested,

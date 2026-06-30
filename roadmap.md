@@ -481,7 +481,7 @@ Goal: make crypto data trustworthy enough for strategy research before enabling 
 - [x] Complete crypto-specific risk policy for 24/7 session handling, cash/buying-power verification, max daily loss, max drawdown, max daily turnover and cool-down after errors.
 - [x] Add configurable fee and slippage assumptions to historical backtests with close-price execution and explicit result metadata.
 - [x] Add spread, latency, partial-fill, missed-fill and order-book replay assumptions for paper-run analysis.
-- [ ] Keep crypto transfers, perpetual leverage and tokenization disabled until separately approved.
+- [x] Keep crypto transfers, perpetual leverage and tokenization disabled until separately approved.
 
 Exit gate: crypto data can be replayed and traced from source snapshot to feature to decision with known gaps and freshness.
 
@@ -541,7 +541,7 @@ Exit gate: every paper strategy action can be reconstructed without external mem
 - [ ] Run closed beta with paper accounts and attach measured safety evidence.
 - [ ] Live trading deployment review after paper strategy governance proves reliable.
 
-Capability boundary verified on 24 June 2026: this paper account exposes equity, option and crypto data/trading capabilities. Index and FX endpoints are present but not entitled and are shown as unavailable; Alpaca asset metadata does not provide sector/factor classifications; fixed-income research, crypto transfers, perpetual leverage, tokenization and live trading remain gated rather than silently enabled. Crypto strategy execution is paper-only, requires explicit run-level approval and remains blocked from live trading, transfers, leverage and tokenization. Production-governance evidence now makes the legal/compliance review, paper closed-beta proof and live-deployment review separate gates instead of implicit code-complete status.
+Capability boundary verified on 30 June 2026: this paper account exposes equity, option and crypto data/trading capabilities. Index and FX endpoints are present but not entitled and are shown as unavailable; Alpaca asset metadata does not provide sector/factor classifications; fixed-income research and live trading remain gated rather than silently enabled. Crypto strategy execution is paper-only, requires explicit run-level approval and remains blocked from live trading; the production-governance packet now lists crypto transfers, perpetual leverage and tokenization as structured disabled capabilities whose request policy defaults to deny until separate approval. Production-governance evidence also makes the legal/compliance review, paper closed-beta proof and live-deployment review separate gates instead of implicit code-complete status.
 
 ## Prioritized next build queue
 
