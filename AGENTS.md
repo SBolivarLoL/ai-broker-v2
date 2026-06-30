@@ -2,27 +2,40 @@
 
 These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 
-## Workflow
+## Delivery workflow
 
-- After every feature or fix, create a branch, validate, commit, push, open a PR, wait for CI, merge, then sync `dev` and `main`.
-- Keep `main`, `dev`, `origin/main`, and `origin/dev` reconciled after roadmap work unless the user explicitly wants a branch left open.
-- Before resuming a persistent `ai-broker-v2` goal, inspect current git state, open PRs, branch sync, and `roadmap.md` instead of relying on prior conversation memory.
-- When the user says "continue" or "resume work" on this project, continue from current repo and remote evidence, not from stale assumptions.
+- Start each coherent feature, fix, or documentation change from a current, clean `main` branch.
+- Create a branch, validate the affected behavior, commit intentionally, push, open a pull request, wait for CI, merge, then reconcile `main`, `dev`, `origin/main`, and `origin/dev`.
+- Before resuming work, inspect Git status, remote branches, open pull requests, recent commits, and `roadmap.md`. Current repository evidence overrides conversation memory.
+- Do not mix unrelated cleanup into a feature branch or revert work that is already present.
+
+## Documentation ownership
+
+- `README.md` is the onboarding and command reference.
+- `FEATURES.md` describes behavior that exists now, including capability boundaries and known limitations.
+- `STRATEGY_LAB.md` is the operator guide for strategy experiments.
+- `VALIDATION.md` records reproducible checks and confidence gaps.
+- `roadmap.md` is the only future-work inventory. Do not create another later-features or future-improvements list.
+- Update all affected documents in the same change when a command, environment variable, endpoint, test count, capability, limitation, or roadmap status changes.
+- Use status language precisely: `implemented` means code exists; `validated` means named evidence passed; `externally approved` requires authoritative external evidence.
 
 ## Validation
 
-- Browser or computer-use validation is only for UI changes.
-- Backend behavior, strategy logic, order safety, data handling, and API behavior should be tested through unit, regression, system, function, or direct API tests.
-- Update `VALIDATION.md` whenever the test count or validation policy meaningfully changes.
+- Backend calculations, strategy behavior, order safety, persistence, authorization, data normalization, and API contracts are validated through unit, regression, system, function, or direct API tests.
+- Browser or computer-use validation is reserved for UI rendering, layout, accessibility, responsive behavior, and interaction wiring.
+- Add a direct API test when changing route parsing, authorization, status codes, response shapes, or error handling.
+- Update `VALIDATION.md` when the test count, coverage boundary, live-smoke status, or validation policy changes.
+- Never describe coverage as application-wide when `src/server.ts` or the browser client is outside instrumentation.
 
-## Roadmap And External Gates
+## Roadmap and external gates
 
-- `roadmap.md` is the source of truth for long-running roadmap goals.
-- Distinguish between "implemented in code", "documented capability boundary", and "externally approved" when updating roadmap status.
-- If a roadmap item is duplicated in multiple sections, reconcile all references in the same change so future audits do not disagree.
-- Never mark legal/compliance review, closed beta, or live-trading readiness complete unless authoritative external evidence exists.
-- The external gates for this app are legal/compliance review, a real paper closed beta with measured evidence, and live-trading deployment review.
+- Reconcile duplicated roadmap references in the same change.
+- A design, schema, checklist, or report endpoint is not proof that an operational process has happened.
+- Never mark legal/compliance review, a real paper closed beta, backup restore drills, or live-trading readiness complete without the corresponding external or measured evidence.
+- Live trading remains unavailable until legal/compliance review, data-entitlement review, paper-beta evidence, and a separate deployment review are complete.
 
-## Safety Bias
+## Safety bias
 
-- Strategy and paper-trading changes should fail closed: stale data, missing evidence, missing approval, bad audit state, unsupported capability, and incomplete beta evidence should never pass by absence.
+- Strategy and paper-order changes fail closed on stale or missing data, invalid configuration, incomplete approval, policy failure, ambiguous identity, broken audit evidence, and unsupported capability.
+- Keep calculations deterministic and testable. Agents may explain and draft, but cannot create execution authority or bypass signed preview and confirmation.
+- Preserve source, feed, observation time, retrieval time, assumptions, and missing-data state in derived financial output.
