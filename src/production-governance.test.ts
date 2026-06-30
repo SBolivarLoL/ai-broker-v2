@@ -86,3 +86,43 @@ test("measures closed beta targets from persisted paper evidence", () => {
   expect(report.targets.find(target => target.id === "stale_data")).toMatchObject({ status: "pass" });
   expect(report.targets.find(target => target.id === "operations_drills")).toMatchObject({ status: "pass" });
 });
+
+test("regression: closed beta evidence fails closed when safety evidence is incomplete", () => {
+  const report = buildClosedBetaEvidenceReport({
+    paperClient: false,
+    decisionAuditVerification: { valid: false, entries: 3, invalidEntryId: 2 },
+    receipts: [
+      { orderId: "paper-order-1" },
+      { paperOrderId: "paper-order-2", traceId: "trace-2" },
+    ],
+    events: [
+      { type: "operations.unauthorized.secret_access", actor: "intruder@example.com", payload: {}, createdAt: "2026-06-26T10:00:00.000Z" },
+    ],
+    strategyRuns: [{ id: "run-1", status: "paper", config: { paperApproval: {} }, reviewCount: 0 }],
+    strategyDecisions: [
+      { runId: "run-1", decision: "enter", riskChecks: { mode: "paper", allowed: true }, paperOrderId: "paper-order-1", orderOutcome: "submitted" },
+      { runId: "run-1", decision: "block", riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: true }, paperOrderId: null, orderOutcome: "none" },
+    ],
+    backupMetadata: null,
+  }, "2026-06-26T12:00:00.000Z");
+
+  expect(report.summary).toMatchObject({ pass: 0, fail: 7, needsEvidence: 1, readyForExitReview: false });
+  expect(report.summary.openTargets).toEqual([
+    "paper_only_execution",
+    "authorization_integrity",
+    "decision_audit_validity",
+    "signed_preview_coverage",
+    "strategy_risk_blocks",
+    "stale_data",
+    "operations_drills",
+    "review_cadence",
+  ]);
+  expect(report.targets.find(target => target.id === "signed_preview_coverage")).toMatchObject({
+    status: "fail",
+    actual: "1/2 submitted order receipts have preview or trace evidence.",
+  });
+  expect(report.targets.find(target => target.id === "stale_data")).toMatchObject({
+    status: "fail",
+    observedEvidence: { staleSubmittedCount: 1 },
+  });
+});

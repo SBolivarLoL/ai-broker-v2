@@ -73,6 +73,33 @@ describe("account activity ledger", () => {
     ]);
   });
 
+  test("regression: broker basis allocations do not create lots without source history", () => {
+    const spin = normalizeActivity({
+      id: "spin-missing-source",
+      activityType: "SPIN",
+      activitySubType: "SSPIN",
+      date: new Date("2026-01-02"),
+      symbol: "PARENT",
+      old_symbol: "PARENT",
+      basisAllocations: [
+        { symbol: "PARENT", quantity: 10, totalCostBasis: 800 },
+        { symbol: "CHILD", quantity: 2, totalCostBasis: 200 },
+      ],
+    });
+
+    const summary = ledgerSummary([spin]);
+
+    expect(summary).toMatchObject({ corporateActionsApplied: 0, openLots: [] });
+    expect(summary.unresolvedCorporateActions).toEqual([{
+      id: "spin-missing-source",
+      type: "SPIN",
+      subType: "SSPIN",
+      symbol: "PARENT",
+      reason: "Broker basis allocation has no imported source FIFO lots to replace.",
+    }]);
+    expect(summary.warnings).toContain("1 corporate action requires manual cost-basis review before relying on realized P&L.");
+  });
+
   test("flags unsupported or incomplete corporate actions without guessing basis", () => {
     const split = normalizeActivity({ id: "split", activityType: "SPLIT", activitySubType: "RSPLIT", date: new Date("2026-01-02"), symbol: "AAPL" });
     const merger = normalizeActivity({ id: "merger", activityType: "MA", activitySubType: "SMA", date: new Date("2026-01-03"), symbol: "AAPL" });
