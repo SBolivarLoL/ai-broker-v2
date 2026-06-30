@@ -129,3 +129,39 @@ test("blocks crypto paper buys on turnover loss drawdown and error cooldown", ()
   expect(result.allowed).toBe(false);
   expect(result.reasons).toEqual(["daily_turnover_limit", "daily_loss_limit", "drawdown_limit", "error_cooldown"]);
 });
+
+test("regression: reduction orders remain allowed during loss and drawdown", () => {
+  const approval = parseStrategyPaperApproval({
+    budget: 1_000,
+    maxOrderNotional: 200,
+    maxDailyTurnoverPercent: 50,
+    maxDailyLossPercent: 3,
+    maxDrawdownPercent: 4,
+  }, "tester", new Date("2026-06-24T10:00:00.000Z"));
+  const now = new Date("2026-06-24T12:00:00.000Z");
+  const draft = draftStrategyPaperOrder({ approval, symbol: "BTC/USD", targetExposure: 0, currentNotional: 200, referencePrice: 50_000, spreadBps: 20, now });
+
+  expect(draft.order).toMatchObject({ side: "sell", notional: 200 });
+  const result = evaluateStrategyPaperRiskPolicy({
+    approval,
+    draftOrder: draft.order,
+    account: { cash: 0, buyingPower: 0 },
+    performance: {
+      summary: { totalPnl: -50, maxDrawdownPercent: 8 },
+      points: [
+        { timestamp: "2026-06-24T11:00:00.000Z", equity: 1_000 },
+        { timestamp: "2026-06-24T12:00:00.000Z", equity: 950 },
+      ],
+    },
+    now,
+  });
+
+  expect(result).toMatchObject({
+    allowed: true,
+    reasons: [],
+    evidence: {
+      dailyLoss: { lossNotional: 50, lossPercent: 5 },
+      drawdown: { drawdownPercent: 8 },
+    },
+  });
+});
