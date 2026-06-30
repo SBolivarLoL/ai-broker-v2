@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport } from "./production-governance";
+import { buildClosedBetaEvidenceReport, buildProductionGovernanceReport, evaluateCryptoCapabilityRequest } from "./production-governance";
 
 test("builds production governance report with legal review and live-trading blockers", () => {
   const report = buildProductionGovernanceReport({ LIVE_TRADING_ENABLED: "true", LIVE_TRADING_REVIEW_ID: "review-123" }, "2026-06-26T12:00:00.000Z");
@@ -27,7 +27,38 @@ test("builds production governance report with legal review and live-trading blo
     "strategy_risk_blocks",
   ]));
   expect(report.closedBeta.exitCriteria.join(" ")).toContain("legal/compliance review");
+  expect(report.cryptoCapabilityBoundary).toMatchObject({
+    mode: "separately_approved_only",
+    defaultDecision: "deny",
+  });
+  expect(report.cryptoCapabilityBoundary.disabledCapabilities.map(capability => capability.id)).toEqual([
+    "crypto_transfers",
+    "crypto_perpetual_leverage",
+    "crypto_tokenization",
+  ]);
+  expect(report.cryptoCapabilityBoundary.disabledCapabilities.every(capability => capability.available === false)).toBe(true);
   expect(report.runbook.join(" ")).toContain("do not mark it complete from code evidence alone");
+});
+
+test("keeps unsupported crypto capabilities disabled until separate approval", () => {
+  expect(evaluateCryptoCapabilityRequest("crypto_transfers")).toMatchObject({
+    allowed: false,
+    requiredApproval: expect.arrayContaining(["custody_security_review", "external_legal_compliance_signoff"]),
+  });
+  expect(evaluateCryptoCapabilityRequest("crypto_perpetual_leverage")).toMatchObject({
+    allowed: false,
+    requiredApproval: expect.arrayContaining(["leverage_risk_model", "external_legal_compliance_signoff"]),
+  });
+  expect(evaluateCryptoCapabilityRequest("crypto_tokenization")).toMatchObject({
+    allowed: false,
+    requiredApproval: expect.arrayContaining(["asset_availability_review", "external_legal_compliance_signoff"]),
+  });
+  expect(evaluateCryptoCapabilityRequest("crypto_unlisted_feature")).toEqual({
+    id: "crypto_unlisted_feature",
+    allowed: false,
+    reason: "Unknown crypto capabilities fail closed until they are added to the production-governance boundary.",
+    requiredApproval: ["explicit_capability_record", "external_legal_compliance_signoff"],
+  });
 });
 
 test("measures closed beta targets from persisted paper evidence", () => {
