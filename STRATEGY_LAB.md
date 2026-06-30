@@ -56,13 +56,13 @@ Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one sym
 
 ### Timeframe and history
 
-Supported timeframes are `15Min`, `1Hour`, and `1Day`. The server accepts 1-90 lookback days. The current browser input still advertises a larger maximum; values above 90 are rejected and the mismatch is tracked in `roadmap.md`.
+Supported timeframes are `15Min`, `1Hour`, and `1Day`. The server and Strategy Lab input accept 1-90 lookback days from one tested constraint contract.
 
 Short windows are fast but fragile. A 90-day maximum is not enough to establish long-term robustness across market regimes.
 
 ### Parameters
 
-The UI currently accepts a JSON object. Use the defaults below; direct API callers should not assume omitted or malformed values are safe until the roadmap's strategy-schema work lands.
+The UI currently accepts a JSON object. The same strict server schema applies the defaults below to backtests and saved runs. Unknown fields, strings in numeric fields, non-finite values, contradictory thresholds, and out-of-range values are rejected before a plugin is constructed.
 
 ```json
 {"fast":5,"slow":20,"exposure":1}

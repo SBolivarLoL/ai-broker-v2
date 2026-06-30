@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateStrategyPlugin, runBacktest, strategyPluginFromId, type BacktestBar } from "./strategy-backtest";
+import { evaluateStrategyPlugin, parseStrategyParams, runBacktest, strategyPluginFromId, type BacktestBar } from "./strategy-backtest";
 import { buildStrategyPerformance } from "./strategy-performance";
 import { buildStrategyExperimentReport } from "./strategy-report";
 import { draftStrategyPaperOrder, evaluateStrategyPaperRiskPolicy, parseStrategyPaperApproval } from "./strategy-paper";
 import { buildClosedBetaEvidenceReport } from "./production-governance";
+import { createStore } from "./store";
 
 const bars: BacktestBar[] = [
   { timestamp: "2026-06-24T10:00:00.000Z", close: 100 },
@@ -13,6 +14,33 @@ const bars: BacktestBar[] = [
 ];
 
 describe("strategy backend system flow", () => {
+  test("persists canonical defaults and replays the same strategy configuration", () => {
+    const store = createStore(":memory:");
+    try {
+      const params = parseStrategyParams("moving-average-trend", { exposure: 0.5 });
+      const config = { symbols: ["BTC/USD"], strategyId: "moving-average-trend", params, timeframe: "1Hour", days: 30, mode: "shadow" };
+      store.createStrategyRun({
+        id: "run-defaults",
+        strategyId: "moving-average-trend",
+        strategyVersion: "strategy-plugin-v1",
+        status: "shadow",
+        configHash: "sha256:canonical-defaults",
+        policyVersion: "crypto-shadow-v1",
+        symbols: ["BTC/USD"],
+        budget: 0,
+        config,
+      });
+
+      const stored = store.getStrategyRun("run-defaults")!;
+      expect(stored.config).toMatchObject({ params: { fast: 5, slow: 20, exposure: 0.5 } });
+      const storedConfig = stored.config as typeof config;
+      const evaluation = evaluateStrategyPlugin(strategyPluginFromId(stored.strategyId, storedConfig.params), bars, bars.length - 1, stored.symbols[0]);
+      expect(evaluation.thresholds).toEqual({ fast: 5, slow: 20, exposure: 0.5 });
+    } finally {
+      store.close();
+    }
+  });
+
   test("runs paper-strategy evaluation approval risk performance and report without UI automation", () => {
     const plugin = strategyPluginFromId("moving-average-trend", { fast: 2, slow: 3, exposure: 0.6 });
     const evaluation = evaluateStrategyPlugin(plugin, bars, bars.length - 1, "BTC/USD");

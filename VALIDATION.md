@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-06-30 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 231 tests, 0 failures, 858 assertions across 58 files | Strict TypeScript plus all Bun tests |
+| `bun run check` | Pass: 235 tests, 0 failures, 892 assertions across 58 files | Strict TypeScript plus all Bun tests |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
 | `bun test --coverage` | Pass: 96.62% functions, 96.98% lines | Imported deterministic TypeScript modules only |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
@@ -29,7 +29,7 @@ Coverage is not application-wide. `src/server.ts` starts real process dependenci
 | --- | --- | --- | --- |
 | Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
 | Order policy and signatures | High at module level | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests | Route-level tests and real broker race drills are incomplete |
-| Strategy decisions | High for deterministic plugin behavior | Backtest, scheduler, paper policy, observability, replay, attribution, performance, and strategy system tests | No genuine out-of-sample walk-forward scoring or long paper cohort yet |
+| Strategy decisions | High for deterministic plugin behavior | Strict configuration/default tests plus backtest, scheduler, paper policy, observability, replay, attribution, performance, and strategy system tests | No genuine out-of-sample walk-forward scoring or long paper cohort yet |
 | Persistence and audit | Good for current schema | In-memory SQLite store, hash chain, ledger, journal, policy, export tests | Historical migration and backup restore fixtures are missing |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
@@ -83,6 +83,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Order confirmation reloads relevant broker and market state and rejects invalid signatures, expiry, drift, capacity, exposure, turnover, or incomplete evidence.
 - Local reservations and working broker orders consume projected capacity, preventing concurrent order stacking.
 - Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
+- Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
 - Missing or stale strategy data cannot pass by absence.
 - Decision and strategy audit verification fails when a stored hash chain is inconsistent.
 - Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.

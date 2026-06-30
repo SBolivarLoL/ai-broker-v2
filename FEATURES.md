@@ -68,7 +68,7 @@ The browser exposes seven workspaces:
 
 ### Strategy Lab
 
-- Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout.
+- Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence.
 - Bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, and optional walk-forward window segmentation.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
@@ -120,12 +120,12 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 ## Current limitations
 
-- Backtest history is currently bounded to 90 days by the server parser, despite the browser input advertising a larger maximum. This mismatch is an open roadmap defect.
+- Backtest history is currently bounded to 90 days by both the server and Strategy Lab input, which is too short to establish robustness across long market regimes.
 - “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
 - Backtest results are returned to the browser but are not persisted as immutable experiment records or linked to the shadow run created afterward.
 - Strategy records use static version labels and config hashes but do not yet persist the exact Git commit, feature-schema version, or input dataset hash promised by a fully reproducible experiment.
 - `src/server.ts` is a 2,374-line composition and routing module; `src/index.html` is a roughly 255 KB single-file client; `src/store.ts` contains schema setup and all repositories. This slows route-level and UI testing.
-- The 231-test suite strongly covers imported deterministic modules, but `src/server.ts` and the browser client are outside the reported coverage instrumentation. Direct API contract coverage is therefore incomplete.
+- The 235-test suite strongly covers imported deterministic modules, but `src/server.ts` and the browser client are outside the reported coverage instrumentation. Direct API contract coverage is therefore incomplete.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Schema metadata and backup export exist, but ordered migration rollback/upgrade fixtures and a measured restore drill do not.
 - The data-governance registry covers major market/news/identity categories but does not yet inventory every official macro/SEC source or the OpenAI service.

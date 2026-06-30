@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, runBacktest, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "./strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "./strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -177,6 +177,30 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(typeof strategyFromId("btc-eth-relative-strength", { lookback: 2 })).toBe("function");
   expect(typeof strategyFromId("order-book-liquidity-scout", { maxSpreadBps: 100 })).toBe("function");
   expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
+});
+
+test("strategy configuration applies one canonical set of defaults", () => {
+  expect(parseStrategyParams("cash")).toEqual({});
+  expect(parseStrategyParams("time-sliced-accumulation")).toEqual({ slices: 10, maxExposure: 1 });
+  expect(parseStrategyParams("moving-average-trend")).toEqual({ fast: 5, slow: 20, exposure: 1 });
+  expect(parseStrategyParams("mean-reversion")).toEqual({ lookback: 20, entryZScore: -2, exitZScore: -0.25, exposure: 1 });
+  expect(parseStrategyParams("breakout-momentum", { lookback: 12 })).toEqual({ lookback: 12, volumeLookback: 12, volumeMultiple: 1.25, stopLossPercent: 8, exposure: 1 });
+  expect(parseStrategyParams("volatility-filter")).toEqual({ lookback: 20, minVolatilityPercent: 0, maxVolatilityPercent: 6, exposure: 1 });
+  expect(parseStrategyParams("btc-eth-relative-strength")).toEqual({ lookback: 20, minRelativeStrengthPercent: 0, exposure: 1 });
+  expect(parseStrategyParams("order-book-liquidity-scout")).toEqual({ exposure: 1, maxSpreadBps: 100, minVisibleAskNotional: 500, minVisibleBidNotional: 500, maxDepthLevels: 25 });
+  for (const strategyId of STRATEGY_IDS) expect(strategyPluginFromId(strategyId).id).toBe(strategyId);
+});
+
+test("strategy configuration rejects malformed and contradictory parameters", () => {
+  expect(() => parseStrategyParams("cash", { exposure: 0 })).toThrow("Unrecognized key");
+  expect(() => parseStrategyParams("moving-average-trend", { fast: "5", slow: 20 })).toThrow("expected number");
+  expect(() => parseStrategyParams("moving-average-trend", { fast: 20, slow: 20 })).toThrow("slow must be greater than fast");
+  expect(() => parseStrategyParams("mean-reversion", { entryZScore: 0, exitZScore: -1 })).toThrow("entryZScore must be less than exitZScore");
+  expect(() => parseStrategyParams("volatility-filter", { minVolatilityPercent: 10, maxVolatilityPercent: 5 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
+  expect(() => parseStrategyParams("breakout-momentum", { volumeMultiple: Number.NaN })).toThrow("expected number");
+  expect(() => parseStrategyParams("order-book-liquidity-scout", { exposure: 1.1 })).toThrow("Too big");
+  expect(() => parseStrategyParams("order-book-liquidity-scout", { maxDepthLevels: 101 })).toThrow("Too big");
+  expect(() => parseStrategyParams("unknown", {})).toThrow("Unknown strategyId");
 });
 
 test("strategy plugins expose deterministic prepare features decide risk orders and attribution steps", () => {

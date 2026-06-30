@@ -18,7 +18,7 @@ The 2026-06-30 audit found a capable deterministic core and a large difference b
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
 | Repository | 56 production TypeScript modules, 58 test files, one Bun server, one browser HTML file, SQLite persistence | Clear domain modules, but composition and browser layers are concentrated |
-| Automated checks | 231 tests, 858 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass |
+| Automated checks | 235 tests, 892 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass |
 | Instrumented coverage | 96.62% functions and 96.98% lines across imported modules | `src/server.ts` and `src/index.html` are not included, so this is not whole-app coverage |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-06-30 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
@@ -44,8 +44,8 @@ These items should land before broadening strategy automation or adding more UI 
 
 1. [ ] Extract a side-effect-free `createApp(dependencies)` request handler from `src/server.ts`; keep `Bun.serve`, Alpaca construction, streams, and scheduler startup in a thin entry point.
 2. [ ] Add direct API contract tests for route authorization, origin checks, request-size limits, parsing, status codes, response schemas, and error mapping across orders, strategy, portfolio, research, and operations routes.
-3. [ ] Define one validated schema and default set per strategy. Reject unknown, non-finite, contradictory, and out-of-range parameters before backtest or run creation.
-4. [ ] Reconcile the browser lookback maximum with the server's actual 1-90 day crypto-history bound. Prefer one exported/shared constraint rather than two literals.
+3. [x] Define one validated schema and default set per strategy. Unknown, non-finite, contradictory, and out-of-range parameters now fail before backtest or run creation, and saved runs persist canonical defaults.
+4. [x] Reconcile the Strategy Lab input with the server's shared 1-90 day crypto-history bound and retain a regression test that prevents the browser/server limits from drifting.
 5. [ ] Replace migration metadata-only behavior with ordered, transactional migrations and upgrade fixtures from prior schema versions. Add a backup restore drill that proves a serialized database can start and preserve audit verification.
 6. [ ] Make test coverage representative: include the extracted app/router, publish a coverage script, set a reviewed threshold for deterministic/server code, and continue to report browser coverage separately.
 7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
@@ -194,7 +194,7 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] FIFO ledger, performance, snapshots, risk, exposure, scenario, optimizer, and constrained rebalance calculations.
 - [x] SEC filing/fact/trend evidence, official macro context, GDELT, optional Finnhub, OpenFIGI, comparables, valuation scenarios, and material 8-K monitoring.
 - [x] Evidence-bound portfolio/company agents, counter-thesis review, and receipt-linked trade journal.
-- [x] Crypto strategy plugins, bar-close backtests, shadow/scheduled runs, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
+- [x] Crypto strategy plugins with strict canonical configuration, bar-close backtests, shadow/scheduled runs, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
 - [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, backup/export endpoints, governance reports, and beta target definitions.
 
 Implemented does not imply production-approved. See `FEATURES.md` for exact limitations and `VALIDATION.md` for current evidence.

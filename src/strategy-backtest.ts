@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type BacktestBar = { timestamp: Date | string | number; open?: number | null; high?: number | null; low?: number | null; close: number; volume?: number | null; vwap?: number | null; tradeCount?: number | null };
 export type StrategyFeatureMap = Record<string, number | null>;
 export type StrategyThresholdMap = Record<string, string | number | boolean | null>;
@@ -51,6 +53,76 @@ export type StrategyPlugin<Prepared = Record<string, unknown>> = {
   orders(context: StrategyPluginContext & { prepared: Prepared; features: StrategyFeatureMap; decision: BacktestDecision; risk: StrategyRiskAdjustment }): StrategyOrderIntent[];
   attribution(context: StrategyPluginContext & { prepared: Prepared; features: StrategyFeatureMap; decision: BacktestDecision; risk: StrategyRiskAdjustment; orders: StrategyOrderIntent[] }): StrategyAttributionPlan;
 };
+
+export const STRATEGY_IDS = [
+  "cash",
+  "buy-and-hold",
+  "time-sliced-accumulation",
+  "moving-average-trend",
+  "breakout-momentum",
+  "volatility-filter",
+  "mean-reversion",
+  "btc-eth-relative-strength",
+  "order-book-liquidity-scout",
+] as const;
+export type StrategyId = typeof STRATEGY_IDS[number];
+
+const boundedInteger = (minimum: number, maximum: number, defaultValue: number) => z.number().finite().int().min(minimum).max(maximum).default(defaultValue);
+const exposure = z.number().finite().min(0).max(1).default(1);
+const STRATEGY_PARAMETER_SCHEMAS = {
+  cash: z.object({}).strict(),
+  "buy-and-hold": z.object({}).strict(),
+  "time-sliced-accumulation": z.object({
+    slices: boundedInteger(1, 10_000, 10),
+    maxExposure: exposure,
+  }).strict(),
+  "moving-average-trend": z.object({
+    fast: boundedInteger(2, 10_000, 5),
+    slow: boundedInteger(3, 10_000, 20),
+    exposure,
+  }).strict().refine(params => params.slow > params.fast, { message: "slow must be greater than fast", path: ["slow"] }),
+  "mean-reversion": z.object({
+    lookback: boundedInteger(3, 10_000, 20),
+    entryZScore: z.number().finite().min(-20).max(20).default(-2),
+    exitZScore: z.number().finite().min(-20).max(20).default(-0.25),
+    exposure,
+  }).strict().refine(params => params.entryZScore < params.exitZScore, { message: "entryZScore must be less than exitZScore", path: ["exitZScore"] }),
+  "breakout-momentum": z.object({
+    lookback: boundedInteger(2, 10_000, 20),
+    volumeLookback: z.number().finite().int().min(2).max(10_000).optional(),
+    volumeMultiple: z.number().finite().min(0.01).max(100).default(1.25),
+    stopLossPercent: z.number().finite().min(0).max(100).default(8),
+    exposure,
+  }).strict().transform(params => ({ ...params, volumeLookback: params.volumeLookback ?? params.lookback })),
+  "volatility-filter": z.object({
+    lookback: boundedInteger(2, 10_000, 20),
+    minVolatilityPercent: z.number().finite().min(0).max(1_000).default(0),
+    maxVolatilityPercent: z.number().finite().min(0).max(1_000).default(6),
+    exposure,
+  }).strict().refine(params => params.maxVolatilityPercent >= params.minVolatilityPercent, { message: "maxVolatilityPercent must be at least minVolatilityPercent", path: ["maxVolatilityPercent"] }),
+  "btc-eth-relative-strength": z.object({
+    lookback: boundedInteger(1, 10_000, 20),
+    minRelativeStrengthPercent: z.number().finite().min(-1_000).max(1_000).default(0),
+    exposure,
+    peerSymbol: z.enum(["BTC/USD", "ETH/USD"]).optional(),
+  }).strict(),
+  "order-book-liquidity-scout": z.object({
+    exposure,
+    maxSpreadBps: z.number().finite().min(1).max(10_000).default(100),
+    minVisibleAskNotional: z.number().finite().min(0).max(1_000_000_000_000).default(500),
+    minVisibleBidNotional: z.number().finite().min(0).max(1_000_000_000_000).default(500),
+    maxDepthLevels: boundedInteger(1, 100, 25),
+  }).strict(),
+} as const;
+
+export function parseStrategyParams<T extends StrategyId>(strategyId: T, params?: unknown): z.infer<(typeof STRATEGY_PARAMETER_SCHEMAS)[T]>;
+export function parseStrategyParams(strategyId: string, params?: unknown): Record<string, unknown>;
+export function parseStrategyParams(strategyId: string, params: unknown = {}) {
+  if (!(STRATEGY_IDS as readonly string[]).includes(strategyId)) throw new Error("Unknown strategyId");
+  const result = STRATEGY_PARAMETER_SCHEMAS[strategyId as StrategyId].safeParse(params ?? {});
+  if (!result.success) throw new Error(`Invalid ${strategyId} parameters: ${result.error.issues[0]?.message ?? "invalid configuration"}`);
+  return result.data;
+}
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const defaultAttribution = (): StrategyAttributionPlan => ({ windows: ["1h", "1d", "7d"], baselines: ["cash", "buy-and-hold"] });
@@ -170,31 +242,31 @@ const stdev = (values: number[]) => {
 };
 
 export function timeSlicedAccumulationStrategy(params: { slices?: number; maxExposure?: number } = {}): BacktestStrategy {
-  return strategyFunctionFromPlugin(timeSlicedAccumulationPlugin(params));
+  return strategyFunctionFromPlugin(timeSlicedAccumulationPlugin(parseStrategyParams("time-sliced-accumulation", params)));
 }
 
 export function movingAverageTrendStrategy(params: { fast?: number; slow?: number; exposure?: number } = {}): BacktestStrategy {
-  return strategyFunctionFromPlugin(movingAverageTrendPlugin(params));
+  return strategyFunctionFromPlugin(movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params)));
 }
 
 export function meanReversionStrategy(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): BacktestStrategy {
-  return strategyFunctionFromPlugin(meanReversionPlugin(params));
+  return strategyFunctionFromPlugin(meanReversionPlugin(parseStrategyParams("mean-reversion", params)));
 }
 
 export function breakoutMomentumStrategy(params: { lookback?: number; volumeLookback?: number; volumeMultiple?: number; exposure?: number; stopLossPercent?: number } = {}): BacktestStrategy {
-  return strategyFunctionFromPlugin(breakoutMomentumPlugin(params));
+  return strategyFunctionFromPlugin(breakoutMomentumPlugin(parseStrategyParams("breakout-momentum", params)));
 }
 
 export function volatilityFilterStrategy(params: { lookback?: number; minVolatilityPercent?: number; maxVolatilityPercent?: number; exposure?: number } = {}): BacktestStrategy {
-  return strategyFunctionFromPlugin(volatilityFilterPlugin(params));
+  return strategyFunctionFromPlugin(volatilityFilterPlugin(parseStrategyParams("volatility-filter", params)));
 }
 
 export function btcEthRelativeStrengthStrategy(params: { lookback?: number; minRelativeStrengthPercent?: number; exposure?: number; peerSymbol?: string } = {}, market?: StrategyMarketContext, symbol = "BTC/USD"): BacktestStrategy {
-  return strategyFunctionFromPlugin(btcEthRelativeStrengthPlugin(params), market, symbol);
+  return strategyFunctionFromPlugin(btcEthRelativeStrengthPlugin(parseStrategyParams("btc-eth-relative-strength", params)), market, symbol);
 }
 
 export function orderBookLiquidityScoutStrategy(params: { exposure?: number; maxSpreadBps?: number; minVisibleAskNotional?: number; minVisibleBidNotional?: number; maxDepthLevels?: number } = {}, market?: StrategyMarketContext, symbol = "BTC/USD"): BacktestStrategy {
-  return strategyFunctionFromPlugin(orderBookLiquidityScoutPlugin(params), market, symbol);
+  return strategyFunctionFromPlugin(orderBookLiquidityScoutPlugin(parseStrategyParams("order-book-liquidity-scout", params)), market, symbol);
 }
 
 export function cashStrategyPlugin(): StrategyPlugin {
@@ -508,20 +580,20 @@ export function orderBookLiquidityScoutPlugin(params: { exposure?: number; maxSp
   };
 }
 
-export function strategyFromId(strategyId: string, params: Record<string, unknown> = {}): BacktestStrategy {
+export function strategyFromId(strategyId: string, params: unknown = {}): BacktestStrategy {
   return strategyFunctionFromPlugin(strategyPluginFromId(strategyId, params));
 }
 
-export function strategyPluginFromId(strategyId: string, params: Record<string, unknown> = {}): StrategyPlugin {
-  if (strategyId === "cash") return cashStrategyPlugin();
-  if (strategyId === "buy-and-hold") return buyAndHoldStrategyPlugin();
-  if (strategyId === "time-sliced-accumulation") return timeSlicedAccumulationPlugin({ slices: Number(params.slices), maxExposure: Number(params.maxExposure ?? 1) });
-  if (strategyId === "moving-average-trend") return movingAverageTrendPlugin({ fast: Number(params.fast), slow: Number(params.slow), exposure: Number(params.exposure ?? 1) });
-  if (strategyId === "mean-reversion") return meanReversionPlugin({ lookback: Number(params.lookback), entryZScore: Number(params.entryZScore), exitZScore: Number(params.exitZScore), exposure: Number(params.exposure ?? 1) });
-  if (strategyId === "breakout-momentum") return breakoutMomentumPlugin({ lookback: Number(params.lookback), volumeLookback: Number(params.volumeLookback), volumeMultiple: Number(params.volumeMultiple), exposure: Number(params.exposure ?? 1), stopLossPercent: Number(params.stopLossPercent) });
-  if (strategyId === "volatility-filter") return volatilityFilterPlugin({ lookback: Number(params.lookback), minVolatilityPercent: Number(params.minVolatilityPercent), maxVolatilityPercent: Number(params.maxVolatilityPercent), exposure: Number(params.exposure ?? 1) });
-  if (strategyId === "btc-eth-relative-strength") return btcEthRelativeStrengthPlugin({ lookback: Number(params.lookback), minRelativeStrengthPercent: Number(params.minRelativeStrengthPercent), exposure: Number(params.exposure ?? 1), peerSymbol: typeof params.peerSymbol === "string" ? params.peerSymbol : undefined });
-  if (strategyId === "order-book-liquidity-scout") return orderBookLiquidityScoutPlugin({ exposure: Number(params.exposure ?? 1), maxSpreadBps: Number(params.maxSpreadBps), minVisibleAskNotional: Number(params.minVisibleAskNotional), minVisibleBidNotional: Number(params.minVisibleBidNotional), maxDepthLevels: Number(params.maxDepthLevels) });
+export function strategyPluginFromId(strategyId: string, params: unknown = {}): StrategyPlugin {
+  if (strategyId === "cash") { parseStrategyParams("cash", params); return cashStrategyPlugin(); }
+  if (strategyId === "buy-and-hold") { parseStrategyParams("buy-and-hold", params); return buyAndHoldStrategyPlugin(); }
+  if (strategyId === "time-sliced-accumulation") return timeSlicedAccumulationPlugin(parseStrategyParams("time-sliced-accumulation", params));
+  if (strategyId === "moving-average-trend") return movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params));
+  if (strategyId === "mean-reversion") return meanReversionPlugin(parseStrategyParams("mean-reversion", params));
+  if (strategyId === "breakout-momentum") return breakoutMomentumPlugin(parseStrategyParams("breakout-momentum", params));
+  if (strategyId === "volatility-filter") return volatilityFilterPlugin(parseStrategyParams("volatility-filter", params));
+  if (strategyId === "btc-eth-relative-strength") return btcEthRelativeStrengthPlugin(parseStrategyParams("btc-eth-relative-strength", params));
+  if (strategyId === "order-book-liquidity-scout") return orderBookLiquidityScoutPlugin(parseStrategyParams("order-book-liquidity-scout", params));
   throw new Error("Unknown strategyId");
 }
 
