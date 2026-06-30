@@ -32,22 +32,18 @@ export type LedgerActivity = {
   orderId: string | null;
 };
 
-const dividendTypes = new Set(["CGD", "DIV", "DIVCGL", "DIVCGS", "DIVFT", "DIVNRA", "DIVROC", "DIVTW", "DIVTXEX"]);
-const feeTypes = new Set(["CFEE", "DIVFEE", "FEE", "PTC"]);
-const interestTypes = new Set(["INT", "INTNRA", "INTTW"]);
-const transferTypes = new Set(["ACATC", "CSD", "CSW", "TRANS", "JNLC"]);
-const corporateActionTypes = new Set(["ACATS", "FOPT", "JNLS", "MA", "NC", "OPCA", "REORG", "SPIN", "SPLIT"]);
-const optionTypes = new Set(["OPASN", "OPCSH", "OPEXC", "OPEXP", "OPTRD"]);
+const activityCategoryByType: Record<string, LedgerCategory> = {
+  FILL: "trade",
+  CGD: "dividend", DIV: "dividend", DIVCGL: "dividend", DIVCGS: "dividend", DIVFT: "dividend", DIVNRA: "dividend", DIVROC: "dividend", DIVTW: "dividend", DIVTXEX: "dividend",
+  CFEE: "fee", DIVFEE: "fee", FEE: "fee", PTC: "fee",
+  INT: "interest", INTNRA: "interest", INTTW: "interest",
+  ACATC: "transfer", CSD: "transfer", CSW: "transfer", TRANS: "transfer", JNLC: "transfer",
+  ACATS: "corporate_action", FOPT: "corporate_action", JNLS: "corporate_action", MA: "corporate_action", NC: "corporate_action", OPCA: "corporate_action", REORG: "corporate_action", SPIN: "corporate_action", SPLIT: "corporate_action",
+  OPASN: "option", OPCSH: "option", OPEXC: "option", OPEXP: "option", OPTRD: "option",
+};
 
 export function activityCategory(type: string): LedgerCategory {
-  if (type === "FILL") return "trade";
-  if (dividendTypes.has(type)) return "dividend";
-  if (feeTypes.has(type)) return "fee";
-  if (interestTypes.has(type)) return "interest";
-  if (transferTypes.has(type)) return "transfer";
-  if (corporateActionTypes.has(type)) return "corporate_action";
-  if (optionTypes.has(type)) return "option";
-  return "other";
+  return activityCategoryByType[type] ?? "other";
 }
 
 const optionalNumber = (value: unknown) => {
@@ -87,7 +83,15 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
   const executed = activities.filter(activity => activity.status !== "canceled");
   const lots = new Map<string, { quantity: number; price: number }[]>();
   let realizedProfitLoss = 0, realizedProceeds = 0, realizedCostBasis = 0, unmatchedSellQuantity = 0;
+  let tradeCount = 0, dividends = 0, interest = 0, fees = 0, netTransfers = 0, totalCashImpact = 0, hasCorporateActions = false;
   for (const activity of [...executed].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id))) {
+    totalCashImpact += activity.amount;
+    if (activity.category === "trade") tradeCount++;
+    if (activity.category === "dividend") dividends += activity.amount;
+    if (activity.category === "interest") interest += activity.amount;
+    if (activity.category === "fee") fees += activity.amount;
+    if (activity.category === "transfer") netTransfers += activity.amount;
+    if (activity.category === "corporate_action") hasCorporateActions = true;
     if (activity.category !== "trade" || !activity.symbol || !activity.side || activity.quantity === null || activity.price === null) continue;
     const symbolLots = lots.get(activity.symbol) ?? [];
     lots.set(activity.symbol, symbolLots);
@@ -108,23 +112,21 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
     }
     unmatchedSellQuantity += remaining;
   }
-  const sumCategory = (category: LedgerCategory) => executed.filter(activity => activity.category === category).reduce((sum, activity) => sum + activity.amount, 0);
-  const hasCorporateActions = executed.some(activity => activity.category === "corporate_action");
   const warnings: string[] = [];
   if (truncated) warnings.push("Only the most recent broker activities were imported; lifetime totals may be incomplete.");
   if (unmatchedSellQuantity > 1e-10) warnings.push("Some sales predate the imported purchase history; realized P&L excludes their unmatched quantity.");
   if (hasCorporateActions) warnings.push("Corporate actions are present; FIFO fill cost basis may require adjustment before tax use.");
   return {
     activityCount: executed.length,
-    tradeCount: executed.filter(activity => activity.category === "trade").length,
+    tradeCount,
     realizedProfitLoss,
     realizedProceeds,
     realizedCostBasis,
-    dividends: sumCategory("dividend"),
-    interest: sumCategory("interest"),
-    feesPaid: Math.max(0, -sumCategory("fee")),
-    netTransfers: sumCategory("transfer"),
-    totalCashImpact: executed.reduce((sum, activity) => sum + activity.amount, 0),
+    dividends,
+    interest,
+    feesPaid: Math.max(0, -fees),
+    netTransfers,
+    totalCashImpact,
     warnings,
     method: "FIFO from imported Alpaca fills; informational, not tax reporting",
   };
