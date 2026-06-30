@@ -51,22 +51,18 @@ export type LedgerActivity = {
 
 export type FifoLot = { symbol: string; quantity: number; price: number; acquiredAt: string };
 
-const dividendTypes = new Set(["CGD", "DIV", "DIVCGL", "DIVCGS", "DIVFT", "DIVNRA", "DIVROC", "DIVTW", "DIVTXEX"]);
-const feeTypes = new Set(["CFEE", "DIVFEE", "FEE", "PTC"]);
-const interestTypes = new Set(["INT", "INTNRA", "INTTW"]);
-const transferTypes = new Set(["ACATC", "CSD", "CSW", "TRANS", "JNLC"]);
-const corporateActionTypes = new Set(["ACATS", "FOPT", "JNLS", "MA", "NC", "OPCA", "REORG", "SPIN", "SPLIT"]);
-const optionTypes = new Set(["OPASN", "OPCSH", "OPEXC", "OPEXP", "OPTRD"]);
+const activityCategoryByType: Record<string, LedgerCategory> = {
+  FILL: "trade",
+  CGD: "dividend", DIV: "dividend", DIVCGL: "dividend", DIVCGS: "dividend", DIVFT: "dividend", DIVNRA: "dividend", DIVROC: "dividend", DIVTW: "dividend", DIVTXEX: "dividend",
+  CFEE: "fee", DIVFEE: "fee", FEE: "fee", PTC: "fee",
+  INT: "interest", INTNRA: "interest", INTTW: "interest",
+  ACATC: "transfer", CSD: "transfer", CSW: "transfer", TRANS: "transfer", JNLC: "transfer",
+  ACATS: "corporate_action", FOPT: "corporate_action", JNLS: "corporate_action", MA: "corporate_action", NC: "corporate_action", OPCA: "corporate_action", REORG: "corporate_action", SPIN: "corporate_action", SPLIT: "corporate_action",
+  OPASN: "option", OPCSH: "option", OPEXC: "option", OPEXP: "option", OPTRD: "option",
+};
 
 export function activityCategory(type: string): LedgerCategory {
-  if (type === "FILL") return "trade";
-  if (dividendTypes.has(type)) return "dividend";
-  if (feeTypes.has(type)) return "fee";
-  if (interestTypes.has(type)) return "interest";
-  if (transferTypes.has(type)) return "transfer";
-  if (corporateActionTypes.has(type)) return "corporate_action";
-  if (optionTypes.has(type)) return "option";
-  return "other";
+  return activityCategoryByType[type] ?? "other";
 }
 
 const optionalNumber = (value: unknown) => {
@@ -127,8 +123,15 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
   const lots = new Map<string, Omit<FifoLot, "symbol">[]>();
   let realizedProfitLoss = 0, realizedProceeds = 0, realizedCostBasis = 0, unmatchedSellQuantity = 0;
   let corporateActionsApplied = 0;
+  let tradeCount = 0, dividends = 0, interest = 0, fees = 0, netTransfers = 0, totalCashImpact = 0;
   const unresolvedCorporateActions: { id: string; type: string; subType: string | null; symbol: string | null; reason: string }[] = [];
   for (const activity of [...executed].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id))) {
+    totalCashImpact += activity.amount;
+    if (activity.category === "trade") tradeCount++;
+    if (activity.category === "dividend") dividends += activity.amount;
+    if (activity.category === "interest") interest += activity.amount;
+    if (activity.category === "fee") fees += activity.amount;
+    if (activity.category === "transfer") netTransfers += activity.amount;
     if (activity.category === "corporate_action") {
       const details = activity.corporateAction;
       const oldSymbol = details?.oldSymbol ?? activity.symbol;
@@ -187,7 +190,6 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
     }
     unmatchedSellQuantity += remaining;
   }
-  const sumCategory = (category: LedgerCategory) => executed.filter(activity => activity.category === category).reduce((sum, activity) => sum + activity.amount, 0);
   const warnings: string[] = [];
   if (truncated) warnings.push("Only the most recent broker activities were imported; lifetime totals may be incomplete.");
   if (unmatchedSellQuantity > 1e-10) warnings.push("Some sales predate the imported purchase history; realized P&L excludes their unmatched quantity.");
@@ -196,15 +198,15 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
   const openLots = [...lots.entries()].flatMap(([symbol, symbolLots]) => symbolLots.map(lot => ({ symbol, ...lot }))).filter(lot => lot.quantity > 1e-10).sort((left, right) => left.symbol.localeCompare(right.symbol) || left.acquiredAt.localeCompare(right.acquiredAt));
   return {
     activityCount: executed.length,
-    tradeCount: executed.filter(activity => activity.category === "trade").length,
+    tradeCount,
     realizedProfitLoss,
     realizedProceeds,
     realizedCostBasis,
-    dividends: sumCategory("dividend"),
-    interest: sumCategory("interest"),
-    feesPaid: Math.max(0, -sumCategory("fee")),
-    netTransfers: sumCategory("transfer"),
-    totalCashImpact: executed.reduce((sum, activity) => sum + activity.amount, 0),
+    dividends,
+    interest,
+    feesPaid: Math.max(0, -fees),
+    netTransfers,
+    totalCashImpact,
     corporateActionsApplied,
     unresolvedCorporateActions,
     openLots,
