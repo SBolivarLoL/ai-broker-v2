@@ -1,5 +1,6 @@
 const CRYPTO_SYMBOLS = new Set(["BTC/USD", "ETH/USD", "SOL/USD"]);
 const TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"]);
+export const CRYPTO_LOOKBACK_DAYS = { minimum: 1, maximum: 90, defaultValue: 7 } as const;
 
 const finite = (value: unknown) => {
   const number = Number(value);
@@ -20,8 +21,8 @@ export function parseCryptoTimeframe(value: unknown) {
 }
 
 export function parseCryptoLookbackDays(value: unknown) {
-  const days = Number(value ?? 7);
-  if (!Number.isInteger(days) || days < 1 || days > 90) throw new Error("Lookback days must be 1 to 90");
+  const days = Number(value ?? CRYPTO_LOOKBACK_DAYS.defaultValue);
+  if (!Number.isInteger(days) || days < CRYPTO_LOOKBACK_DAYS.minimum || days > CRYPTO_LOOKBACK_DAYS.maximum) throw new Error(`Lookback days must be ${CRYPTO_LOOKBACK_DAYS.minimum} to ${CRYPTO_LOOKBACK_DAYS.maximum}`);
   return days;
 }
 

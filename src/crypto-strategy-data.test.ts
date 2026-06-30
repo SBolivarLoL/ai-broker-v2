@@ -1,13 +1,24 @@
 import { expect, test } from "bun:test";
-import { cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
+import { CRYPTO_LOOKBACK_DAYS, cryptoBarsDto, cryptoSnapshotDto, parseCryptoLookbackDays, parseCryptoSymbols, parseCryptoTimeframe } from "./crypto-strategy-data";
 
 test("validates bounded crypto strategy data inputs", () => {
   expect(parseCryptoSymbols("BTC/USD,ETH/USD,BTC/USD")).toEqual(["BTC/USD", "ETH/USD"]);
   expect(parseCryptoTimeframe("1Hour")).toBe("1Hour");
+  expect(parseCryptoLookbackDays(undefined)).toBe(CRYPTO_LOOKBACK_DAYS.defaultValue);
+  expect(parseCryptoLookbackDays(CRYPTO_LOOKBACK_DAYS.minimum)).toBe(CRYPTO_LOOKBACK_DAYS.minimum);
+  expect(parseCryptoLookbackDays(CRYPTO_LOOKBACK_DAYS.maximum)).toBe(CRYPTO_LOOKBACK_DAYS.maximum);
   expect(parseCryptoLookbackDays("30")).toBe(30);
   expect(() => parseCryptoSymbols("DOGE/USD")).toThrow("Crypto symbols");
   expect(() => parseCryptoTimeframe("2Hour")).toThrow("Timeframe");
   expect(() => parseCryptoLookbackDays("365")).toThrow("Lookback days");
+});
+
+test("regression: Strategy Lab exposes the server lookback bounds", async () => {
+  const html = await Bun.file(new URL("./index.html", import.meta.url)).text();
+  const input = html.match(/<input[^>]+id="strategy-days"[^>]*>/)?.[0];
+  expect(input).toBeDefined();
+  expect(input).toContain(`min="${CRYPTO_LOOKBACK_DAYS.minimum}"`);
+  expect(input).toContain(`max="${CRYPTO_LOOKBACK_DAYS.maximum}"`);
 });
 
 test("normalizes historical crypto bars with provenance", () => {

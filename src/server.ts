@@ -40,7 +40,7 @@ import { decryptSecretValue, encryptSecretValue, SecretName } from "./secret-vau
 import { createStore } from "./store";
 import { buildStrategyOrderAttribution } from "./strategy-attribution";
 import { buildStrategyAlerts } from "./strategy-alerts";
-import { evaluateStrategyPlugin, runBacktest, strategyFunctionFromPlugin, strategyPluginFromId, walkForwardWindows } from "./strategy-backtest";
+import { evaluateStrategyPlugin, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFunctionFromPlugin, strategyPluginFromId, walkForwardWindows } from "./strategy-backtest";
 import { buildStrategyDashboard } from "./strategy-dashboard";
 import { buildStrategyExecutionReplay } from "./strategy-execution-replay";
 import { draftStrategyPaperOrder, evaluateStrategyPaperRiskPolicy, parseStrategyPaperApproval, strategyPaperState, type StrategyPaperApproval } from "./strategy-paper";
@@ -412,7 +412,7 @@ async function optionOrderMarketData(symbols: string[]) {
 
 type StrategyRunRecord = NonNullable<ReturnType<typeof store.getStrategyRun>>;
 type StrategyTickTrigger = "manual" | "scheduler";
-const STRATEGY_IDS = "cash, buy-and-hold, time-sliced-accumulation, moving-average-trend, breakout-momentum, volatility-filter, mean-reversion, btc-eth-relative-strength, or order-book-liquidity-scout";
+const STRATEGY_ID_MESSAGE = STRATEGY_IDS.join(", ");
 
 function normalizeStrategySymbols(strategyId: string, rawSymbols: unknown) {
   const maximum = strategyId === "btc-eth-relative-strength" ? 2 : 1;
@@ -1266,8 +1266,8 @@ Bun.serve({
           throw new ClientError(error instanceof Error ? error.message : "Invalid backtest input", 400);
         }
         let strategyPlugin;
-        try { strategyPlugin = strategyPluginFromId(strategyId, input.params ?? {}); }
-        catch { throw new ClientError(`strategyId must be ${STRATEGY_IDS}`, 400); }
+        try { strategyPlugin = strategyPluginFromId(strategyId, parseStrategyParams(strategyId, input.params ?? {})); }
+        catch (error) { throw new ClientError(error instanceof Error ? error.message : `strategyId must be ${STRATEGY_ID_MESSAGE}`, 400); }
         const initialCash = Number(input.initialCash ?? 10_000), feeBps = Number(input.feeBps ?? 0), slippageBps = Number(input.slippageBps ?? 5);
         const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
         const symbol = symbols[0]!;
@@ -1289,20 +1289,25 @@ Bun.serve({
         if (!allow(`${actor}:strategy-runs`, 10)) return json({ error: "Strategy run rate limit exceeded" }, 429);
         const input = await requestJson(request);
         const strategyId = String(input.strategyId ?? "");
-        let symbols: string[];
-        try { symbols = normalizeStrategySymbols(strategyId, input.symbols); }
-        catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid crypto symbols", 400); }
-        try { strategyPluginFromId(strategyId, input.params ?? {}); }
-        catch { throw new ClientError("Unsupported strategyId for shadow run", 400); }
+        let symbols: string[], params: Record<string, unknown>, timeframe: string, days: number, strategyPlugin;
+        try {
+          symbols = normalizeStrategySymbols(strategyId, input.symbols);
+          params = parseStrategyParams(strategyId, input.params ?? {});
+          strategyPlugin = strategyPluginFromId(strategyId, params);
+          timeframe = parseCryptoTimeframe(input.timeframe);
+          days = parseCryptoLookbackDays(input.days);
+        } catch (error) {
+          throw new ClientError(error instanceof Error ? error.message : "Invalid strategy run configuration", 400);
+        }
         let intervalMinutes: number | null;
         try { intervalMinutes = parseStrategyIntervalMinutes(input.intervalMinutes ?? input.schedule?.intervalMinutes); }
         catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid strategy schedule", 400); }
         const runId = crypto.randomUUID();
         const schedule = intervalMinutes ? { enabled: true, intervalMinutes, nextRunAt: new Date().toISOString() } : undefined;
-        const config = { symbols, strategyId, params: input.params ?? {}, timeframe: parseCryptoTimeframe(input.timeframe), days: parseCryptoLookbackDays(input.days), mode: "shadow", ...(schedule ? { schedule } : {}) };
+        const config = { symbols, strategyId, params, timeframe, days, mode: "shadow", ...(schedule ? { schedule } : {}) };
         const configHash = await strategyConfigHash(config);
         store.createStrategyRun({ id: runId, strategyId, strategyVersion: "backtest-v1", status: "shadow", configHash, policyVersion: "crypto-shadow-v1", symbols, budget: 0, config, notes: String(input.notes ?? "") || null });
-        recordStrategyAudit(actor, "run_created", "strategy_run", null, store.getStrategyRun(runId), { mode: "shadow", intervalMinutes, pluginVersion: strategyPluginFromId(strategyId, input.params ?? {}).version });
+        recordStrategyAudit(actor, "run_created", "strategy_run", null, store.getStrategyRun(runId), { mode: "shadow", intervalMinutes, pluginVersion: strategyPlugin.version });
         store.event("strategy.run.created", actor, { runId, strategyId, symbols, mode: "shadow", intervalMinutes });
         return json({ runId, ...store.getStrategyRun(runId) }, 201);
       }
