@@ -578,14 +578,14 @@ Capability boundary verified on 30 June 2026: this paper account exposes equity,
 31. [x] Add data licensing/subscription governance registry for Alpaca IEX/SIP, crypto data, Benzinga news and derived analytics with evidence URLs and live-promotion blockers.
 32. [x] Add production-governance report with compliance review packet, paper closed-beta targets and live-trading hard gate.
 33. [x] Add measured closed-beta evidence export and Operations UI with pass, fail and needs-evidence status for every safety target.
-34. Run a paper closed beta until the measured evidence report is ready for exit review.
-35. Complete external legal/compliance review for advice, execution, crypto disclosures and automated strategy controls.
+34. [ ] Run a paper closed beta until the measured evidence report is ready for exit review.
+35. [ ] Complete external legal/compliance review for advice, execution, crypto disclosures and automated strategy controls.
 36. [x] Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
 37. [x] Add bounded filing-section evidence and a shared fair-access SEC client through the official SEC APIs.
 38. [x] Add accession-linked annual and quarterly financial trend tables.
 39. [x] Add portfolio/watchlist alerts for material 8-K filings with filing-grounded relevance summaries.
-40. Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI. The canonical evidence/dedupe prerequisite is complete.
-41. Add comparable-company valuation and counter-thesis review.
+40. [x] Add free-source expansion roadmap: SEC EDGAR, official macro data, GDELT, optional Finnhub, and OpenFIGI. The canonical evidence/dedupe prerequisite is complete.
+41. [x] Add comparable-company valuation and counter-thesis review.
 42. [x] Add factor exposure, expected shortfall and portfolio risk contribution.
 43. [x] Build and validate the options research workspace before enabling defined-risk paper options execution.
 
