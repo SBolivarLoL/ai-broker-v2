@@ -45,7 +45,7 @@ The last two commands mutate only the Alpaca paper account. They use deliberatel
 - Alpaca receives the app idempotency key as `clientOrderId`.
 - Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
 - No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.
-- `bun run check` passes 224 tests across 57 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
+- `bun run check` passes 225 tests across 57 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
 
 ## Production boundary
 

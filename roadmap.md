@@ -26,7 +26,7 @@ This document is the build map for turning AI Broker into a serious personal inv
 | Account balances, status, equity, cash and buying power | Account overview, buying-power meter, trading-state warnings | Basic view exists |
 | Open positions | Holdings, exposure, cost basis, unrealized P&L, close-position workflows | Basic view exists |
 | Portfolio history | Equity curve, cashflow-adjusted P&L, drawdown, volatility, Sharpe and period comparison | Initial version exists |
-| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | FIFO ledger applies explicit split/symbol-change evidence; complex basis allocations are flagged for review |
+| Account activities | Authoritative fill ledger, fees, dividends, interest, transfers, option events and corporate-action adjustments | FIFO ledger applies explicit split/symbol-change evidence and broker-provided basis allocations; incomplete complex actions are flagged for review |
 | Account configuration | Show and safely update supported trading preferences | Defer until settings UX and audit log exist |
 | Order and account update streams | Near-real-time fills, partial fills, cancellations, rejections and position refresh | Trade-update stream, reconnects, order blotter and REST recovery polling exist |
 
@@ -270,7 +270,7 @@ Goal: make the broker's accounting and order state reliable enough to support de
 - [x] Ingest paginated account activities into a normalized local ledger.
 - [x] Calculate FIFO realized P&L from fills and separate fees from trading returns.
 - [x] Reconcile explicit forward/reverse splits and symbol changes while preserving FIFO basis.
-- [ ] Reconcile mergers, spin-offs and other actions that require broker-provided basis allocations; unresolved events are now surfaced explicitly.
+- [x] Reconcile mergers, spin-offs and other actions that require broker-provided basis allocations; unresolved events are now surfaced explicitly.
 - [x] Separate deposits/withdrawals from investment performance.
 - [x] Add dividends, interest, fees and cashflow timeline.
 - [x] Add cashflow-adjusted time-weighted and money-weighted returns with configurable benchmark attribution and coverage flags.
@@ -580,7 +580,7 @@ Capability boundary verified on 30 June 2026: this paper account exposes equity,
 33. [x] Add measured closed-beta evidence export and Operations UI with pass, fail and needs-evidence status for every safety target.
 34. Run a paper closed beta until the measured evidence report is ready for exit review.
 35. Complete external legal/compliance review for advice, execution, crypto disclosures and automated strategy controls.
-36. Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
+36. [x] Complete merger, spin-off and unit-split basis allocation when authoritative broker detail is available.
 37. [x] Add bounded filing-section evidence and a shared fair-access SEC client through the official SEC APIs.
 38. [x] Add accession-linked annual and quarterly financial trend tables.
 39. [x] Add portfolio/watchlist alerts for material 8-K filings with filing-grounded relevance summaries.

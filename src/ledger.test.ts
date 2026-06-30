@@ -18,6 +18,7 @@ describe("account activity ledger", () => {
   test("regression: rejects incomplete and non-finite broker activity data", () => {
     expect(() => normalizeActivity({ id: "bad-fill", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), side: "buy", qty: "2", price: "100" })).toThrow("Fill activity is incomplete");
     expect(() => normalizeActivity({ id: "bad-number", activityType: "DIV", date: new Date("2026-01-02"), netAmount: "NaN" })).toThrow("non-finite number");
+    expect(() => normalizeActivity({ id: "bad-basis", activityType: "SPIN", date: new Date("2026-01-02"), basis_allocations: [{ symbol: "CHILD", quantity: "1" }] })).toThrow("basis allocation 1 is incomplete");
   });
 
   test("calculates FIFO realized profit across partial lots", () => {
@@ -45,6 +46,31 @@ describe("account activity ledger", () => {
     const buy = { ...fill("buy", "2026-01-01T00:00:00.000Z", "buy", 2, 200), symbol: "FB" };
     const sell = { ...fill("sell", "2026-01-03T00:00:00.000Z", "sell", 2, 250), symbol: "META" };
     expect(ledgerSummary([buy, change, sell])).toMatchObject({ realizedCostBasis: 400, realizedProfitLoss: 100, corporateActionsApplied: 1 });
+  });
+
+  test("applies broker-provided basis allocation for a spin-off", () => {
+    const spin = normalizeActivity({
+      id: "spin",
+      activityType: "SPIN",
+      activitySubType: "SSPIN",
+      date: new Date("2026-01-02"),
+      symbol: "PARENT",
+      old_symbol: "PARENT",
+      basis_allocations: [
+        { symbol: "PARENT", quantity: "10", total_cost_basis: "800", acquired_at: "2026-01-01T00:00:00.000Z" },
+        { symbol: "CHILD", quantity: "2", total_cost_basis: "200", acquired_at: "2026-01-01T00:00:00.000Z" },
+      ],
+    });
+    const buy = { ...fill("buy", "2026-01-01T00:00:00.000Z", "buy", 10, 100), symbol: "PARENT" };
+    const sellChild = { ...fill("sell-child", "2026-01-03T00:00:00.000Z", "sell", 1, 150), symbol: "CHILD" };
+
+    const summary = ledgerSummary([buy, spin, sellChild]);
+
+    expect(summary).toMatchObject({ corporateActionsApplied: 1, unresolvedCorporateActions: [], realizedCostBasis: 100, realizedProfitLoss: 50 });
+    expect(summary.openLots).toEqual([
+      { symbol: "CHILD", quantity: 1, price: 100, acquiredAt: "2026-01-01T00:00:00.000Z" },
+      { symbol: "PARENT", quantity: 10, price: 80, acquiredAt: "2026-01-01T00:00:00.000Z" },
+    ]);
   });
 
   test("flags unsupported or incomplete corporate actions without guessing basis", () => {
