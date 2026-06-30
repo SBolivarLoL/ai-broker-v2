@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ledgerSummary, normalizeActivity, type LedgerActivity } from "./ledger";
+import { activityCategory, ledgerSummary, normalizeActivity, type LedgerActivity } from "./ledger";
 import { createStore } from "./store";
 
 const fill = (id: string, occurredAt: string, side: "buy" | "sell", quantity: number, price: number): LedgerActivity => ({ id, type: "FILL", subType: null, category: "trade", status: "executed", occurredAt, symbol: "AAPL", side, quantity, price, amount: quantity * price * (side === "buy" ? -1 : 1), orderId: null });
@@ -8,6 +8,16 @@ describe("account activity ledger", () => {
   test("normalizes fills and non-trade cash activity", () => {
     expect(normalizeActivity({ id: "1", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), symbol: "AAPL", side: "buy", qty: "2", price: "100" })).toMatchObject({ category: "trade", amount: -200, quantity: 2 });
     expect(normalizeActivity({ id: "2", activityType: "DIV", date: new Date("2026-01-02"), symbol: "AAPL", netAmount: "3.50" })).toMatchObject({ category: "dividend", amount: 3.5 });
+  });
+
+  test("maps broker activity categories without guessing unknown types", () => {
+    expect(activityCategory("OPTRD")).toBe("option");
+    expect(activityCategory("NOT_A_REAL_ACTIVITY")).toBe("other");
+  });
+
+  test("regression: rejects incomplete and non-finite broker activity data", () => {
+    expect(() => normalizeActivity({ id: "bad-fill", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), side: "buy", qty: "2", price: "100" })).toThrow("Fill activity is incomplete");
+    expect(() => normalizeActivity({ id: "bad-number", activityType: "DIV", date: new Date("2026-01-02"), netAmount: "NaN" })).toThrow("non-finite number");
   });
 
   test("calculates FIFO realized profit across partial lots", () => {

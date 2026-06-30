@@ -1,7 +1,7 @@
 # Validation record
 
 Validated on 22 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
-Last updated on 30 June 2026 for branch consolidation and test-hardening policy.
+Last updated on 30 June 2026 for branch consolidation and test-suite expansion.
 
 | Objective | Evidence | Result |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ The last two commands mutate only the Alpaca paper account. They use deliberatel
 - Alpaca receives the app idempotency key as `clientOrderId`.
 - Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
 - No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.
-- `bun run check` passes 216 tests across 56 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
+- `bun run check` passes 223 tests across 57 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
 
 ## Production boundary
 
