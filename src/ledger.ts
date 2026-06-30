@@ -31,6 +31,14 @@ export type CorporateActionDetails = {
   newQuantity: number | null;
   oldRate: number | null;
   newRate: number | null;
+  basisAllocations: CorporateActionBasisAllocation[];
+};
+
+export type CorporateActionBasisAllocation = {
+  symbol: string;
+  quantity: number;
+  totalCostBasis: number;
+  acquiredAt: string | null;
 };
 
 export type LedgerActivity = {
@@ -79,6 +87,22 @@ const optionalNumber = (value: unknown) => {
 const optionalString = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
 const field = (activity: BrokerActivity, camel: string, snake: string) => activity[camel] ?? activity[snake];
 
+function basisAllocations(activity: BrokerActivity): CorporateActionBasisAllocation[] {
+  const raw = activity.basisAllocations ?? activity.basis_allocations;
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new Error("Corporate-action basis allocations must be an array");
+  return raw.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`Corporate-action basis allocation ${index + 1} is invalid`);
+    const record = entry as Record<string, unknown>;
+    const symbol = optionalString(record.symbol);
+    const quantity = optionalNumber(record.quantity ?? record.qty);
+    const totalCostBasis = optionalNumber(record.totalCostBasis ?? record.costBasis ?? record.total_cost_basis ?? record.cost_basis);
+    const acquiredAt = optionalString(record.acquiredAt ?? record.acquired_at);
+    if (!symbol || quantity === null || quantity <= 0 || totalCostBasis === null || totalCostBasis < 0) throw new Error(`Corporate-action basis allocation ${index + 1} is incomplete`);
+    return { symbol, quantity, totalCostBasis, acquiredAt };
+  });
+}
+
 function corporateActionDetails(activity: BrokerActivity): CorporateActionDetails {
   return {
     groupId: optionalString(activity.groupId ?? activity.group_id),
@@ -91,6 +115,7 @@ function corporateActionDetails(activity: BrokerActivity): CorporateActionDetail
     newQuantity: optionalNumber(field(activity, "newQty", "new_qty")),
     oldRate: optionalNumber(field(activity, "oldRate", "old_rate")),
     newRate: optionalNumber(field(activity, "newRate", "new_rate")),
+    basisAllocations: basisAllocations(activity),
   };
 }
 
@@ -133,6 +158,29 @@ export function ledgerSummary(activities: LedgerActivity[], truncated = false) {
       const details = activity.corporateAction;
       const oldSymbol = details?.oldSymbol ?? activity.symbol;
       const newSymbol = details?.newSymbol ?? activity.symbol;
+      if (details?.basisAllocations.length) {
+        if (!oldSymbol) {
+          unresolvedCorporateActions.push({ id: activity.id, type: activity.type, subType: activity.subType, symbol: activity.symbol, reason: "Broker basis allocation is missing the source security symbol." });
+          continue;
+        }
+        const sourceLots = lots.get(oldSymbol) ?? [];
+        if (!sourceLots.length) {
+          unresolvedCorporateActions.push({ id: activity.id, type: activity.type, subType: activity.subType, symbol: activity.symbol, reason: "Broker basis allocation has no imported source FIFO lots to replace." });
+          continue;
+        }
+        lots.delete(oldSymbol);
+        for (const allocation of details.basisAllocations) {
+          const targetLots = lots.get(allocation.symbol) ?? [];
+          targetLots.push({
+            quantity: allocation.quantity,
+            price: allocation.totalCostBasis / allocation.quantity,
+            acquiredAt: allocation.acquiredAt ?? activity.occurredAt,
+          });
+          lots.set(allocation.symbol, targetLots);
+        }
+        corporateActionsApplied++;
+        continue;
+      }
       if (activity.type === "SPLIT" && ["FSPLIT", "RSPLIT"].includes(activity.subType ?? "")) {
         const oldValue = details?.oldRate ?? details?.oldQuantity;
         const newValue = details?.newRate ?? details?.newQuantity;
