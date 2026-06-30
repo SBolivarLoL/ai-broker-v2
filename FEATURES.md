@@ -1,109 +1,134 @@
-# Features and rationale
-This is the challenge's central explainability file. The product is an internal-advisor prototype connected only to an Alpaca paper account.
+# Implemented features
 
-## Objective map
+Last reviewed against `main`: 2026-06-30.
 
-| Objective | Implementation | Why it exists |
-| --- | --- | --- |
-| 1. Connected broker | Live equity, cash, buying power, positions, orders, health and readiness | Proves the paper account is connected and usable |
-| 2. Market view | IEX live quotes/bars, company benchmarks, calendar, watchlists, clustered news, corporate actions, options chains and entitlement-aware multi-asset data | Grounds decisions in current, sourced broker data |
-| 3. Order ticket | Signed equity, linked, auction, basket, explicit-short and defined-risk option previews with explicit confirmation, idempotency, lifecycle refresh and global operations policy enforcement | Makes paper orders safe and demoable |
-| 4. AI functionality | OpenAI Agents SDK Guided Rebalance Agent | Produces useful portfolio-management ideas |
-| 5. Portfolio intelligence | Reconciled ledger/snapshots, performance, asset/SIC/factor exposure, deterministic portfolio scenarios, optimizer proposals, constrained rebalance planning, VaR/expected shortfall, risk contribution, liquidity, benchmark diagnostics, option Greeks/stress and what-if simulation | Keeps risk math outside the model |
-| 6. Agentic AI | The agent selects among seven read-only Alpaca and risk tools, then stores a plan | Demonstrates bounded multi-tool agency without autonomous execution |
-| 7. Creativity | Decision Receipt links evidence, plan, risk checks, approval, Alpaca outcome and hash-chained audit evidence | Makes every recommendation and order inspectable |
-| 8. Explainability | This file, evidence IDs, strategy trace explorer, explicit guardrails and runnable checks | Shows how and why each feature works |
-| 9. Crypto strategy experiments | Strategy Lab backtests plugin-backed crypto strategies including breakout momentum, volatility filtering, BTC/ETH relative strength and order-book liquidity scouting, creates shadow runs, records manual or scheduled ticks, supports explicitly approved bounded strategy paper crypto market orders with 24/7 crypto session, cash/buying-power, loss, drawdown, turnover and error-cooldown gates, provides standalone signed paper crypto market/limit/stop-limit tickets, persists strategy metrics and local OpenTelemetry-shaped spans, surfaces deterministic alerts, displays run dashboard metrics, active-run performance, post-fill attribution, order-book replay assumptions and filtered decision traces, records review decisions, stores a hash-chained audit trail, and exports experiment reports with assumptions, metrics, reviews, audit evidence and failures | Lets paper experiments run and be audited before any live-trading consideration |
+This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
-## Data flow and boundaries
+## Product scope
 
-`Alpaca data → deterministic risk tools → agent plan → server preview → advisor confirmation → Alpaca paper order → reconciliation → Decision Receipt`
+AI Broker is a single-user, paper-only investing and strategy-research workstation connected to a personal Alpaca Trading API account. Deterministic code owns calculations, validation, and execution policy. OpenAI agents may retrieve typed evidence, explain it, and draft an action, but cannot submit, cancel, or replace an order.
 
-- The agent can read portfolio, risk, price, bars, news, asset/market status and simulations. Portfolio Q&A uses the read-only subset plus open-order status; every returned claim must cite an evidence ID from a typed tool call.
-- Company Research includes deterministic bull/base/bear valuation memos from editable user assumptions, directly reported SEC revenue and shares outstanding, and the current Alpaca IEX price; assumptions and derived evidence remain visibly separate.
-- Guided Rebalance proposals pass through an independent read-only counter-thesis agent before display. Caution or blocked trades become watch-only, while approved plan drafts bind to one exact quantity market ticket and are revalidated by the normal order boundary.
-- The Advisor trade journal links immutable thesis and invalidation text to a real stock-order receipt, records human-classified thesis drift with fresh Alpaca price and position evidence, preserves prior reviews, and audits every journal transition.
-- `GET /api/portfolio/exposure` combines Alpaca account cash, position asset classes and IEX daily bars with official SEC submissions SIC classifications. The Portfolio view reports gross and signed net asset-class, SIC-division and SIC-industry exposure plus position-weighted SPY beta, 63-session momentum and annualized 20-session volatility; taxonomy and historical-data coverage gaps remain explicit.
-- The account ledger applies FIFO fills, fees, income, transfers, explicit split/symbol-change events and broker-provided corporate-action basis allocations; mergers, spin-offs or other actions without explicit basis evidence remain flagged for manual review.
-- `GET /api/portfolio/scenarios` applies transparent rate, technology and realized-volatility shocks to current signed position values. `POST /api/portfolio/scenarios` adds one validated custom held-symbol scenario without changing broker state. Every result retains assumptions, position-level shocks and P&L, gross invested coverage, resulting equity and linear-model limitations.
-- `GET /api/portfolio/optimizer` produces read-only risk-parity and mean-variance target-weight proposals from current long US-equity holdings with capped weights, turnover scaling, cash reserve, return/covariance shrinkage and explicit coverage warnings. Proposal targets can only hand off to the constrained rebalance planner.
-- `POST /api/portfolio/rebalance-plan` builds a read-only target-weight plan with turnover, cash-buffer, fee and imported FIFO tax-lot constraints. Max-tax caps fail closed when lot coverage is incomplete, and eligible plans only load a draft into the existing signed rebalance-basket preview path.
-- The agent has no order, cancellation, credential, shell, CLI or raw HTTP tool.
-- Alpaca news is untrusted evidence; the prompt forbids following instructions inside it.
-- SEC research uses one shared server-side EDGAR client with a declared contact-bearing user agent, response caching, transient retry/backoff and serialized requests below the SEC fair-access ceiling. Latest 10-K/10-Q Risk Factors and MD&A sections are bounded and retain accession, item locator, source URL, truncation state and content hash. Comparable revenue, net income, diluted EPS, assets, liabilities and cash trends use directly reported annual and standalone-quarter observations with exact concept, unit, period, form, filed date, accession and filing URL provenance; no synthetic fourth quarter is inferred.
-- `GET /api/research/sec` loads the same official filing, section and trend evidence into the Research workspace without invoking OpenAI; AI analysis remains a separate optional step.
-- Company-research sources use one canonical evidence record with provider/source IDs, authority, claim status, normalized timestamps, entity identifiers, canonical URL and deterministic content hash. Exact source IDs, matching URL-plus-content, or same-entity exact content can deduplicate; distinct document sections and fuzzy headline similarity cannot. Source trust labels are visible in the research result.
-- `GET /api/research/openfigi` resolves one bounded `TICKER + US + Equity` OpenFIGI v3 job without invoking OpenAI. Public anonymous mapping is serialized below 25 requests per minute; optional `OPENFIGI_API_KEY` authentication is header-only. Venue rows collapse by composite FIGI, company names confirm multi-candidate results, and distinct remaining identities return `ambiguous` without selecting a FIGI. Matched market evidence carries the canonical FIGI; every other state remains visibly symbol-scoped.
-- `GET /api/research/comparables` builds a subject-plus-four-peer valuation table from current Alpaca IEX prices and directly reported SEC company facts. Users choose peers explicitly because current entitled metadata cannot justify an automatic industry set. The table shows annual revenue/growth, net margin, derived market capitalization, P/S, diluted P/E and P/B with per-cell periods; official inputs, broker prices and formulas remain separate canonical evidence. Missing, negative or mismatched inputs produce unavailable cells rather than synthetic values.
-- Company Research supplements licensed Alpaca/Benzinga articles with a bounded GDELT DOC 2.0 company-name search. Only headlines that identify the company phrase, a distinctive company token or ticker are retained; omitted broad matches are counted. Each retained article is separate `public_web` / `media_signal` canonical evidence with domain, language, source country, publication time and URL; repeated coverage is never treated as event confirmation. Requests are serialized, cached and retried once, while throttling remains an explicit coverage warning and never erases licensed news.
-- Optional `FINNHUB_API_KEY` configuration adds free-tier Company Profile 2, the last four provider-reported earnings surprises and a seven-day company-news window. `GET /api/research/finnhub` remains useful without OpenAI and returns an explicit `missing_key` state when unconfigured. Requests use a header so the key never enters URLs, serialize below 60 calls per minute, cache per endpoint, preserve partial results and label profile/earnings as `provider_record` while news stays a `media_signal`; SEC facts remain authoritative.
-- `GET /api/research/macro` returns cached official US macro context without invoking OpenAI. Treasury Debt to the Penny and public BLS CPI/unemployment observations work without credentials; optional `FRED_API_KEY` and `BEA_USER_ID` add rates, yield-curve and quarterly real-GDP coverage. Every normalized indicator cites canonical source evidence, CPI year-over-year is visibly calculated from official index observations, provider failures remain partial and explicit, and regime labels are deterministic descriptive thresholds rather than predictions.
-- `GET /api/research/fixed-income` returns an explicit unavailable state for fixed-income research because Alpaca documents fixed income for Broker API partners, while this app uses a personal paper Trading API account. It lists the products, identifiers, evidence source and approvals required before any bond research or order workflow can be enabled.
-- Portfolio monitoring checks up to 12 held/watchlist symbols for supported 8-K items filed in the previous 14 days. Deterministic item labels and severity order drive alerts; each alert retains a bounded primary-document excerpt, content hash, accession, filed/report dates, official document/index links and explicit portfolio/watchlist scope. Item 9.01 is supporting evidence rather than a standalone alert, and no filing sentiment is inferred.
-- A deterministic output guardrail rejects invented evidence IDs, certainty claims, and actionable quantities unless an opaque simulation authority exactly matches the idea's symbol, side, quantity, policy version, state snapshot and expiry.
-- The server is the only order boundary. A browser confirmation alone is never sufficient.
-- A persisted global operations policy can activate an app-wide kill switch, edit order-notional, symbol-notional, position-percent, sector-percent, drawdown-percent and turnover limits, and enforce order-notional, symbol-exposure, position-exposure and turnover caps across equity, basket, option, crypto and approved strategy paper orders.
-- `alpaca-ts-alpha` is the runtime integration. Alpaca CLI is used only for independent diagnostics and read-only smoke checks.
+The browser exposes seven workspaces:
 
-## Order policy
+| Workspace | Current capability |
+| --- | --- |
+| Home | Paper account, holdings, operations policy, kill switch, closed-beta evidence, and order entry |
+| Markets | Market session, watchlists, movers, most active stocks, monitored news/events, 8-K alerts, and multi-asset capability status |
+| Portfolio | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management |
+| Strategies | Crypto backtests, shadow/scheduled runs, bounded paper approvals, manual crypto tickets, traces, metrics, alerts, performance, attribution, reviews, and reports |
+| Research | Company market data, SEC evidence, macro context, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research |
+| Options | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions |
+| AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority |
 
-- Equity tickets require tradable US stocks or ETFs. Options use a separate defined-risk boundary.
-- Ordinary sells cannot exceed holdings. A new paper short requires an explicit checkbox, margin-enabled account, marginable/easy-to-borrow asset, DAY market/limit order, fresh borrow validation and a 5% short-concentration cap.
-- Maximum order is the lesser of $2,500 or 2.5% of equity.
-- Resulting position concentration cannot exceed 20%.
-- Conservative rolling-24-hour turnover cannot exceed 10% of equity.
-- Preview tokens are HMAC-signed and expire after two minutes.
-- Confirmation reloads the asset, quote, account, positions and order window; price moves above 1% require a new preview.
-- Working broker orders and atomic local reservations consume cash, inventory, concentration and turnover capacity, preventing concurrent order stacking.
-- The operations guardrail panel exposes the current global kill-switch state, caps and runbook evidence. Kill-switch activation requires a reason and is rechecked at confirmation, so old signed previews cannot bypass it.
-- Receipts and agent plans append to a global hash-chained decision audit log. `GET /api/receipts/{id}/audit` returns subject evidence; `GET /api/decision-audit` verifies the global chain.
-- Operations evidence endpoints expose production-readiness artifacts: `GET /api/operations/readiness`, `POST /api/operations/backup`, `GET /api/operations/observability-export`, and `GET /api/operations/incident-packet`.
-- Production authorization uses the trusted OIDC proxy identity plus `viewer`, `researcher`, `trader`, `operator` and `admin` roles. Sensitive operations and secret-vault endpoints require elevated roles.
-- `GET/POST/DELETE /api/operations/secrets` stores AES-256-GCM encrypted secret envelopes and exposes metadata only. `SECRET_VAULT_KEY` is required for production readiness.
-- `GET /api/operations/data-governance` records the current market-data, news, crypto, fixed-income and derived-analytics source review with subscription status, restrictions, evidence URLs and live-promotion blockers.
-- `GET /api/operations/production-governance` records the compliance review packet, paper closed-beta safety targets, structured crypto capability boundary and live-trading hard blocker. Crypto transfers, perpetual leverage and tokenization default to denied until separate approval; external legal/compliance signoff and measured beta evidence remain open gates.
-- The Home operations panel uses `GET /api/operations/closed-beta-evidence` to show `pass`, `fail` or `needs_evidence` for every beta safety target from persisted receipts, decision-audit verification, strategy decisions, review history, operations events and backup metadata. Missing observations never pass by absence.
-- Submission requires a unique idempotency key; duplicates return the original result or a processing response.
-- A lost placement response is recovered by Alpaca `clientOrderId`; a retry reservation is released only when Alpaca confirms no matching order.
-- Paper trading is hard-coded. Live mode is unavailable.
-- Option execution is limited to long buy-to-open single legs and net-debit verticals. Naked selling is unavailable; previews show max loss, exercise cost and short-leg assignment notional.
-- Rebalance baskets are atomically previewed and reserved inside the app, then submitted sequentially because Alpaca exposes no atomic equity-basket endpoint.
-- Production refuses readiness unless a managed OIDC proxy origin, email domain, 32+ character proxy secret, 32+ character secret-vault key and non-placeholder SEC contact identity are configured. Mutations are same-origin, request bodies are bounded, broker DTOs are allow-listed, browser output is escaped, and money/agent routes are rate-limited per advisor.
+## Capability map
 
-## Failure behavior
+### Broker and market state
 
-- Missing or invalid account/price data fails closed.
-- Policy failures return reasons without contacting the order API.
-- Model, schema, tool or guardrail failures create no order and do not disable manual trading.
-- Accepted orders appear as pending; reconciliation updates receipts as Alpaca reports state changes.
-- Credentials and account identifiers are excluded from agent tool output and audit payloads.
+- Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness.
+- Alpaca watchlist create, rename, symbol add/remove, and delete workflows.
+- NASDAQ clock/calendar, early-close information, session-aware order guidance, SIP discovery panels where entitled, and an IEX quote/bar SSE bridge.
+- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback.
+- Read-only crypto quotes for BTC/USD, ETH/USD, and SOL/USD. Index and FX states remain explicitly unavailable when the account lacks entitlement.
+- Fixed-income research returns an explicit unavailable capability record because this personal Trading API account is not a fixed-income-enabled Broker API partner.
 
-## Validation evidence
+### Orders and receipts
 
-- `bun run check` runs strict TypeScript checks and unit tests.
-- `bun run eval` runs deterministic policy and trust-boundary scenarios.
-- CI runs type checks, unit tests and the 25+ scenario safety corpus on every push and pull request.
-- `bun run alpaca:doctor` verifies paper credentials and both Alpaca APIs through the independent CLI.
-- `bun run smoke:read` verifies account, positions and open orders without mutation.
-- `bun run smoke:sec` verifies declared-identity SEC submissions/archive access, bounded 10-K/10-Q section extraction, accession-linked annual/quarterly XBRL trend normalization and current 8-K item extraction without invoking OpenAI.
-- `bun run smoke:macro` verifies live Treasury and BLS coverage, canonical macro evidence and citation integrity; configured FRED and BEA credentials become required live checks.
-- `bun run smoke:gdelt` verifies live canonical article evidence when the public API responds, or the explicit no-false-absence fallback when GDELT returns its documented HTTP 429 throttle.
-- `bun run smoke:finnhub` verifies the no-network missing-key fallback, or live free-tier profile/earnings/news evidence and trust labels when `FINNHUB_API_KEY` is configured.
-- `bun run smoke:openfigi` verifies a live AAPL v3 identity mapping and canonical FIGI evidence, or the explicit rate-limit fallback that forbids an assumed join.
-- `bun run smoke:comparables` verifies live AAPL/MSFT SEC inputs, Alpaca prices, derived valuation rows and all three evidence authority classes.
-- `SMOKE_ORDER=paper-confirm bun run smoke:order` verifies buy or sell submit, lookup and exact cancellation in paper mode only.
-- Live checks have verified the paper account, market/option data, monitoring, advanced risk, signed equity/basket/short/option previews and every application view without submitting validation orders.
+- Equity market, limit, stop, stop-limit, trailing-stop, OPG/CLS auction, extended-hours eligible, fractional, and dollar-notional tickets.
+- Buy bracket/OTO and sell OCO linked orders.
+- Multi-leg equity rebalance baskets with application-level atomic preview/reservation and sequential broker submission.
+- Explicit paper short workflow with margin, marginability, easy-to-borrow, DAY, quantity, concentration, and fresh-state checks.
+- Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable.
+- Standalone paper crypto market, limit, and stop-limit tickets. Approved strategy automation submits only bounded paper crypto market orders.
+- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders.
+- HMAC-signed two-minute previews, exact confirmation, fresh broker/market revalidation, idempotency keys, local risk reservations, broker reconciliation, and decision receipts.
 
-## Five-minute demo
+### Portfolio intelligence
 
-1. Show the connected paper account and portfolio risk.
-2. Search a current market price.
-3. Generate a `reduce_concentration` rebalance plan.
-4. Open one idea's evidence, risk and invalidation condition.
-5. Draft the suggested trade and show deterministic what-if impact.
-6. Show an oversized or concentrated trade being blocked.
-7. Confirm a valid paper order and show its pending/fill lifecycle.
-8. Open the Strategy Lab, run a crypto backtest, tick or schedule a shadow run, approve a small paper run, review dashboard metrics, active-run performance and post-fill attribution, filter decisions, inspect the trace, save an experiment review, and export the experiment report.
-9. Open the Decision Receipt and this objective map.
+- Cashflow-adjusted performance, benchmark attribution, drawdown, volatility, Sharpe-style summary metrics, and persisted daily snapshots.
+- FIFO activity ledger for fills, fees, dividends, interest, transfers, splits, symbol changes, and broker-provided corporate-action basis allocations. Unsupported basis changes remain unresolved rather than guessed.
+- Historical and parametric 95% daily VaR, historical expected shortfall, covariance risk contribution, correlation, liquidity, and SPY benchmark diagnostics.
+- Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps.
+- Deterministic rate, technology, volatility, and user-entered held-symbol scenarios.
+- Read-only risk-parity and shrunk mean-variance proposals. Targets flow into a constrained rebalance planner before the normal basket preview.
+- Rebalance planning with turnover, cash buffer, fee, imported FIFO lot, tax-rate, maximum-tax, precision, and minimum-notional constraints.
+- Persisted operations policy for kill switch, order notional, symbol notional, position exposure, sector exposure, drawdown, and turnover.
 
-For detailed Strategy Lab operating instructions, see `STRATEGY_LAB.md`.
+### Research and AI
+
+- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts.
+- Canonical evidence records carrying provider/source identity, authority, claim status, timestamps, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
+- Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
+- Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage.
+- Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states.
+- Comparable valuation tables from current Alpaca price plus directly reported SEC revenue, net income, diluted EPS, equity, and shares. Missing or invalid inputs remain unavailable.
+- User-authored bull/base/bear assumptions converted into deterministic 12-month valuation scenarios. They are scenarios, not forecasts.
+- Company research and portfolio Q&A agents with typed read-only tools, bounded outputs, evidence-ID validation, numeric grounding checks, and unsafe-certainty rejection.
+- Independent counter-thesis review before actionable advisor ideas; unapproved ideas become watch-only.
+- Receipt-linked trade journal with immutable thesis text, human-classified thesis drift, fresh market/position context, and audit history.
+
+### Strategy Lab
+
+- Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout.
+- Bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, and optional walk-forward window segmentation.
+- Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
+- Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
+- Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, deterministic alerts, and experiment review history.
+- SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, and JSON experiment reports.
+
+See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
+
+## Safety and authorization
+
+- `paper: true` is hard-coded where the Alpaca client is constructed. There is no live client or runtime switch.
+- The global kill switch blocks every order surface. Reducing sells may pass exposure/turnover caps, but never bypass the kill switch.
+- Ordinary sells cannot exceed holdings. New equity shorts require a separate explicit opt-in and cannot exceed the configured short boundary.
+- Default equity order policy caps a ticket at the lesser of $2,500 or 2.5% of equity, resulting position concentration at 20%, and rolling 24-hour turnover at 10% of equity. Persisted operations policy can be stricter.
+- Working broker orders and unexpired local reservations consume cash, inventory, concentration, and turnover capacity.
+- Missing price/account data, stale strategy data, unsupported capability, invalid evidence, expired approval, malformed model output, and reconciliation uncertainty fail closed.
+- Production authorization trusts only verified proxy headers and roles: `viewer`, `researcher`, `trader`, `operator`, and `admin`.
+- Mutation bodies are bounded, mutation origins are checked, broker DTOs are allow-listed, output is escaped, and sensitive routes are rate limited.
+- The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
+
+## Data flow
+
+Manual and advisor orders follow this boundary:
+
+```text
+Alpaca state -> deterministic analysis/simulation -> signed preview
+-> explicit approval -> fresh server revalidation -> Alpaca paper order
+-> reconciliation -> decision receipt -> hash-chained audit evidence
+```
+
+Strategy decisions follow this boundary:
+
+```text
+Alpaca crypto bars/snapshot -> persisted snapshot -> deterministic plugin
+-> strategy risk policy -> shadow decision or approved paper draft
+-> global operations policy -> Alpaca paper order -> attribution/report
+```
+
+The browser is never an execution authority. A hidden or bypassed client confirmation cannot skip the server checks.
+
+## Data-quality contract
+
+- Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
+- Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
+- Media repetition is not event confirmation. Provider failure does not mean no event occurred.
+- Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
+- SEC SIC is labeled as SEC SIC, not GICS or ICB.
+- Paper fills and backtests are experimental evidence. They do not model all live fees, queue position, price improvement, latency, market impact, or venue behavior.
+
+## Current limitations
+
+- Backtest history is currently bounded to 90 days by the server parser, despite the browser input advertising a larger maximum. This mismatch is an open roadmap defect.
+- “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
+- Backtest results are returned to the browser but are not persisted as immutable experiment records or linked to the shadow run created afterward.
+- Strategy records use static version labels and config hashes but do not yet persist the exact Git commit, feature-schema version, or input dataset hash promised by a fully reproducible experiment.
+- `src/server.ts` is a 2,374-line composition and routing module; `src/index.html` is a roughly 255 KB single-file client; `src/store.ts` contains schema setup and all repositories. This slows route-level and UI testing.
+- The 231-test suite strongly covers imported deterministic modules, but `src/server.ts` and the browser client are outside the reported coverage instrumentation. Direct API contract coverage is therefore incomplete.
+- SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
+- Schema metadata and backup export exist, but ordered migration rollback/upgrade fixtures and a measured restore drill do not.
+- The data-governance registry covers major market/news/identity categories but does not yet inventory every official macro/SEC source or the OpenAI service.
+- Production hosting, real users, external compliance review, a measured paper beta, and live deployment review have not been completed.
+
+These limitations are prioritized in `roadmap.md`; none should be inferred as complete from a UI panel or report endpoint.

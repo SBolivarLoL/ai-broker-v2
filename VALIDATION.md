@@ -1,52 +1,111 @@
 # Validation record
 
-Validated on 22 June 2026 against the eight objectives in `Quant_Competitions_AI_Broker_Hackathon_Challenge_Description.pdf`.
-Last updated on 30 June 2026 for branch consolidation and backend unit, regression, and system test expansion.
+Last reviewed against `main`: 2026-06-30.
 
-| Objective | Evidence | Result |
+This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
+
+## Current automated evidence
+
+| Check | Result on 2026-06-30 | Scope |
 | --- | --- | --- |
-| 1. Connected broker | `/ready`, `/api/account`, `bun run alpaca:doctor`, `bun run smoke:read` | Alpaca paper trading and market data connected |
-| 2. Market view | Live IEX stream, company/benchmark workspace, session calendar, watchlists, event clusters, option chain and multi-asset monitor | Current data, timestamps, sources and entitlement gaps are visible |
-| 3. Order ticket | Signed equity, linked, auction, basket, short and defined-risk option previews; exact confirmation, idempotency and reconciliation | Supported paper workflows fail closed and remain human-approved |
-| 4. AI functionality | `/api/agent/plans`; OpenAI Agents SDK structured output | Live plans return exactly three portfolio ideas |
-| 5. Portfolio intelligence | Risk, snapshot, performance, ledger and option-exposure endpoints; deterministic tests | VaR/ES, risk contribution, liquidity, benchmark and option stress remain outside the model |
-| 6. Agentic AI | Seven bounded read-only tools, six-turn cap, stored plans | Live agent selects tools but cannot execute orders |
-| 7. Creativity | Plan-linked Decision Receipt and lifecycle reconciliation | Advisor, evidence, simulation, approval key, order, and final status remain inspectable |
-| 8. Explainability | `FEATURES.md` | Central rationale, boundaries, policy, failures, checks, and demo flow |
+| `bun run check` | Pass: 231 tests, 0 failures, 858 assertions across 58 files | Strict TypeScript plus all Bun tests |
+| `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
+| `bun test --coverage` | Pass: 96.62% functions, 96.98% lines | Imported deterministic TypeScript modules only |
+| `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-## Reproducible gates
+Coverage is not application-wide. `src/server.ts` starts real process dependencies at import time and is not instrumented by the current tests; `src/index.html` is also outside Bun coverage. The high percentage must not be used to claim route or browser completeness.
+
+## Test-layer policy
+
+- Unit tests own deterministic calculations, schemas, policy, normalization, evidence, strategy plugins, and DTO behavior.
+- Regression tests preserve specific failures such as malformed bars, missing lot basis, stale evidence, blocked strategy submissions, and post-fill accounting.
+- System tests compose portfolio and strategy functions with in-memory SQLite without browser automation.
+- Direct API tests should own authorization, origin checks, route parsing, status codes, response schemas, and error mapping. This layer is currently incomplete because the request handler is coupled to server startup.
+- Browser/computer-use validation is reserved for rendering, layout, accessibility, responsive behavior, and interaction wiring. It should not be used to populate or verify backend state that can be exercised through functions or HTTP.
+
+## Confidence by area
+
+| Area | Current confidence | Evidence | Open gap |
+| --- | --- | --- | --- |
+| Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
+| Order policy and signatures | High at module level | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests | Route-level tests and real broker race drills are incomplete |
+| Strategy decisions | High for deterministic plugin behavior | Backtest, scheduler, paper policy, observability, replay, attribution, performance, and strategy system tests | No genuine out-of-sample walk-forward scoring or long paper cohort yet |
+| Persistence and audit | Good for current schema | In-memory SQLite store, hash chain, ledger, journal, policy, export tests | Historical migration and backup restore fixtures are missing |
+| Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
+| Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
+| HTTP/API composition | Low to moderate | Some behavior is covered through called functions | `src/server.ts` has no side-effect-free request-handler test harness |
+| Browser UI | Manual confidence only | Existing UI has been exercised during feature work | No maintained automated accessibility/responsive regression suite |
+| Production operations | Code artifacts only | Readiness, backup export, incident packet, policy, auth, governance, beta report modules | No production deployment, restore drill, real participants, or external approval |
+
+## Reproducible local gates
 
 ```sh
 bun install --frozen-lockfile
 bun run check
 bun run eval
+bun test --coverage
 bun audit
+```
+
+CI currently runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Coverage, audit, live-provider smoke checks, and browser checks are not CI gates.
+
+## Credentialed smoke checks
+
+These commands exercise real external paper/read-only integrations and should be run deliberately from a configured environment:
+
+```sh
 bun run alpaca:doctor
 bun run smoke:read
+bun run smoke:sec
+bun run smoke:macro
+bun run smoke:gdelt
+bun run smoke:finnhub
+bun run smoke:openfigi
+bun run smoke:comparables
+```
+
+They were not rerun during the 2026-06-30 documentation audit, so this record makes no new claim about current provider availability.
+
+The paper-order smoke test mutates only the Alpaca paper account and requires explicit opt-in:
+
+```sh
 SMOKE_ORDER=paper-confirm bun run smoke:order
 SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=<owned-symbol> bun run smoke:order
 ```
 
-The last two commands mutate only the Alpaca paper account. They use deliberately unreachable limit prices, cancel the exact returned order ID in `finally`, and fail unless cancellation reconciles.
-
-## Test policy
-
-- Unit, regression, system, function, and API tests own backend behavior, calculations, strategy decisions, data-quality handling, and paper-order safety.
-- Browser or computer-use validation is reserved for UI-specific changes: rendering, layout, accessibility, responsive behavior, and interaction wiring.
-- UI changes that depend on backend logic should add or reuse non-UI tests for the logic first, then use browser validation only for the visible workflow.
+It uses an intentionally unreachable limit, looks up the exact client order ID, cancels the returned broker order in `finally`, and fails unless cancellation reconciles. It must never target a live client.
 
 ## Verified invariants
 
-- Runtime and CLI both hard-code paper mode; there is no live-trading switch.
-- The model has no order, cancellation, credential, shell, CLI, or raw HTTP tool.
-- Actionable agent ideas are rejected unless they cite an unexpired deterministic simulation authority matching the exact symbol, side, quantity, policy and state snapshot from that run.
-- The order boundary revalidates fresh broker state at confirmation and fails closed on invalid assets, fractional eligibility, price drift, incomplete order windows, unvalued working orders, account data, signatures, expiry, quantity, projected cash, projected ownership, projected concentration, notional, or rolling turnover.
-- Atomic expiring reservations include concurrent local requests and broker working orders in projected risk; accepted reservations remain active until terminal reconciliation.
-- Alpaca receives the app idempotency key as `clientOrderId`.
-- Production refuses readiness without managed OIDC proxy settings, rejects unverified identities and cross-origin mutations, and rate-limits agent/order routes.
-- No supplied Alpaca secret is tracked by Git; `bun audit` reports no known dependency vulnerabilities.
-- `bun run check` passes 231 tests across 58 files; five concurrent dashboard sweeps completed with no HTTP failures (cold 0.66s, warm 0.21–0.23s on the validation machine).
+- Alpaca clients are constructed with `paper: true`; no live client is available.
+- Agents have no order submission, cancellation, credential, shell, CLI, or raw HTTP tool.
+- Actionable advisor ideas require unexpired simulation authority matching symbol, side, quantity, policy, portfolio state, and the reviewed plan.
+- Order confirmation reloads relevant broker and market state and rejects invalid signatures, expiry, drift, capacity, exposure, turnover, or incomplete evidence.
+- Local reservations and working broker orders consume projected capacity, preventing concurrent order stacking.
+- Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
+- Missing or stale strategy data cannot pass by absence.
+- Decision and strategy audit verification fails when a stored hash chain is inconsistent.
+- Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.
+- Plaintext vault values are not returned by vault API reads.
 
-## Production boundary
+## Remaining release gates
 
-This build is deliberately paper-only. For deployment, the app must sit on a private backend behind a managed OIDC identity-aware proxy that strips and overwrites `x-auth-request-email` and `x-auth-proxy-secret`. Configure `APP_ORIGIN`, `AUTHORIZED_EMAIL_DOMAIN`, and a 32+ character `AUTH_PROXY_SECRET`; `/ready` fails otherwise.
+The following are not validated and remain open in `roadmap.md`:
+
+1. Side-effect-free API integration coverage for the real request boundary.
+2. Transactional historical migrations and a measured backup restore drill.
+3. Persistent, point-in-time datasets and genuine walk-forward strategy evaluation.
+4. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
+5. External legal/compliance and data-entitlement review.
+6. Separate live deployment architecture and review. Live trading remains unavailable.
+
+## Documentation-change validation
+
+Documentation-only changes require:
+
+- Internal links and referenced files exist.
+- Commands match `package.json`.
+- Environment variables match source reads and `.env.example`.
+- Test counts and coverage claims come from a fresh run.
+- Implemented, validated, and externally approved states are not conflated.
+- No browser validation is required unless visible UI files changed.
