@@ -34,6 +34,37 @@ test("backtest strategy records decisions, features and bounded exposure", () =>
   expect(result.points[1]).toMatchObject({ targetExposure: 0, reason: "risk off" });
 });
 
+test("regression: backtest sorts valid bars and ignores malformed bars", () => {
+  const result = runBacktest({
+    strategyId: "data-hygiene",
+    initialCash: 1_000,
+    bars: [
+      { timestamp: "not-a-date", close: 999 },
+      { timestamp: "2026-01-03T00:00:00Z", close: 120 },
+      { timestamp: "2026-01-01T00:00:00Z", close: 100 },
+      { timestamp: "2026-01-02T00:00:00Z", close: -5 },
+      { timestamp: "2026-01-02T00:00:00Z", close: 110 },
+    ],
+    strategy(history, index) {
+      return { targetExposure: 0, reason: `bar-${index}`, features: { close: history[index]!.close } };
+    },
+  });
+
+  expect(result.points.map(point => point.timestamp)).toEqual([
+    "2026-01-01T00:00:00.000Z",
+    "2026-01-02T00:00:00.000Z",
+    "2026-01-03T00:00:00.000Z",
+  ]);
+  expect(result.points.map(point => point.features?.close)).toEqual([100, 110, 120]);
+  expect(result).toMatchObject({ finalEquity: 1_000, turnover: 0 });
+});
+
+test("rejects invalid backtest inputs instead of producing metrics", () => {
+  expect(() => runBacktest({ strategyId: "too-short", bars: [{ timestamp: "2026-01-01T00:00:00Z", close: 100 }], strategy: cashStrategy })).toThrow("At least two valid bars are required");
+  expect(() => runBacktest({ strategyId: "bad-cash", bars, strategy: cashStrategy, initialCash: 0 })).toThrow("Invalid backtest assumptions");
+  expect(() => runBacktest({ strategyId: "bad-costs", bars, strategy: cashStrategy, feeBps: -1 })).toThrow("Invalid backtest assumptions");
+});
+
 test("walk-forward windows split ordered samples without overlap inside a fold", () => {
   expect(walkForwardWindows([1, 2, 3, 4, 5, 6], 3, 1)).toEqual([
     { train: [1, 2, 3], test: [4], trainStart: 0, testStart: 3 },

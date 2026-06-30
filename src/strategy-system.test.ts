@@ -3,6 +3,7 @@ import { evaluateStrategyPlugin, runBacktest, strategyPluginFromId, type Backtes
 import { buildStrategyPerformance } from "./strategy-performance";
 import { buildStrategyExperimentReport } from "./strategy-report";
 import { draftStrategyPaperOrder, evaluateStrategyPaperRiskPolicy, parseStrategyPaperApproval } from "./strategy-paper";
+import { buildClosedBetaEvidenceReport } from "./production-governance";
 
 const bars: BacktestBar[] = [
   { timestamp: "2026-06-24T10:00:00.000Z", close: 100 },
@@ -154,5 +155,113 @@ describe("strategy backend system flow", () => {
       metrics: { decisionCounts: { enter: 1 }, orderOutcomes: { filled: 1 }, submittedOrders: 1, filledOrders: 1, fillRatio: 1 },
       activeRunPerformance: { performanceVersion: "strategy-performance-v1" },
     });
+  });
+
+  test("keeps blocked strategy ticks out of paper orders and beta exit evidence", () => {
+    const plugin = strategyPluginFromId("order-book-liquidity-scout", { exposure: 0.5 });
+    const evaluation = evaluateStrategyPlugin(plugin, bars, bars.length - 1, "BTC/USD", { snapshots: {} });
+    expect(evaluation).toMatchObject({
+      targetExposure: 0,
+      reason: "waiting for order-book liquidity snapshot",
+      orders: [{ type: "target_exposure", targetExposure: 0 }],
+    });
+
+    const approval = parseStrategyPaperApproval({ budget: 1_000, maxOrderNotional: 150, minOrderNotional: 10 }, "system-test", new Date("2026-06-24T12:30:00.000Z"));
+    const draft = draftStrategyPaperOrder({
+      approval,
+      symbol: "BTC/USD",
+      targetExposure: evaluation.targetExposure,
+      currentNotional: 0,
+      referencePrice: 104,
+      spreadBps: 10,
+      now: new Date("2026-06-24T13:00:00.000Z"),
+    });
+    expect(draft).toEqual({ allowed: true, reasons: ["target_within_band"], order: null });
+
+    const risk = evaluateStrategyPaperRiskPolicy({
+      approval,
+      draftOrder: draft.order,
+      account: { cash: 1_000, buyingPower: 1_000 },
+      now: new Date("2026-06-24T13:00:00.000Z"),
+    });
+    expect(risk).toMatchObject({ allowed: true, reasons: [] });
+
+    const report = buildStrategyExperimentReport({
+      generatedAt: "2026-06-24T13:05:00.000Z",
+      run: {
+        id: "run-blocked",
+        strategyId: plugin.id,
+        strategyVersion: plugin.version,
+        status: "paper",
+        configHash: "sha256:block",
+        policyVersion: "crypto-paper-v1",
+        symbols: ["BTC/USD"],
+        budget: 1_000,
+        config: { paperApproval: approval, reviewHistory: [{ action: "continue", note: "Wait for valid book data" }] },
+        createdAt: "2026-06-24T12:30:00.000Z",
+        updatedAt: "2026-06-24T13:00:00.000Z",
+      },
+      decisions: [{
+        id: "decision-blocked",
+        traceId: "trace-blocked",
+        symbol: "BTC/USD",
+        decision: "block",
+        reason: evaluation.reason,
+        riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: false },
+        targetPosition: evaluation.targetExposure,
+        rawSignal: evaluation.risk.rawTargetExposure,
+        riskAdjustedSignal: evaluation.targetExposure,
+        orderOutcome: "none",
+        createdAt: "2026-06-24T13:00:00.000Z",
+      }],
+      traces: [{
+        id: "decision-blocked",
+        traceId: "trace-blocked",
+        symbol: "BTC/USD",
+        decision: "block",
+        reason: evaluation.reason,
+        riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: false },
+        features: evaluation.features ?? {},
+        thresholds: evaluation.thresholds ?? {},
+        targetPosition: evaluation.targetExposure,
+        rawSignal: evaluation.risk.rawTargetExposure,
+        riskAdjustedSignal: evaluation.targetExposure,
+        orderOutcome: "none",
+        createdAt: "2026-06-24T13:00:00.000Z",
+        snapshots: [{ id: "snapshot-stale", symbol: "BTC/USD", source: "alpaca-crypto", feed: "us", stale: true, observedAt: "2026-06-24T12:45:00.000Z" }],
+      }],
+      orders: [],
+      metrics: [],
+      notes: [],
+    });
+    expect(report).toMatchObject({
+      dataCoverage: { decisionCount: 1, staleSnapshotCount: 1 },
+      metrics: { decisionCounts: { block: 1 }, orderOutcomes: { none: 1 }, submittedOrders: 0, filledOrders: 0, fillRatio: null },
+      reasonCodedFailures: { stale_data: 1 },
+    });
+
+    const beta = buildClosedBetaEvidenceReport({
+      paperClient: true,
+      decisionAuditVerification: { valid: true, entries: 1, invalidEntryId: null },
+      receipts: [],
+      events: [
+        { type: "operations.backup.exported", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:00:00.000Z" },
+        { type: "operations.kill_switch.activated", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:01:00.000Z" },
+        { type: "operations.kill_switch.cleared", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:02:00.000Z" },
+      ],
+      strategyRuns: [{ id: "run-blocked", status: "paper", config: { paperApproval: approval }, reviewCount: 1 }],
+      strategyDecisions: [{
+        runId: "run-blocked",
+        decision: "block",
+        riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: false },
+        paperOrderId: null,
+        orderOutcome: "none",
+      }],
+      backupMetadata: { sha256: "sha256:backup", sizeBytes: 2048, createdAt: "2026-06-24T13:00:00.000Z" },
+    }, "2026-06-24T13:10:00.000Z");
+
+    expect(beta.summary).toMatchObject({ pass: 7, fail: 0, needsEvidence: 1, readyForExitReview: false });
+    expect(beta.summary.openTargets).toEqual(["signed_preview_coverage"]);
+    expect(beta.targets.find(target => target.id === "stale_data")).toMatchObject({ status: "pass", observedEvidence: { staleSubmittedCount: 0 } });
   });
 });
