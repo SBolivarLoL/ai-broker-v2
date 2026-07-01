@@ -17,14 +17,14 @@ The 2026-06-30 audit found a capable deterministic core and a large difference b
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
-| Repository | 57 production TypeScript modules, 60 test files, a 22-line Bun entry point, one request module, one browser HTML file, SQLite persistence | Process startup is separated; route and browser composition remain concentrated |
-| Automated checks | 242 tests, 926 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
-| Instrumented coverage | 95.09% functions and 96.51% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
+| Repository | 58 production TypeScript modules, 61 test files, a 22-line Bun entry point, one request module, one migration registry, one browser HTML file, SQLite persistence | Process startup and schema migration are separated; route and browser composition remain concentrated |
+| Automated checks | 245 tests, 939 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
+| Instrumented coverage | 95.19% functions and 96.57% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-01 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
 | Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI | Strong provenance model; provider health and governance inventory are incomplete |
 | Strategy research | Nine deterministic plugins, 90-day bar retrieval, bar-close backtests, shadow/paper runs, traces and attribution | Useful experiment loop; not yet a rigorous out-of-sample research platform |
-| Operations | OIDC proxy contract, roles, encrypted envelopes, backup/export endpoints, audit chains, beta report | Code artifacts exist; restore drills, real users, and beta evidence remain external work |
+| Operations | OIDC proxy contract, roles, encrypted envelopes, ordered migrations, backup/export endpoints, audit chains, beta report | Fixture upgrade/restore is proven; production-sized and closed-beta drills remain external work |
 | Live trading | Unavailable by construction | Remains blocked by legal, data, beta, and deployment reviews |
 
 ## Product principles
@@ -46,7 +46,7 @@ These items should land before broadening strategy automation or adding more UI 
 2. [x] Add direct API contract tests for authentication/roles across operations, orders, strategy, research and portfolio routes plus mutation origin, request-size limits, malformed JSON, strategy parsing, stable response schemas, 404 behavior and sanitized 502 mapping.
 3. [x] Define one validated schema and default set per strategy. Unknown, non-finite, contradictory, and out-of-range parameters now fail before backtest or run creation, and saved runs persist canonical defaults.
 4. [x] Reconcile the Strategy Lab input with the server's shared 1-90 day crypto-history bound and retain a regression test that prevents the browser/server limits from drifting.
-5. [ ] Replace migration metadata-only behavior with ordered, transactional migrations and upgrade fixtures from prior schema versions. Add a backup restore drill that proves a serialized database can start and preserve audit verification.
+5. [x] Replace migration metadata-only behavior with an append-only ordered registry whose DDL and history record commit in one transaction. An 0011 fixture upgrades without losing legacy ledger/snapshot rows, failed migrations roll back, and a serialized backup starts with both audit chains valid.
 6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
 7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
 8. [ ] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions.
@@ -159,7 +159,7 @@ Implementation order:
 1. [x] Extract `app.ts` and direct request-boundary tests without changing route behavior.
 2. [ ] Split inline browser CSS and JavaScript into static files, then tighten CSP by removing `unsafe-inline` where practical.
 3. [ ] Split routes by domain as each receives API tests. Keep deterministic modules and their tests together until a real ownership boundary appears.
-4. [ ] Introduce migrations and repositories around SQLite only when upgrade/restore tests exist.
+4. [x] Extract ordered SQLite migrations only with rollback, historical upgrade, and serialized restore tests. Keep repositories co-located in `store.ts` until a concrete ownership boundary justifies splitting them.
 5. [ ] Move documentation under `docs/` only after repository links, CI checks, and contributor tooling are updated in one change.
 
 ## Priority 3: triggered improvements
@@ -195,7 +195,7 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] SEC filing/fact/trend evidence, official macro context, GDELT, optional Finnhub, OpenFIGI, comparables, valuation scenarios, and material 8-K monitoring.
 - [x] Evidence-bound portfolio/company agents, counter-thesis review, and receipt-linked trade journal.
 - [x] Crypto strategy plugins with strict canonical configuration, bar-close backtests, shadow/scheduled runs, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
-- [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, backup/export endpoints, governance reports, and beta target definitions.
+- [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, ordered migrations, fixture-level backup restore, export endpoints, governance reports, and beta target definitions.
 
 Implemented does not imply production-approved. See `FEATURES.md` for exact limitations and `VALIDATION.md` for current evidence.
 

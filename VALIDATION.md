@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-01 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 242 tests, 0 failures, 926 assertions across 60 files | Strict TypeScript, all Bun tests, and the coverage floor |
+| `bun run check` | Pass: 245 tests, 0 failures, 939 assertions across 61 files | Strict TypeScript, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
-| `bun run coverage` | Pass: 95.09% functions, 96.51% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
+| `bun run coverage` | Pass: 95.19% functions, 96.57% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 6.08% of functions and 67.13% of lines; the 22-line `src/server.ts` process entry and `src/index.html` browser client remain outside Bun coverage. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
@@ -30,12 +30,12 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
 | Order policy and signatures | High at module level | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests | Route-level tests and real broker race drills are incomplete |
 | Strategy decisions | High for deterministic plugin behavior | Strict configuration/default tests plus backtest, scheduler, paper policy, observability, replay, attribution, performance, and strategy system tests | No genuine out-of-sample walk-forward scoring or long paper cohort yet |
-| Persistence and audit | Good for current schema | In-memory SQLite store, hash chain, ledger, journal, policy, export tests | Historical migration and backup restore fixtures are missing |
+| Persistence and audit | Good for current schema | Ordered transactional migrations, 0011 upgrade fixture, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
 | HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, and direct common-contract tests across all route families | Broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
 | Browser UI | Manual confidence only | Existing UI has been exercised during feature work | No maintained automated accessibility/responsive regression suite |
-| Production operations | Code artifacts only | Readiness, backup export, incident packet, policy, auth, governance, beta report modules | No production deployment, restore drill, real participants, or external approval |
+| Production operations | Code artifacts plus fixture restore proof | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test | No production-sized or closed-beta restore drill, deployment, real participants, or external approval |
 
 ## Reproducible local gates
 
@@ -86,6 +86,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
 - Missing or stale strategy data cannot pass by absence.
 - Decision and strategy audit verification fails when a stored hash chain is inconsistent.
+- Migration identity drift stops startup, failed migration DDL and history roll back together, and serialized restores preserve both audit chains in the fixture drill.
 - Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.
 - Plaintext vault values are not returned by vault API reads.
 
@@ -94,7 +95,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 The following are not validated and remain open in `roadmap.md`:
 
 1. Broader direct API happy-path and broker-failure coverage for each route family, including reconciliation and concurrency.
-2. Transactional historical migrations and a measured backup restore drill.
+2. A timed production-sized restore and a closed-beta operations restore drill.
 3. Persistent, point-in-time datasets and genuine walk-forward strategy evaluation.
 4. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
 5. External legal/compliance and data-entitlement review.

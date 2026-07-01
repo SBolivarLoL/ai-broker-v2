@@ -52,6 +52,6 @@ test("journal entries and reviews persist with decision-audit evidence", () => {
   store.updateTradeJournalEntry(reviewed, "researcher");
   expect(store.tradeJournalEntries()).toEqual([reviewed]);
   expect(store.decisionAuditTrail(entryId).map(item => item.kind)).toEqual(["trade_journal.created", "trade_journal.reviewed"]);
-  expect(store.schemaMigrations().at(-1)).toMatchObject({ id: "0011", expected: true });
+  expect(store.schemaMigrations()).toContainEqual(expect.objectContaining({ id: "0011", expected: true }));
   store.close();
 });

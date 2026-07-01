@@ -24,6 +24,7 @@ These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 - Backend calculations, strategy behavior, order safety, persistence, authorization, data normalization, and API contracts are validated through unit, regression, system, function, or direct API tests.
 - Browser or computer-use validation is reserved for UI rendering, layout, accessibility, responsive behavior, and interaction wiring.
 - Add a direct API test when changing route parsing, authorization, status codes, response shapes, or error handling.
+- Add an append-only migration and historical upgrade/restore fixture for every schema change; never rewrite an applied migration identity or checksum.
 - Keep `bun run check` green against the reviewed 95% function and 96% line coverage floor for imported deterministic and request-layer TypeScript.
 - Update `VALIDATION.md` when the test count, coverage boundary, live-smoke status, or validation policy changes.
 - Never describe coverage as application-wide when `src/server.ts` or the browser client is outside instrumentation.
