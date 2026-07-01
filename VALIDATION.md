@@ -8,19 +8,19 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-06-30 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 235 tests, 0 failures, 892 assertions across 58 files | Strict TypeScript plus all Bun tests |
+| `bun run check` | Pass: 240 tests, 0 failures, 921 assertions across 59 files | Strict TypeScript plus all Bun tests |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
-| `bun test --coverage` | Pass: 96.62% functions, 96.98% lines | Imported deterministic TypeScript modules only |
+| `bun test --coverage` | Pass: 95.01% functions, 96.44% lines | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-Coverage is not application-wide. `src/server.ts` starts real process dependencies at import time and is not instrumented by the current tests; `src/index.html` is also outside Bun coverage. The high percentage must not be used to claim route or browser completeness.
+Coverage is not application-wide. `src/app.ts` is now instrumented at 6.08% of functions and 67.13% of lines; the 22-line `src/server.ts` process entry and `src/index.html` browser client remain outside Bun coverage. The overall percentage must not be used to claim route or browser completeness.
 
 ## Test-layer policy
 
 - Unit tests own deterministic calculations, schemas, policy, normalization, evidence, strategy plugins, and DTO behavior.
 - Regression tests preserve specific failures such as malformed bars, missing lot basis, stale evidence, blocked strategy submissions, and post-fill accounting.
 - System tests compose portfolio and strategy functions with in-memory SQLite without browser automation.
-- Direct API tests should own authorization, origin checks, route parsing, status codes, response schemas, and error mapping. This layer is currently incomplete because the request handler is coupled to server startup.
+- Direct API tests own common authorization, origin, body-size, parsing, status, schema, 404 and error-sanitization contracts without starting streams or a server port. Broker-backed happy paths still need incremental route coverage.
 - Browser/computer-use validation is reserved for rendering, layout, accessibility, responsive behavior, and interaction wiring. It should not be used to populate or verify backend state that can be exercised through functions or HTTP.
 
 ## Confidence by area
@@ -33,7 +33,7 @@ Coverage is not application-wide. `src/server.ts` starts real process dependenci
 | Persistence and audit | Good for current schema | In-memory SQLite store, hash chain, ledger, journal, policy, export tests | Historical migration and backup restore fixtures are missing |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
-| HTTP/API composition | Low to moderate | Some behavior is covered through called functions | `src/server.ts` has no side-effect-free request-handler test harness |
+| HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, and direct common-contract tests across all route families | Broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
 | Browser UI | Manual confidence only | Existing UI has been exercised during feature work | No maintained automated accessibility/responsive regression suite |
 | Production operations | Code artifacts only | Readiness, backup export, incident packet, policy, auth, governance, beta report modules | No production deployment, restore drill, real participants, or external approval |
 
@@ -93,7 +93,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 
 The following are not validated and remain open in `roadmap.md`:
 
-1. Side-effect-free API integration coverage for the real request boundary.
+1. Broader direct API happy-path and broker-failure coverage for each route family, including reconciliation and concurrency.
 2. Transactional historical migrations and a measured backup restore drill.
 3. Persistent, point-in-time datasets and genuine walk-forward strategy evaluation.
 4. At least 30 days of measured paper closed-beta evidence with all eight targets passing.

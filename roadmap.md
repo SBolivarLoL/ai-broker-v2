@@ -17,9 +17,9 @@ The 2026-06-30 audit found a capable deterministic core and a large difference b
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
-| Repository | 56 production TypeScript modules, 58 test files, one Bun server, one browser HTML file, SQLite persistence | Clear domain modules, but composition and browser layers are concentrated |
-| Automated checks | 235 tests, 892 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass |
-| Instrumented coverage | 96.62% functions and 96.98% lines across imported modules | `src/server.ts` and `src/index.html` are not included, so this is not whole-app coverage |
+| Repository | 57 production TypeScript modules, 59 test files, a 22-line Bun entry point, one request module, one browser HTML file, SQLite persistence | Process startup is separated; route and browser composition remain concentrated |
+| Automated checks | 240 tests, 921 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass |
+| Instrumented coverage | 95.01% functions and 96.44% lines across imported modules | `src/app.ts` is now measured; the process entry and browser client remain outside instrumentation |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-06-30 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
 | Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI | Strong provenance model; provider health and governance inventory are incomplete |
@@ -42,12 +42,12 @@ The 2026-06-30 audit found a capable deterministic core and a large difference b
 
 These items should land before broadening strategy automation or adding more UI surface.
 
-1. [ ] Extract a side-effect-free `createApp(dependencies)` request handler from `src/server.ts`; keep `Bun.serve`, Alpaca construction, streams, and scheduler startup in a thin entry point.
-2. [ ] Add direct API contract tests for route authorization, origin checks, request-size limits, parsing, status codes, response schemas, and error mapping across orders, strategy, portfolio, research, and operations routes.
+1. [x] Extract a side-effect-free `createApp(dependencies)` request handler into `src/app.ts`; `src/server.ts` now owns only Alpaca/store construction, process handling, `Bun.serve`, runtime stream/scheduler startup, and logging.
+2. [x] Add direct API contract tests for authentication/roles across operations, orders, strategy, research and portfolio routes plus mutation origin, request-size limits, malformed JSON, strategy parsing, stable response schemas, 404 behavior and sanitized 502 mapping.
 3. [x] Define one validated schema and default set per strategy. Unknown, non-finite, contradictory, and out-of-range parameters now fail before backtest or run creation, and saved runs persist canonical defaults.
 4. [x] Reconcile the Strategy Lab input with the server's shared 1-90 day crypto-history bound and retain a regression test that prevents the browser/server limits from drifting.
 5. [ ] Replace migration metadata-only behavior with ordered, transactional migrations and upgrade fixtures from prior schema versions. Add a backup restore drill that proves a serialized database can start and preserve audit verification.
-6. [ ] Make test coverage representative: include the extracted app/router, publish a coverage script, set a reviewed threshold for deterministic/server code, and continue to report browser coverage separately.
+6. [ ] Publish a coverage script and reviewed threshold for deterministic/request code, then report browser coverage separately. The extracted app/router is now instrumented and its low function coverage is visible rather than excluded.
 7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
 8. [ ] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions.
 
@@ -156,7 +156,7 @@ docs/                       # optional after links/tooling are ready
 
 Implementation order:
 
-1. [ ] Extract `app.ts` and route tests first; this gives the highest confidence gain with the least movement.
+1. [x] Extract `app.ts` and direct request-boundary tests without changing route behavior.
 2. [ ] Split inline browser CSS and JavaScript into static files, then tighten CSP by removing `unsafe-inline` where practical.
 3. [ ] Split routes by domain as each receives API tests. Keep deterministic modules and their tests together until a real ownership boundary appears.
 4. [ ] Introduce migrations and repositories around SQLite only when upgrade/restore tests exist.
