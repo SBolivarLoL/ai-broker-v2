@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main`: 2026-06-30.
+Last reviewed against `main`: 2026-07-01.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -156,6 +156,12 @@ The trace explorer exposes:
 - Filters by symbol, decision, strategy version, block reason, and order outcome.
 
 The full snapshot remains in SQLite even when the browser displays a compact summary.
+
+## Data and retention boundary
+
+Strategy experiments persist configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
+
+Retention metadata does not delete data. There is no automatic pruning job, so a long-running experiment can grow the local SQLite database until an operator removes or archives records under a reviewed policy. Inspect `/api/operations/data-governance` for the current provider and stored-output decisions; external entitlement review remains required before any different user, redistribution, or live use.
 
 ## Paper approval and execution
 

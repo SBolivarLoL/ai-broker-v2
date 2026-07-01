@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-01 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 245 tests, 0 failures, 939 assertions across 61 files | Strict TypeScript, all Bun tests, and the coverage floor |
+| `bun run check` | Pass: 246 tests, 0 failures, 954 assertions across 61 files | Strict TypeScript, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
 | `bun run coverage` | Pass: 95.19% functions, 96.57% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
@@ -32,6 +32,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Strategy decisions | High for deterministic plugin behavior | Strict configuration/default tests plus backtest, scheduler, paper policy, observability, replay, attribution, performance, and strategy system tests | No genuine out-of-sample walk-forward scoring or long paper cohort yet |
 | Persistence and audit | Good for current schema | Ordered transactional migrations, 0011 upgrade fixture, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
+| Data governance | Complete code inventory, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 20 SQLite tables, references, terms URLs, and fail-closed live-use decisions | Internal classifications are not legal approval; no automatic retention enforcement exists |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
 | HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, and direct common-contract tests across all route families | Broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
 | Browser UI | Manual confidence only | Existing UI has been exercised during feature work | No maintained automated accessibility/responsive regression suite |
@@ -64,7 +65,7 @@ bun run smoke:openfigi
 bun run smoke:comparables
 ```
 
-They were not rerun during the 2026-06-30 documentation audit, so this record makes no new claim about current provider availability.
+They were not rerun during this 2026-07-01 review, so this record makes no new claim about current provider availability.
 
 The paper-order smoke test mutates only the Alpaca paper account and requires explicit opt-in:
 
@@ -87,6 +88,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Missing or stale strategy data cannot pass by absence.
 - Decision and strategy audit verification fails when a stored hash chain is inconsistent.
 - Migration identity drift stops startup, failed migration DDL and history roll back together, and serialized restores preserve both audit chains in the fixture drill.
+- Every current SQLite table belongs to exactly one stored-output category; every external source is blocked or requires external review for live use.
 - Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.
 - Plaintext vault values are not returned by vault API reads.
 
@@ -109,5 +111,6 @@ Documentation-only changes require:
 - Commands match `package.json`.
 - Environment variables match source reads and `.env.example`.
 - Test counts and coverage claims come from a fresh run.
+- Provider and table changes remain consistent with the data-governance registry.
 - Implemented, validated, and externally approved states are not conflated.
 - No browser validation is required unless visible UI files changed.

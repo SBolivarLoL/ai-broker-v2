@@ -36,9 +36,19 @@ SEC_USER_AGENT=ai-broker-v2 your-monitored-email@example.com
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
 - Crypto strategy backtests, shadow and scheduled ticks, bounded approved paper runs, trace reconstruction, alerts, attribution, and experiment reports.
-- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, and paper-beta evidence reporting.
+- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, and a source/output governance registry.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
+
+## Architecture at a glance
+
+- `src/server.ts` starts the Bun process, Alpaca streams, and scheduler.
+- `src/app.ts` builds the dependency-injected request handler and API composition.
+- Focused `src/*.ts` modules own deterministic domain behavior; tests remain beside them.
+- `src/migrations.ts` and `src/store.ts` own the current SQLite schema and repositories.
+- `src/index.html` contains the current browser application.
+
+The large request, store, and browser files are the next useful extraction boundaries. The incremental target structure and move order live in `roadmap.md`; no directory move is required to contribute safely today.
 
 ## Commands
 

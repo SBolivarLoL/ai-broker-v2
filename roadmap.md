@@ -13,16 +13,16 @@ This is the only future-work inventory for AI Broker. It incorporates the former
 
 ## Review baseline
 
-The 2026-06-30 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
+The 2026-07-01 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
 | Repository | 58 production TypeScript modules, 61 test files, a 22-line Bun entry point, one request module, one migration registry, one browser HTML file, SQLite persistence | Process startup and schema migration are separated; route and browser composition remain concentrated |
-| Automated checks | 245 tests, 939 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
+| Automated checks | 246 tests, 954 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
 | Instrumented coverage | 95.19% functions and 96.57% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-01 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
-| Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI | Strong provenance model; provider health and governance inventory are incomplete |
+| Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI | The registry covers 16 sources and all 20 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
 | Strategy research | Nine deterministic plugins, 90-day bar retrieval, bar-close backtests, shadow/paper runs, traces and attribution | Useful experiment loop; not yet a rigorous out-of-sample research platform |
 | Operations | OIDC proxy contract, roles, encrypted envelopes, ordered migrations, backup/export endpoints, audit chains, beta report | Fixture upgrade/restore is proven; production-sized and closed-beta drills remain external work |
 | Live trading | Unavailable by construction | Remains blocked by legal, data, beta, and deployment reviews |
@@ -49,7 +49,7 @@ These items should land before broadening strategy automation or adding more UI 
 5. [x] Replace migration metadata-only behavior with an append-only ordered registry whose DDL and history record commit in one transaction. An 0011 fixture upgrades without losing legacy ledger/snapshot rows, failed migrations roll back, and a serialized backup starts with both audit chains valid.
 6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
 7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
-8. [ ] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions.
+8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 20 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
 
 Exit gate: a route change can be tested without a real browser or real Alpaca account, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
 
@@ -117,7 +117,7 @@ Exit gate: the main paper-investing and strategy-review flows are understandable
 
 The current co-located domain modules and tests are easy to discover. A big-bang directory move would add churn without improving behavior. Refactor incrementally at the boundaries already causing test or ownership friction.
 
-Recommended target structure:
+Recommended incremental target structure:
 
 ```text
 src/
@@ -130,37 +130,31 @@ src/
     portfolio.ts
     research.ts
     strategy.ts
-  domain/                   # existing deterministic modules, moved only when touched
-  infrastructure/
-    alpaca.ts
-    providers/
-    persistence/
-      migrations/
-      store.ts
-      repositories/
+  domain/                   # deterministic modules and co-located unit tests
+  providers/                # Alpaca, SEC, macro, news, identity, and model adapters
+  persistence/
+    migrations.ts
+    store.ts
+    repositories/          # extract one domain only when store ownership is unclear
   web/
     index.html
     styles.css
     app.ts
     views/
 tests/
-  api/
-  system/
-  fixtures/
-docs/                       # optional after links/tooling are ready
-  FEATURES.md
-  STRATEGY_LAB.md
-  VALIDATION.md
-  roadmap.md
+  system/                   # cross-domain flows only
+  fixtures/                 # reusable recorded/redacted provider and database fixtures
 ```
+
+Keep `README.md`, `AGENTS.md`, `FEATURES.md`, `STRATEGY_LAB.md`, `VALIDATION.md`, and `roadmap.md` at the repository root for now. Six visible documents do not justify link churn or a `docs/` hierarchy; revisit only when a real documentation category needs several files.
 
 Implementation order:
 
 1. [x] Extract `app.ts` and direct request-boundary tests without changing route behavior.
-2. [ ] Split inline browser CSS and JavaScript into static files, then tighten CSP by removing `unsafe-inline` where practical.
-3. [ ] Split routes by domain as each receives API tests. Keep deterministic modules and their tests together until a real ownership boundary appears.
+2. [ ] Split inline browser CSS and JavaScript into `src/web/` during the next UI change, add bounded static-file responses, then tighten CSP by removing `unsafe-inline` where practical.
+3. [ ] Split one route family from `app.ts` when that family next changes and has direct API tests. Pass a small dependency object; do not introduce a routing framework.
 4. [x] Extract ordered SQLite migrations only with rollback, historical upgrade, and serialized restore tests. Keep repositories co-located in `store.ts` until a concrete ownership boundary justifies splitting them.
-5. [ ] Move documentation under `docs/` only after repository links, CI checks, and contributor tooling are updated in one change.
+5. [ ] Extract one repository or provider family at a time when `store.ts` or provider wiring becomes the source of a concrete change; move its tests with it.
 
 ## Priority 3: triggered improvements
 
@@ -196,6 +190,9 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] Evidence-bound portfolio/company agents, counter-thesis review, and receipt-linked trade journal.
 - [x] Crypto strategy plugins with strict canonical configuration, bar-close backtests, shadow/scheduled runs, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
 - [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, ordered migrations, fixture-level backup restore, export endpoints, governance reports, and beta target definitions.
+- [x] Source/output governance registry covering SEC, Treasury, BLS, FRED, BEA, OpenAI, Alpaca, news, identity, local analytics, and every current SQLite table.
+
+The former `LATER_FEATURES.md` list is fully accounted for: portfolio Q&A, diversification proposals, and what-if scenarios are implemented above; daily briefings and evidence-based price-move explanations remain in Priority 2. No separate later-features file should be recreated.
 
 Implemented does not imply production-approved. See `FEATURES.md` for exact limitations and `VALIDATION.md` for current evidence.
 
@@ -224,12 +221,20 @@ Every future item must answer:
 - [Alpaca historical market data](https://docs.alpaca.markets/v1.3/docs/historical-api)
 - [Alpaca options trading](https://docs.alpaca.markets/docs/options-trading)
 - [Alpaca crypto data](https://docs.alpaca.markets/docs/real-time-crypto-pricing-data)
+- [Alpaca terms and conditions](https://files.alpaca.markets/disclosures/alpaca_terms_and_conditions.pdf)
 - [SEC EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
 - [SEC developer and fair-access guidance](https://www.sec.gov/about/developer-resources)
+- [Treasury Fiscal Data API](https://fiscaldata.treasury.gov/api-documentation/)
 - [BLS Public Data API](https://www.bls.gov/developers/)
+- [BLS API terms](https://www.bls.gov/developers/termsOfService.htm)
 - [FRED API](https://fred.stlouisfed.org/docs/api/fred/)
+- [FRED API terms](https://fred.stlouisfed.org/docs/api/terms_of_use.html)
 - [BEA API](https://apps.bea.gov/api/)
+- [BEA API terms](https://apps.bea.gov/API/_pdf/bea_api_tos.pdf)
 - [OpenFIGI API v3](https://www.openfigi.com/api/documentation)
+- [OpenFIGI terms](https://www.openfigi.com/docs/terms-of-service)
+- [OpenAI API data controls](https://platform.openai.com/docs/guides/your-data)
+- [OpenAI services agreement](https://openai.com/policies/services-agreement/)
 - [FINRA algorithmic trading](https://www.finra.org/rules-guidance/key-topics/algorithmic-trading)
 - [OpenTelemetry signals](https://opentelemetry.io/docs/concepts/signals/)
 
