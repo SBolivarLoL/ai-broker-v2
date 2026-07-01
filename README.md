@@ -43,9 +43,9 @@ The application currently runs as one Bun process with a local SQLite database a
 ## Commands
 
 ```sh
-bun run check             # strict TypeScript and all tests
+bun run check             # strict TypeScript, all tests, and coverage floor
 bun run eval              # focused broker safety and agent trust-boundary suite
-bun test --coverage       # imported TypeScript module coverage
+bun run coverage          # 95% function / 96% line coverage gate
 bun audit                 # dependency vulnerability audit
 bun run alpaca:doctor     # independent Alpaca paper/API diagnostic
 bun run smoke:read        # live read-only account, position, and open-order checks

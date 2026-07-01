@@ -1,19 +1,19 @@
 # Validation record
 
-Last reviewed against `main`: 2026-06-30.
+Last reviewed against `main`: 2026-07-01.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check | Result on 2026-06-30 | Scope |
+| Check | Result on 2026-07-01 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 240 tests, 0 failures, 921 assertions across 59 files | Strict TypeScript plus all Bun tests |
+| `bun run check` | Pass: 242 tests, 0 failures, 926 assertions across 60 files | Strict TypeScript, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
-| `bun test --coverage` | Pass: 95.01% functions, 96.44% lines | Imported deterministic and request-handler TypeScript modules |
+| `bun run coverage` | Pass: 95.09% functions, 96.51% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-Coverage is not application-wide. `src/app.ts` is now instrumented at 6.08% of functions and 67.13% of lines; the 22-line `src/server.ts` process entry and `src/index.html` browser client remain outside Bun coverage. The overall percentage must not be used to claim route or browser completeness.
+Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 6.08% of functions and 67.13% of lines; the 22-line `src/server.ts` process entry and `src/index.html` browser client remain outside Bun coverage. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
 
 ## Test-layer policy
 
@@ -43,11 +43,11 @@ Coverage is not application-wide. `src/app.ts` is now instrumented at 6.08% of f
 bun install --frozen-lockfile
 bun run check
 bun run eval
-bun test --coverage
+bun run coverage
 bun audit
 ```
 
-CI currently runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Coverage, audit, live-provider smoke checks, and browser checks are not CI gates.
+CI runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. Audit, live-provider smoke checks, and browser checks are not CI gates.
 
 ## Credentialed smoke checks
 

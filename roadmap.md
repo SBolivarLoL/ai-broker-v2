@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main`: 2026-06-30.
+Last reviewed against `main`: 2026-07-01.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -17,10 +17,10 @@ The 2026-06-30 audit found a capable deterministic core and a large difference b
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
-| Repository | 57 production TypeScript modules, 59 test files, a 22-line Bun entry point, one request module, one browser HTML file, SQLite persistence | Process startup is separated; route and browser composition remain concentrated |
-| Automated checks | 240 tests, 921 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass |
-| Instrumented coverage | 95.01% functions and 96.44% lines across imported modules | `src/app.ts` is now measured; the process entry and browser client remain outside instrumentation |
-| Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-06-30 |
+| Repository | 57 production TypeScript modules, 60 test files, a 22-line Bun entry point, one request module, one browser HTML file, SQLite persistence | Process startup is separated; route and browser composition remain concentrated |
+| Automated checks | 242 tests, 926 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
+| Instrumented coverage | 95.09% functions and 96.51% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
+| Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-01 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
 | Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI | Strong provenance model; provider health and governance inventory are incomplete |
 | Strategy research | Nine deterministic plugins, 90-day bar retrieval, bar-close backtests, shadow/paper runs, traces and attribution | Useful experiment loop; not yet a rigorous out-of-sample research platform |
@@ -47,7 +47,7 @@ These items should land before broadening strategy automation or adding more UI 
 3. [x] Define one validated schema and default set per strategy. Unknown, non-finite, contradictory, and out-of-range parameters now fail before backtest or run creation, and saved runs persist canonical defaults.
 4. [x] Reconcile the Strategy Lab input with the server's shared 1-90 day crypto-history bound and retain a regression test that prevents the browser/server limits from drifting.
 5. [ ] Replace migration metadata-only behavior with ordered, transactional migrations and upgrade fixtures from prior schema versions. Add a backup restore drill that proves a serialized database can start and preserve audit verification.
-6. [ ] Publish a coverage script and reviewed threshold for deterministic/request code, then report browser coverage separately. The extracted app/router is now instrumented and its low function coverage is visible rather than excluded.
+6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
 7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
 8. [ ] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions.
 
