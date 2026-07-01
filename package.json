@@ -1,6 +1,7 @@
 {
   "name": "ai-broker-v2",
   "private": true,
+  "packageManager": "bun@1.2.15",
   "type": "module",
   "scripts": {
     "start": "bun --env-file=.env src/server.ts",

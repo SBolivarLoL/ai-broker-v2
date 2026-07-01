@@ -6,7 +6,7 @@ Live trading is intentionally unavailable. Every broker client is constructed wi
 
 ## Quick start
 
-Requirements: [Bun](https://bun.sh/) and an Alpaca paper account.
+Requirements: [Bun 1.2.15](https://bun.sh/) and an Alpaca paper account. Coverage metrics are runtime-sensitive, so local and CI checks use the pinned version.
 
 ```sh
 bun install

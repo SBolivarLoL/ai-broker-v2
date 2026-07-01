@@ -47,7 +47,7 @@ bun run coverage
 bun audit
 ```
 
-CI runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. Audit, live-provider smoke checks, and browser checks are not CI gates.
+CI pins Bun 1.2.15 and runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. Audit, live-provider smoke checks, and browser checks are not CI gates.
 
 ## Credentialed smoke checks
 
