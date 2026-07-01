@@ -19,6 +19,13 @@ These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 - Update all affected documents in the same change when a command, environment variable, endpoint, test count, capability, limitation, or roadmap status changes.
 - Use status language precisely: `implemented` means code exists; `validated` means named evidence passed; `externally approved` requires authoritative external evidence.
 
+## Repository orientation
+
+- `src/server.ts` owns process startup; `src/app.ts` owns dependency-injected HTTP composition; deterministic behavior remains in focused `src/*.ts` modules with co-located tests.
+- `src/migrations.ts` is the append-only schema registry, `src/store.ts` owns current repositories, and `src/index.html` is the current browser client.
+- Split `app.ts`, `store.ts`, or `index.html` only along a boundary being actively changed and tested. Do not perform a big-bang directory move.
+- Keep unit tests beside their modules. Put only cross-domain system tests and reusable fixtures in a future top-level `tests/` directory.
+
 ## Validation
 
 - Backend calculations, strategy behavior, order safety, persistence, authorization, data normalization, and API contracts are validated through unit, regression, system, function, or direct API tests.
@@ -28,6 +35,7 @@ These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 - Keep `bun run check` green against the reviewed 95% function and 96% line coverage floor for imported deterministic and request-layer TypeScript.
 - Update `VALIDATION.md` when the test count, coverage boundary, live-smoke status, or validation policy changes.
 - Never describe coverage as application-wide when `src/server.ts` or the browser client is outside instrumentation.
+- When adding a provider or persisted output, update `src/data-governance.ts`; every SQLite table must belong to exactly one stored-output category with retention, redistribution, and live-use decisions.
 
 ## Roadmap and external gates
 

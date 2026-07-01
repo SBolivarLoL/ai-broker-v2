@@ -68,6 +68,16 @@ test("createApp is side-effect free and exposes basic HTTP contracts", async () 
   expect(app.stockConnects()).toBe(0);
 });
 
+test("data-governance API exposes provider and stored-output decisions", async () => {
+  const response = await testApp().fetch(new Request("http://local/api/operations/data-governance"));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    summary: { totalSources: 16, storedOutputCategories: 12 },
+    sources: expect.arrayContaining([expect.objectContaining({ id: "openai_api", liveUseDecision: "external_review_required" })]),
+    storedOutputs: expect.arrayContaining([expect.objectContaining({ id: "strategy_experiments", redistributionDecision: "internal_only" })]),
+  });
+});
+
 test("API authorization distinguishes authentication roles and route families", async () => {
   const app = testApp(productionEnv);
   expect((await app.fetch(new Request("https://broker.example.com/api/operations/policy"))).status).toBe(401);
