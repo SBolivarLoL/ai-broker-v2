@@ -36,7 +36,7 @@ SEC_USER_AGENT=ai-broker-v2 your-monitored-email@example.com
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
 - Crypto strategy backtests, shadow and scheduled ticks, bounded approved paper runs, trace reconstruction, alerts, attribution, and experiment reports.
-- SQLite persistence, hash-chained decision records, encrypted secret envelopes, readiness exports, and paper-beta evidence reporting.
+- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, and paper-beta evidence reporting.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
 

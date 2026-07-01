@@ -73,7 +73,7 @@ The browser exposes seven workspaces:
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
 - Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, deterministic alerts, and experiment review history.
-- SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, and JSON experiment reports.
+- SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, JSON experiment reports, and ordered transactional schema migrations.
 
 See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 
@@ -124,10 +124,10 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
 - Backtest results are returned to the browser but are not persisted as immutable experiment records or linked to the shadow run created afterward.
 - Strategy records use static version labels and config hashes but do not yet persist the exact Git commit, feature-schema version, or input dataset hash promised by a fully reproducible experiment.
-- `src/app.ts` remains a 2,378-line request/composition module; `src/index.html` is a roughly 255 KB single-file client; `src/store.ts` contains schema setup and all repositories. The 22-line `src/server.ts` entry is now separate, but per-domain route and UI maintenance remain concentrated.
-- The 242-test suite includes direct request-boundary contracts and enforces 95% function and 96% line coverage across imported TypeScript modules. `src/app.ts` remains at 6.08% of functions and 67.13% of lines, many broker-backed route branches remain uncovered, and the browser client is validated separately rather than included in that percentage.
+- `src/app.ts` remains a 2,378-line request/composition module; `src/index.html` is a roughly 255 KB single-file client; `src/store.ts` still contains all repositories. The 22-line `src/server.ts` entry and `src/migrations.ts` schema boundary are now separate, but per-domain route, repository, and UI maintenance remain concentrated.
+- The 245-test suite includes direct request-boundary contracts and enforces 95% function and 96% line coverage across imported TypeScript modules. `src/app.ts` remains at 6.08% of functions and 67.13% of lines, many broker-backed route branches remain uncovered, and the browser client is validated separately rather than included in that percentage.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
-- Schema metadata and backup export exist, but ordered migration rollback/upgrade fixtures and a measured restore drill do not.
+- Ordered migrations, rollback/upgrade fixtures, and serialized backup restore with audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.
 - The data-governance registry covers major market/news/identity categories but does not yet inventory every official macro/SEC source or the OpenAI service.
 - Production hosting, real users, external compliance review, a measured paper beta, and live deployment review have not been completed.
 
