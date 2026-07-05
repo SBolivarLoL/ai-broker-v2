@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main`: 2026-07-01.
+Last reviewed against `main`: 2026-07-05.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -24,7 +24,7 @@ PORT=3017 bun --env-file=.env src/server.ts
 ## Experiment lifecycle
 
 1. State a falsifiable hypothesis and choose a baseline before changing parameters.
-2. Run a deterministic backtest on Alpaca crypto bars.
+2. Run and persist a deterministic backtest on Alpaca crypto bars.
 3. Review return, drawdown, turnover, exposure, costs, and data limitations.
 4. Create a shadow run only when the test is worth observing prospectively.
 5. Tick it manually or schedule in-process ticks; inspect every block and decision trace.
@@ -123,26 +123,27 @@ The current backtester:
 - Returns strategy and cash/buy-and-hold baseline results.
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, and reasons.
 - Can return train/test window boundaries when `trainSize` and `testSize` are supplied.
+- Persists an immutable request, result, baselines, Git/plugin/feature/policy versions, exact query window, provider/feed, and normalized dataset hash.
+- Returns a `backtestId`; a matching clean backtest is required to create a comparable shadow run.
 
 It does not yet:
 
-- Persist the backtest as an immutable experiment or link it to a later shadow run.
 - Tune on training data and score frozen parameters on test data.
 - Model intrabar execution, queue position, market impact, price improvement, or a full fee schedule.
 - Use more than 90 days from the current API request.
 
-Treat a backtest as a screening tool. A useful result earns prospective shadow observation, not a larger budget.
+Treat a backtest as a screening tool. A stored hash proves which input was used, not that the input was complete or representative. A useful result earns prospective shadow observation, not a larger budget.
 
 ## Shadow runs and traces
 
-Creating a run stores strategy ID/version, config hash, policy version, symbols, timeframe, lookback, parameters, schedule, notes, and timestamps. It does not store the exact Git commit or immutable bar dataset hash yet.
+Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.
 
 Each tick:
 
 1. Fetches recent crypto bars and the latest snapshot/order book.
-2. Persists the market-data snapshot with source, feed, timestamp, latency, and stale state.
+2. Normalizes and hashes the bars and snapshots, then persists each snapshot with source, feed, timestamp, latency, stale state, and content hash.
 3. Runs the deterministic plugin and strategy risk policy.
-4. Stores the decision, trace, receipt, spans, and metrics.
+4. Stores the decision, exact combined input hash, trace, receipt, spans, and metrics.
 5. Submits a paper market order only when the run is approved and every strategy/global gate passes.
 
 A stale snapshot produces a stored `block` decision. Missing evidence never silently becomes approval.
@@ -159,7 +160,7 @@ The full snapshot remains in SQLite even when the browser displays a compact sum
 
 ## Data and retention boundary
 
-Strategy experiments persist configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
+Strategy experiments persist immutable backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
 
 Retention metadata does not delete data. There is no automatic pruning job, so a long-running experiment can grow the local SQLite database until an operator removes or archives records under a reviewed policy. Inspect `/api/operations/data-governance` for the current provider and stored-output decisions; external entitlement review remains required before any different user, redistribution, or live use.
 
@@ -198,11 +199,17 @@ Experiment reports include config, assumptions, coverage, metrics, orders, attri
 These examples are for local development, where the demo actor has all roles. Production requests must pass the configured proxy identity and origin boundary.
 
 ```sh
-# List and create runs
+# Run a backtest and retain its backtestId
+curl -fsS http://localhost:3000/api/strategy/backtests \
+  -X POST -H 'content-type: application/json' \
+  -d '{"symbols":["BTC/USD"],"strategyId":"moving-average-trend","timeframe":"1Hour","days":30,"params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
+
+# Retrieve the artifact, list runs, then create a matching linked run
+curl -fsS http://localhost:3000/api/strategy/backtests/BACKTEST_ID
 curl -fsS http://localhost:3000/api/strategy/runs
 curl -fsS http://localhost:3000/api/strategy/runs \
   -X POST -H 'content-type: application/json' \
-  -d '{"symbols":["BTC/USD"],"strategyId":"mean-reversion","timeframe":"1Hour","days":30,"params":{"lookback":20,"entryZScore":-2,"exitZScore":-0.25,"exposure":1}}'
+  -d '{"backtestId":"BACKTEST_ID","symbols":["BTC/USD"],"strategyId":"moving-average-trend","timeframe":"1Hour","days":30,"params":{"fast":5,"slow":20,"exposure":1}}'
 
 # Tick and approve a run
 curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/tick -X POST
@@ -218,11 +225,6 @@ curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/kill \
 curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/review \
   -X POST -H 'content-type: application/json' \
   -d '{"action":"revise","note":"Reduce exposure after drawdown review","revision":{"exposure":0.5}}'
-
-# Run a backtest
-curl -fsS http://localhost:3000/api/strategy/backtests \
-  -X POST -H 'content-type: application/json' \
-  -d '{"symbols":["BTC/USD"],"strategyId":"moving-average-trend","timeframe":"1Hour","days":30,"params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
 
 # Inspect evidence
 curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/decisions

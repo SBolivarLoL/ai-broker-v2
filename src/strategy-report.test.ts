@@ -1,11 +1,25 @@
 import { expect, test } from "bun:test";
 import { buildStrategyExperimentReport } from "./strategy-report";
 
+const provenance = {
+  gitCommit: "a".repeat(40),
+  workingTreeDirty: false,
+  pluginVersion: "strategy-plugin-v1",
+  featureSchemaVersion: "strategy-features-v1",
+  policyVersion: "crypto-shadow-v1",
+  definitionHash: `sha256:${"b".repeat(64)}`,
+  provider: "Alpaca Market Data API",
+  feed: "us",
+  query: { start: "2026-06-01T00:00:00.000Z", end: "2026-06-24T00:00:00.000Z", timeframe: "1Hour", symbols: ["BTC/USD"] },
+  datasetHash: `sha256:${"c".repeat(64)}`,
+};
+
 test("builds exportable strategy experiment report from persisted run evidence", () => {
   const report = buildStrategyExperimentReport({
     generatedAt: "2026-06-24T12:00:00.000Z",
     run: {
       id: "run-1",
+      backtestId: "backtest-1",
       strategyId: "moving-average-trend",
       strategyVersion: "backtest-v1",
       status: "paper",
@@ -15,16 +29,18 @@ test("builds exportable strategy experiment report from persisted run evidence",
       budget: 250,
       config: { paperApproval: { budget: 250, maxSpreadBps: 100 }, schedule: { intervalMinutes: 15 }, reviewHistory: [{ action: "continue", note: "Keep running one more day" }] },
       notes: "Paper trial",
+      provenance,
+      comparable: true,
       createdAt: "2026-06-24T10:00:00.000Z",
       updatedAt: "2026-06-24T11:00:00.000Z",
     },
     decisions: [
-      { id: "d2", traceId: "trace-2", symbol: "BTC/USD", decision: "block", reason: "stale data", riskChecks: { reasons: ["stale_data"] }, targetPosition: 0, rawSignal: 1, riskAdjustedSignal: 0, orderOutcome: "none", createdAt: "2026-06-24T11:00:00.000Z" },
-      { id: "d1", traceId: "trace-1", symbol: "BTC/USD", decision: "enter", reason: "trend", riskChecks: { reasons: [] }, targetPosition: 1, rawSignal: 1, riskAdjustedSignal: 1, orderOutcome: "accepted", createdAt: "2026-06-24T10:30:00.000Z" },
+      { id: "d2", traceId: "trace-2", symbol: "BTC/USD", decision: "block", reason: "stale data", riskChecks: { reasons: ["stale_data"] }, targetPosition: 0, rawSignal: 1, riskAdjustedSignal: 0, orderOutcome: "none", provenance, comparable: true, createdAt: "2026-06-24T11:00:00.000Z" },
+      { id: "d1", traceId: "trace-1", symbol: "BTC/USD", decision: "enter", reason: "trend", riskChecks: { reasons: [] }, targetPosition: 1, rawSignal: 1, riskAdjustedSignal: 1, orderOutcome: "accepted", provenance, comparable: true, createdAt: "2026-06-24T10:30:00.000Z" },
     ],
     traces: [
-      { id: "d2", traceId: "trace-2", symbol: "BTC/USD", decision: "block", reason: "stale data", riskChecks: { reasons: ["stale_data"] }, features: {}, thresholds: {}, targetPosition: 0, rawSignal: 1, riskAdjustedSignal: 0, orderOutcome: "none", createdAt: "2026-06-24T11:00:00.000Z", snapshots: [{ id: "snap-2", symbol: "BTC/USD", source: "Alpaca crypto snapshot", feed: "us", stale: true, observedAt: "2026-06-24T10:58:00.000Z" }] },
-      { id: "d1", traceId: "trace-1", symbol: "BTC/USD", decision: "enter", reason: "trend", riskChecks: { reasons: [] }, features: { fastAverage: 101 }, thresholds: { fast: 5 }, targetPosition: 1, rawSignal: 1, riskAdjustedSignal: 1, orderOutcome: "accepted", createdAt: "2026-06-24T10:30:00.000Z", snapshots: [{ id: "snap-1", symbol: "BTC/USD", source: "Alpaca crypto snapshot", feed: "us", stale: false, observedAt: "2026-06-24T10:30:00.000Z" }] },
+      { id: "d2", traceId: "trace-2", symbol: "BTC/USD", decision: "block", reason: "stale data", riskChecks: { reasons: ["stale_data"] }, features: {}, thresholds: {}, targetPosition: 0, rawSignal: 1, riskAdjustedSignal: 0, orderOutcome: "none", createdAt: "2026-06-24T11:00:00.000Z", snapshots: [{ id: "snap-2", symbol: "BTC/USD", source: "Alpaca crypto snapshot", feed: "us", stale: true, observedAt: "2026-06-24T10:58:00.000Z", datasetHash: `sha256:${"d".repeat(64)}` }] },
+      { id: "d1", traceId: "trace-1", symbol: "BTC/USD", decision: "enter", reason: "trend", riskChecks: { reasons: [] }, features: { fastAverage: 101 }, thresholds: { fast: 5 }, targetPosition: 1, rawSignal: 1, riskAdjustedSignal: 1, orderOutcome: "accepted", createdAt: "2026-06-24T10:30:00.000Z", snapshots: [{ id: "snap-1", symbol: "BTC/USD", source: "Alpaca crypto snapshot", feed: "us", stale: false, observedAt: "2026-06-24T10:30:00.000Z", datasetHash: `sha256:${"e".repeat(64)}` }] },
     ],
     orders: [{ id: "order-row-1", paperOrderId: "paper-1", status: "accepted", payload: { side: "buy", notional: 50, qty: 0.001, timeInForce: "gtc", referencePrice: 50_000 }, createdAt: "2026-06-24T10:30:01.000Z", updatedAt: "2026-06-24T10:30:01.000Z" }],
     metrics: [{ name: "stale_data_rate", value: 0.5, unit: "ratio", asOf: "2026-06-24T11:00:00.000Z" }],
@@ -38,7 +54,12 @@ test("builds exportable strategy experiment report from persisted run evidence",
 
   expect(report).toMatchObject({
     reportVersion: "strategy-experiment-v1",
-    run: { id: "run-1", strategyId: "moving-average-trend", status: "paper" },
+    run: { id: "run-1", backtestId: "backtest-1", strategyId: "moving-average-trend", status: "paper", comparable: true },
+    provenance: {
+      run: { gitCommit: provenance.gitCommit, datasetHash: provenance.datasetHash },
+      decisionDatasetHashes: [provenance.datasetHash],
+      snapshotDatasetHashes: [`sha256:${"d".repeat(64)}`, `sha256:${"e".repeat(64)}`],
+    },
     assumptions: { executionMode: "paper", paperApproval: { budget: 250 }, schedule: { intervalMinutes: 15 } },
     dataCoverage: {
       decisionCount: 2,

@@ -1,6 +1,7 @@
 import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { createApp } from "./app";
 import { createStore } from "./store";
+import { resolveCodeIdentity } from "./strategy-provenance";
 
 process.on("uncaughtException", error => {
   if (error instanceof Error && error.message.startsWith("WebSocket is not open")) {
@@ -14,6 +15,7 @@ const port = Number(process.env.PORT ?? 3000);
 const app = createApp({
   alpaca: new Alpaca({ paper: true, timeoutMs: 10_000 }),
   store: createStore(),
+  codeIdentity: resolveCodeIdentity(),
   env: process.env,
 });
 

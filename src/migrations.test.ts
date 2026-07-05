@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { migrateDatabase, SCHEMA_MIGRATIONS, type SchemaMigration } from "./migrations";
 import { createStore } from "./store";
+import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "./strategy-provenance";
 
 function temporaryDatabase(name: string) {
   const directory = mkdtempSync(join(tmpdir(), "ai-broker-migration-"));
@@ -60,6 +61,10 @@ test("upgrades an 0011 database fixture without losing legacy rows", () => {
     legacy.query("INSERT INTO schema_migrations (id, name, checksum) VALUES (?, ?, ?)")
       .run(ledgerMigration.id, ledgerMigration.name, ledgerMigration.checksum);
     migrateDatabase(legacy, SCHEMA_MIGRATIONS.slice(0, 11));
+    legacy.query(`INSERT INTO strategy_runs
+      (id, strategy_id, strategy_version, status, config_hash, policy_version, symbols, budget, config)
+      VALUES (?, ?, ?, 'shadow', ?, ?, ?, 0, ?)`)
+      .run("legacy-run", "moving-average-trend", "strategy-plugin-v1", "sha256:legacy", "crypto-shadow-v1", JSON.stringify(["BTC/USD"]), JSON.stringify({ fast: 5, slow: 20 }));
     legacy.run(`INSERT INTO account_activities
       (activity_id, type, category, status, occurred_at, symbol, side, quantity, price, amount)
       VALUES ('legacy-fill', 'FILL', 'trade', 'executed', '2026-01-02T10:00:00.000Z', 'AAPL', 'buy', 1, 100, -100)`);
@@ -68,9 +73,10 @@ test("upgrades an 0011 database fixture without losing legacy rows", () => {
     legacy.close();
 
     const upgraded = createStore(filename);
-    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0012", expected: true });
+    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0013", expected: true });
     expect(upgraded.activities()).toMatchObject([{ id: "legacy-fill", symbol: "AAPL", corporateAction: null }]);
     expect(upgraded.portfolioSnapshots()).toEqual([{ snapshotDate: "2026-01-02", equity: 10_000 }]);
+    expect(upgraded.getStrategyRun("legacy-run")).toMatchObject({ backtestId: null, provenance: null, comparable: false });
     upgraded.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -82,8 +88,31 @@ test("restores a serialized backup with migrations and audit chains intact", () 
   const restoredFilename = join(directory, "restored.sqlite");
   const source = createStore(sourceFilename);
   try {
+    const definitionHash = canonicalHash({ strategyId: "moving-average-trend", symbols: ["BTC/USD"] });
+    const provenance = {
+      gitCommit: "a".repeat(40),
+      workingTreeDirty: false,
+      pluginVersion: "strategy-plugin-v1",
+      featureSchemaVersion: STRATEGY_FEATURE_SCHEMA_VERSION,
+      policyVersion: "crypto-shadow-v1",
+      definitionHash,
+      provider: "Alpaca Market Data API",
+      feed: "us",
+      query: { start: "2026-01-01T00:00:00.000Z", end: "2026-01-03T00:00:00.000Z", timeframe: "1Hour", symbols: ["BTC/USD"] },
+      datasetHash: canonicalHash([100, 101]),
+    };
+    source.strategyBacktest({
+      id: "restore-backtest",
+      actor: "restore-test",
+      strategyId: "moving-average-trend",
+      definitionHash,
+      provenance: { ...provenance, policyVersion: "crypto-backtest-v1" },
+      request: { strategyId: "moving-average-trend" },
+      result: { totalReturnPercent: 1 },
+    });
     source.createStrategyRun({
       id: "restore-run",
+      backtestId: "restore-backtest",
       strategyId: "moving-average-trend",
       strategyVersion: "strategy-plugin-v1",
       status: "shadow",
@@ -92,6 +121,7 @@ test("restores a serialized backup with migrations and audit chains intact", () 
       symbols: ["BTC/USD"],
       budget: 0,
       config: { fast: 5, slow: 20 },
+      provenance,
     });
     source.strategyAudit({
       runId: "restore-run",
@@ -129,7 +159,8 @@ test("restores a serialized backup with migrations and audit chains intact", () 
     writeFileSync(restoredFilename, backup.bytes);
 
     const restored = createStore(restoredFilename);
-    expect(restored.getStrategyRun("restore-run")).toMatchObject({ status: "shadow", configHash: "sha256:restore" });
+    expect(restored.getStrategyRun("restore-run")).toMatchObject({ status: "shadow", configHash: "sha256:restore", backtestId: "restore-backtest", comparable: true });
+    expect(restored.getStrategyBacktest("restore-backtest")).toMatchObject({ actor: "restore-test", provenance: { datasetHash: provenance.datasetHash } });
     expect(restored.verifyStrategyAuditTrail("restore-run")).toEqual({ valid: true, entries: 2, invalidEntryId: null });
     expect(restored.verifyDecisionAuditTrail()).toEqual({ valid: true, entries: 2, invalidEntryId: null });
     expect(restored.schemaMigrations()).toHaveLength(SCHEMA_MIGRATIONS.length);

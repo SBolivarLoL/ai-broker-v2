@@ -1,10 +1,40 @@
 import { expect, test } from "bun:test";
 import { encryptSecretValue } from "./secret-vault";
 import { createStore } from "./store";
+import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "./strategy-provenance";
+
+const gitCommit = "a".repeat(40);
+
+function experimentFields(store: ReturnType<typeof createStore>, runId: string, strategyId: string, strategyVersion: string, policyVersion: string, symbols = ["BTC/USD"]) {
+  const backtestId = `${runId}-backtest`;
+  const definitionHash = canonicalHash({ runId, strategyId, symbols });
+  const base = {
+    gitCommit,
+    workingTreeDirty: false,
+    pluginVersion: strategyVersion,
+    featureSchemaVersion: STRATEGY_FEATURE_SCHEMA_VERSION,
+    definitionHash,
+    provider: "Alpaca Market Data API",
+    feed: "us",
+    query: { start: "2026-06-01T00:00:00.000Z", end: "2026-06-24T00:00:00.000Z", timeframe: "1Hour", symbols },
+    datasetHash: canonicalHash({ runId, bars: [100, 101] }),
+  };
+  store.strategyBacktest({
+    id: backtestId,
+    actor: "tester",
+    strategyId,
+    definitionHash,
+    provenance: { ...base, policyVersion: "crypto-backtest-v1" },
+    request: { strategyId, symbols },
+    result: { totalReturnPercent: 1 },
+  });
+  return { backtestId, provenance: { ...base, policyVersion } };
+}
 
 test("persists strategy runs, snapshots, decisions and trace reconstruction", () => {
   const store = createStore(":memory:");
   store.createStrategyRun({
+    ...experimentFields(store, "run-1", "mean-reversion", "1.0.0", "crypto-paper-v1"),
     id: "run-1",
     strategyId: "mean-reversion",
     strategyVersion: "1.0.0",
@@ -25,6 +55,7 @@ test("persists strategy runs, snapshots, decisions and trace reconstruction", ()
     observedAt: "2026-06-24T10:00:00.000Z",
     stale: false,
     latencyMs: 42,
+    datasetHash: canonicalHash({ bid: 100, ask: 101 }),
     payload: { bid: 100, ask: 101 },
   });
   store.strategyDecision({
@@ -42,6 +73,7 @@ test("persists strategy runs, snapshots, decisions and trace reconstruction", ()
     riskAdjustedSignal: 0.6,
     targetPosition: 100,
     reason: "Mean reversion entry passed liquidity gate",
+    provenance: store.getStrategyRun("run-1")!.provenance,
     draftOrder: { side: "buy", notional: 100 },
   });
   store.strategyMetric({ runId: "run-1", name: "stale_data_rate", value: 0, unit: "ratio", asOf: "2026-06-24T10:00:00.000Z" });
@@ -63,6 +95,7 @@ test("persists strategy runs, snapshots, decisions and trace reconstruction", ()
 test("updates strategy run status and stores notes", () => {
   const store = createStore(":memory:");
   store.createStrategyRun({
+    ...experimentFields(store, "run-2", "trend", "1.0.0", "crypto-paper-v1", ["ETH/USD"]),
     id: "run-2",
     strategyId: "trend",
     strategyVersion: "1.0.0",
@@ -82,9 +115,57 @@ test("updates strategy run status and stores notes", () => {
   store.close();
 });
 
+test("keeps persisted backtests immutable and rejects dirty provenance for comparable runs", () => {
+  const store = createStore(":memory:");
+  const clean = experimentFields(store, "run-clean", "moving-average-trend", "strategy-plugin-v1", "crypto-shadow-v1");
+  expect(store.getStrategyBacktest(clean.backtestId)).toMatchObject({ comparable: true, provenance: { workingTreeDirty: false } });
+  expect(() => store.strategyBacktest({
+    id: clean.backtestId,
+    actor: "tester",
+    strategyId: "moving-average-trend",
+    definitionHash: clean.provenance.definitionHash,
+    provenance: { ...clean.provenance, policyVersion: "crypto-backtest-v1" },
+    request: {},
+    result: {},
+  })).toThrow();
+
+  const dirtyBacktestId = "dirty-backtest";
+  const dirty = { ...clean.provenance, workingTreeDirty: true, policyVersion: "crypto-backtest-v1" };
+  store.strategyBacktest({ id: dirtyBacktestId, actor: "tester", strategyId: "moving-average-trend", definitionHash: dirty.definitionHash, provenance: dirty, request: {}, result: {} });
+  expect(store.getStrategyBacktest(dirtyBacktestId)).toMatchObject({ comparable: false });
+  expect(() => store.createStrategyRun({
+    id: "dirty-run",
+    backtestId: dirtyBacktestId,
+    strategyId: "moving-average-trend",
+    strategyVersion: dirty.pluginVersion,
+    status: "shadow",
+    configHash: canonicalHash({}),
+    policyVersion: "crypto-shadow-v1",
+    symbols: ["BTC/USD"],
+    budget: 0,
+    config: {},
+    provenance: { ...dirty, policyVersion: "crypto-shadow-v1" },
+  })).toThrow("does not match its reviewed backtest");
+  expect(() => store.createStrategyRun({
+    id: "new-commit-run",
+    backtestId: clean.backtestId,
+    strategyId: "moving-average-trend",
+    strategyVersion: clean.provenance.pluginVersion,
+    status: "shadow",
+    configHash: canonicalHash({}),
+    policyVersion: "crypto-shadow-v1",
+    symbols: ["BTC/USD"],
+    budget: 0,
+    config: {},
+    provenance: { ...clean.provenance, gitCommit: "b".repeat(40) },
+  })).toThrow("does not match its reviewed backtest");
+  store.close();
+});
+
 test("stores hash-chained strategy audit trail with retention metadata", () => {
   const store = createStore(":memory:");
   store.createStrategyRun({
+    ...experimentFields(store, "run-audit", "moving-average-trend", "strategy-plugin-v1", "crypto-shadow-v1"),
     id: "run-audit",
     strategyId: "moving-average-trend",
     strategyVersion: "strategy-plugin-v1",
@@ -165,6 +246,7 @@ test("exports operational readiness evidence for migrations backups observabilit
   store.event("otel.span", "tester", { traceId: "trace-ops", name: "strategy.tick", status: "ok" });
   store.event("strategy.scheduler.error", "scheduler", { runId: "run-ops", error: "test failure" });
   store.createStrategyRun({
+    ...experimentFields(store, "run-ops", "moving-average-trend", "1.0.0", "crypto-shadow-v1"),
     id: "run-ops",
     strategyId: "moving-average-trend",
     strategyVersion: "1.0.0",
@@ -205,6 +287,7 @@ test("exports operational readiness evidence for migrations backups observabilit
 test("filters strategy decisions and exposes linked order outcomes", () => {
   const store = createStore(":memory:");
   store.createStrategyRun({
+    ...experimentFields(store, "run-3", "moving-average-trend", "1.0.0", "crypto-shadow-v1"),
     id: "run-3",
     strategyId: "moving-average-trend",
     strategyVersion: "1.0.0",
@@ -230,6 +313,7 @@ test("filters strategy decisions and exposes linked order outcomes", () => {
     riskAdjustedSignal: 0,
     targetPosition: 0,
     reason: "Blocked by stale crypto market data",
+    provenance: store.getStrategyRun("run-3")!.provenance,
   });
   store.strategyDecision({
     id: "decision-order",
@@ -246,6 +330,7 @@ test("filters strategy decisions and exposes linked order outcomes", () => {
     riskAdjustedSignal: 1,
     targetPosition: 1,
     reason: "Trend confirmed",
+    provenance: store.getStrategyRun("run-3")!.provenance,
     paperOrderId: "paper-1",
   });
   store.strategyOrder({ id: "strategy-order-1", runId: "run-3", decisionId: "decision-order", paperOrderId: "paper-1", status: "accepted", payload: { filledQty: 0 } });

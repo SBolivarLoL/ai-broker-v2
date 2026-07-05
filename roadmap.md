@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main`: 2026-07-01.
+Last reviewed against `main`: 2026-07-05.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -13,17 +13,17 @@ This is the only future-work inventory for AI Broker. It incorporates the former
 
 ## Review baseline
 
-The 2026-07-01 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
+The 2026-07-05 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
-| Repository | 58 production TypeScript modules, 61 test files, a 22-line Bun entry point, one request module, one migration registry, one browser HTML file, SQLite persistence | Process startup and schema migration are separated; route and browser composition remain concentrated |
-| Automated checks | 246 tests, 954 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
-| Instrumented coverage | 95.19% functions and 96.57% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
-| Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-01 |
+| Repository | 59 production TypeScript modules, 62 test files, a small Bun entry point, one request module, one migration registry, one browser HTML file, SQLite persistence | Process startup, schema migration, and strategy provenance are separated; route and browser composition remain concentrated |
+| Automated checks | 250 tests, 977 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
+| Instrumented coverage | 95.60% functions and 96.60% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
+| Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-05 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
-| Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI | The registry covers 16 sources and all 20 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
-| Strategy research | Nine deterministic plugins, 90-day bar retrieval, bar-close backtests, shadow/paper runs, traces and attribution | Useful experiment loop; not yet a rigorous out-of-sample research platform |
+| Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI | The registry covers 16 sources and all 21 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
+| Strategy research | Nine deterministic plugins, immutable linked backtests, 90-day bar retrieval, shadow/paper runs, traces and attribution | Exact code/data lineage is enforced for comparable records; long-history and genuine out-of-sample evaluation remain open |
 | Operations | OIDC proxy contract, roles, encrypted envelopes, ordered migrations, backup/export endpoints, audit chains, beta report | Fixture upgrade/restore is proven; production-sized and closed-beta drills remain external work |
 | Live trading | Unavailable by construction | Remains blocked by legal, data, beta, and deployment reviews |
 
@@ -48,8 +48,8 @@ These items should land before broadening strategy automation or adding more UI 
 4. [x] Reconcile the Strategy Lab input with the server's shared 1-90 day crypto-history bound and retain a regression test that prevents the browser/server limits from drifting.
 5. [x] Replace migration metadata-only behavior with an append-only ordered registry whose DDL and history record commit in one transaction. An 0011 fixture upgrades without losing legacy ledger/snapshot rows, failed migrations roll back, and a serialized backup starts with both audit chains valid.
 6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
-7. [ ] Persist exact Git commit, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on every backtest/run/decision that may be compared later.
-8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 20 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
+7. [x] Persist exact Git commit, dirty state, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on immutable backtests, linked runs, snapshots, and decisions. Legacy and dirty records are explicitly non-comparable and cannot be evaluated or approved.
+8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 21 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
 
 Exit gate: a route change can be tested without a real browser or real Alpaca account, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
 
@@ -58,7 +58,7 @@ Exit gate: a route change can be tested without a real browser or real Alpaca ac
 ### Experiment infrastructure
 
 1. [ ] Ingest and persist versioned crypto bars beyond the current 90-day request window. Record gaps, duplicates, timezone, feed, corrections, and immutable dataset hashes.
-2. [ ] Persist backtest experiments instead of returning browser-only results. Link each shadow run to the exact reviewed backtest, parameters, data window, costs, baselines, and code version.
+2. [x] Persist immutable backtest experiments with parameters, query window, costs, baselines, code/plugin/feature/policy versions, and dataset hash. Every new shadow run must link to one matching clean reviewed backtest.
 3. [ ] Implement genuine walk-forward evaluation: choose or freeze parameters using train data only, run untouched test windows, aggregate out-of-sample metrics, and expose train/test boundaries and leakage checks.
 4. [ ] Add rolling and anchored out-of-sample modes, a final untouched holdout period, and regime slices. Do not reuse the holdout for parameter selection.
 5. [ ] Add trade-level metrics: trade count, average holding time, gross/net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings.
@@ -188,7 +188,7 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] FIFO ledger, performance, snapshots, risk, exposure, scenario, optimizer, and constrained rebalance calculations.
 - [x] SEC filing/fact/trend evidence, official macro context, GDELT, optional Finnhub, OpenFIGI, comparables, valuation scenarios, and material 8-K monitoring.
 - [x] Evidence-bound portfolio/company agents, counter-thesis review, and receipt-linked trade journal.
-- [x] Crypto strategy plugins with strict canonical configuration, bar-close backtests, shadow/scheduled runs, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
+- [x] Crypto strategy plugins with strict canonical configuration, immutable backtests linked to comparable runs, exact code/data provenance, shadow/scheduled evaluation, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
 - [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, ordered migrations, fixture-level backup restore, export endpoints, governance reports, and beta target definitions.
 - [x] Source/output governance registry covering SEC, Treasury, BLS, FRED, BEA, OpenAI, Alpaca, news, identity, local analytics, and every current SQLite table.
 

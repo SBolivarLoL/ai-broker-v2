@@ -1,8 +1,10 @@
 import type { StrategyDecisionKind, StrategyRunStatus } from "./store";
+import type { StrategyProvenance } from "./strategy-provenance";
 import { strategyPaperState } from "./strategy-paper";
 
 type StrategyRunDashboardInput = {
   id: string;
+  backtestId?: string | null;
   strategyId: string;
   strategyVersion: string;
   status: StrategyRunStatus;
@@ -11,6 +13,8 @@ type StrategyRunDashboardInput = {
   symbols: string[];
   budget: number;
   config: any;
+  provenance?: StrategyProvenance | null;
+  comparable?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -113,6 +117,7 @@ export function buildStrategyDashboard(input: {
     generatedAt,
     run: {
       id: input.run.id,
+      backtestId: input.run.backtestId ?? null,
       strategyId: input.run.strategyId,
       strategyVersion: input.run.strategyVersion,
       status: input.run.status,
@@ -122,6 +127,8 @@ export function buildStrategyDashboard(input: {
       policyVersion: input.run.policyVersion,
       createdAt: input.run.createdAt,
       updatedAt: input.run.updatedAt,
+      provenance: input.run.provenance ?? null,
+      comparable: input.run.comparable ?? false,
     },
     dataCoverage: {
       decisionCount: input.decisions.length,

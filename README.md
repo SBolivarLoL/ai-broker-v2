@@ -35,7 +35,7 @@ SEC_USER_AGENT=ai-broker-v2 your-monitored-email@example.com
 - Portfolio performance, FIFO ledger, risk, exposure, scenarios, optimizer proposals, and constrained rebalance planning.
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
-- Crypto strategy backtests, shadow and scheduled ticks, bounded approved paper runs, trace reconstruction, alerts, attribution, and experiment reports.
+- Immutable crypto backtests linked to shadow and scheduled runs, bounded approved paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, and reports.
 - SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, and a source/output governance registry.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
@@ -85,5 +85,7 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=<owned-symbol> bun run sm
 ## Production boundary
 
 Local development grants the demo actor all roles. Production expects a managed OIDC identity-aware proxy, same-origin requests, role headers, a 32+ character proxy secret, a 32+ character secret-vault key, and a non-placeholder SEC contact identity. See `.env.example` and `FEATURES.md` for the full boundary.
+
+Source checkouts resolve the running Git commit automatically. Packaged deployments without `.git` metadata must set `APP_GIT_COMMIT` to the full build commit; builds marked dirty are retained for audit but cannot seed comparable strategy runs.
 
 This software is an experimental paper-trading tool, not legal, tax, or investment advice. Paper results do not establish live performance or fill quality.

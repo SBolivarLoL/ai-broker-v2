@@ -5,6 +5,7 @@ import { buildStrategyExperimentReport } from "./strategy-report";
 import { draftStrategyPaperOrder, evaluateStrategyPaperRiskPolicy, parseStrategyPaperApproval } from "./strategy-paper";
 import { buildClosedBetaEvidenceReport } from "./production-governance";
 import { createStore } from "./store";
+import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "./strategy-provenance";
 
 const bars: BacktestBar[] = [
   { timestamp: "2026-06-24T10:00:00.000Z", close: 100 },
@@ -19,8 +20,31 @@ describe("strategy backend system flow", () => {
     try {
       const params = parseStrategyParams("moving-average-trend", { exposure: 0.5 });
       const config = { symbols: ["BTC/USD"], strategyId: "moving-average-trend", params, timeframe: "1Hour", days: 30, mode: "shadow" };
+      const definitionHash = canonicalHash({ symbols: config.symbols, strategyId: config.strategyId, params, timeframe: config.timeframe, days: config.days });
+      const provenance = {
+        gitCommit: "a".repeat(40),
+        workingTreeDirty: false,
+        pluginVersion: "strategy-plugin-v1",
+        featureSchemaVersion: STRATEGY_FEATURE_SCHEMA_VERSION,
+        policyVersion: "crypto-shadow-v1",
+        definitionHash,
+        provider: "Alpaca Market Data API",
+        feed: "us",
+        query: { start: "2026-05-25T00:00:00.000Z", end: "2026-06-24T00:00:00.000Z", timeframe: "1Hour", symbols: ["BTC/USD"] },
+        datasetHash: canonicalHash(bars),
+      };
+      store.strategyBacktest({
+        id: "backtest-defaults",
+        actor: "system-test",
+        strategyId: "moving-average-trend",
+        definitionHash,
+        provenance: { ...provenance, policyVersion: "crypto-backtest-v1" },
+        request: config,
+        result: { points: bars.length },
+      });
       store.createStrategyRun({
         id: "run-defaults",
+        backtestId: "backtest-defaults",
         strategyId: "moving-average-trend",
         strategyVersion: "strategy-plugin-v1",
         status: "shadow",
@@ -29,6 +53,7 @@ describe("strategy backend system flow", () => {
         symbols: ["BTC/USD"],
         budget: 0,
         config,
+        provenance,
       });
 
       const stored = store.getStrategyRun("run-defaults")!;

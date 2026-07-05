@@ -45,6 +45,7 @@ import { buildStrategyDashboard } from "./strategy-dashboard";
 import { buildStrategyExecutionReplay } from "./strategy-execution-replay";
 import { draftStrategyPaperOrder, evaluateStrategyPaperRiskPolicy, parseStrategyPaperApproval, strategyPaperState, type StrategyPaperApproval } from "./strategy-paper";
 import { buildStrategyPerformance } from "./strategy-performance";
+import { canonicalHash, STRATEGY_BACKTEST_POLICY_VERSION, STRATEGY_FEATURE_SCHEMA_VERSION, type CodeIdentity, type StrategyProvenance } from "./strategy-provenance";
 import { buildStrategyExperimentReport } from "./strategy-report";
 import { parseStrategyReview, withStrategyReviewConfig } from "./strategy-review";
 import { normalizeStrategySchedule, parseStrategyIntervalMinutes, strategyRunIsDue, withNextStrategySchedule } from "./strategy-scheduler";
@@ -99,9 +100,9 @@ function authorizeRoute(auth: AuthContext, path: string, method: string) {
 
 type AppEnvironment = Record<string, string | undefined>;
 type AppStore = ReturnType<typeof createStore>;
-export type AppDependencies = { alpaca: Alpaca; store: AppStore; env?: AppEnvironment; indexPath?: string };
+export type AppDependencies = { alpaca: Alpaca; store: AppStore; codeIdentity: CodeIdentity; env?: AppEnvironment; indexPath?: string };
 
-export function createApp({ alpaca, store, env = process.env, indexPath = "src/index.html" }: AppDependencies) {
+export function createApp({ alpaca, store, codeIdentity, env = process.env, indexPath = "src/index.html" }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
   const allow = rateLimiter();
 
@@ -422,7 +423,39 @@ function normalizeStrategySymbols(strategyId: string, rawSymbols: unknown) {
 }
 
 async function strategyConfigHash(config: unknown) {
-  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(config))).then(bytes => `sha256:${[...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("")}`);
+  return canonicalHash(config);
+}
+
+function strategyDefinition(symbols: string[], strategyId: string, params: Record<string, unknown>, timeframe: string, days: number) {
+  return { symbols, strategyId, params, timeframe, days };
+}
+
+function withoutAsOf<T extends { asOf: string }>(value: T): Omit<T, "asOf"> {
+  const { asOf: _, ...content } = value;
+  return content;
+}
+
+function strategyProvenance(input: {
+  pluginVersion: string;
+  policyVersion: string;
+  definitionHash: string;
+  start: Date;
+  end: Date;
+  timeframe: string;
+  symbols: string[];
+  datasetHash: string;
+}): StrategyProvenance {
+  return {
+    ...codeIdentity,
+    pluginVersion: input.pluginVersion,
+    featureSchemaVersion: STRATEGY_FEATURE_SCHEMA_VERSION,
+    policyVersion: input.policyVersion,
+    definitionHash: input.definitionHash,
+    provider: "Alpaca Market Data API",
+    feed: "us",
+    query: { start: input.start.toISOString(), end: input.end.toISOString(), timeframe: input.timeframe, symbols: input.symbols },
+    datasetHash: input.datasetHash,
+  };
 }
 
 function strategyAuditSnapshot(run: StrategyRunRecord | null | undefined) {
@@ -463,7 +496,7 @@ function recordStrategyAudit(actor: string, kind: string, subject: string, befor
   }
 }
 
-async function recordStrategyBlock(run: StrategyRunRecord, actor: string, symbol: string, reasonCode: string, reason: string, trigger: StrategyTickTrigger, mode = run.status, tickStartedAt = Date.now(), traceId = crypto.randomUUID()) {
+async function recordStrategyBlock(run: StrategyRunRecord, actor: string, symbol: string, reasonCode: string, reason: string, trigger: StrategyTickTrigger, provenance: StrategyProvenance, dataSnapshotIds: string[], mode = run.status, tickStartedAt = Date.now(), traceId = crypto.randomUUID()) {
   const decisionId = crypto.randomUUID(), receiptId = crypto.randomUUID();
   const config = run.config as { params?: Record<string, unknown> };
   store.strategyDecision({
@@ -476,11 +509,12 @@ async function recordStrategyBlock(run: StrategyRunRecord, actor: string, symbol
     weights: {},
     thresholds: config.params ?? {},
     riskChecks: { allowed: false, mode, trigger, submittedOrder: false, reasons: [reasonCode], intendedAction: "missed" },
-    dataSnapshotIds: [],
+    dataSnapshotIds,
     rawSignal: null,
     riskAdjustedSignal: null,
     targetPosition: null,
     reason,
+    provenance,
   });
   const trace = store.getStrategyDecisionTrace(traceId);
   const asOf = new Date().toISOString();
@@ -577,9 +611,11 @@ function recordStrategyPerformanceMetrics(runId: string, performance: any) {
 async function evaluateStrategyRun(run: StrategyRunRecord, actor: string, trigger: StrategyTickTrigger) {
   const tickStartedAt = Date.now(), traceId = crypto.randomUUID();
   if (!["shadow", "paper"].includes(run.status)) throw new ClientError("Only shadow or approved paper runs can be evaluated by this endpoint", 409);
+  if (!run.backtestId || !run.provenance || !run.comparable) throw new ClientError("Legacy strategy runs cannot be evaluated without a reviewed backtest; create a new run", 409);
   const config = run.config as { symbols: string[]; strategyId: string; params?: Record<string, unknown>; timeframe: string; days: number };
   const symbols = config.symbols;
   const symbol = symbols[0]!;
+  const strategy = strategyPluginFromId(config.strategyId, config.params ?? {});
   const end = new Date(), start = new Date(end.getTime() - config.days * 86_400_000);
   const requestedSymbols = symbols.join(",");
   const dataStartedAt = Date.now();
@@ -589,18 +625,37 @@ async function evaluateStrategyRun(run: StrategyRunRecord, actor: string, trigge
     alpaca.marketData.crypto.cryptoLatestOrderbooks({ loc: "us", symbols: requestedSymbols }).then(result => result.orderbooks ?? {}).catch(() => ({})),
   ]);
   recordStrategySpan(actor, { traceId, name: "strategy.market_data.fetch", startedAt: dataStartedAt, endedAt: Date.now(), attributes: { runId: run.id, symbol, symbols, timeframe: config.timeframe, days: config.days } });
-  const bars = barsBySymbol[symbol] ?? [];
+  const ingestStartedAt = Date.now();
+  const barDataset = cryptoBarsDto({ symbols, timeframe: config.timeframe, start, end, bars: barsBySymbol });
+  const normalizedBarsBySymbol = barDataset.bars;
+  const bars = normalizedBarsBySymbol[symbol] ?? [];
+  const snapshotResult = cryptoSnapshotDto({ symbols, snapshots: snapshotResponse, orderbooks: orderbookResponse, receivedAt: new Date() });
+  const snapshotEvidence = {
+    source: snapshotResult.source,
+    feed: snapshotResult.feed,
+    records: snapshotResult.records.map(({ id: _, ...record }) => record),
+  };
+  for (const record of snapshotResult.records) {
+    const { id: _, ...content } = record;
+    store.strategyDataSnapshot({ ...record, runId: run.id, datasetHash: canonicalHash(content) });
+  }
+  const provenance = strategyProvenance({
+    pluginVersion: strategy.version,
+    policyVersion: run.policyVersion,
+    definitionHash: run.provenance.definitionHash,
+    start,
+    end,
+    timeframe: config.timeframe,
+    symbols,
+    datasetHash: canonicalHash({ bars: withoutAsOf(barDataset), snapshots: snapshotEvidence }),
+  });
+  recordStrategySpan(actor, { traceId, name: "strategy.market_data.ingest", startedAt: ingestStartedAt, endedAt: Date.now(), attributes: { runId: run.id, symbol, snapshotCount: snapshotResult.records.length, staleSnapshotCount: snapshotResult.records.filter(record => record.stale).length } });
   if (!bars.length) {
     recordStrategySpan(actor, { traceId, name: "strategy.tick", startedAt: tickStartedAt, endedAt: Date.now(), status: "error", error: "data_unavailable", attributes: { runId: run.id, symbol, mode: run.status, trigger } });
-    return recordStrategyBlock(run, actor, symbol, "data_unavailable", "Strategy tick missed because no crypto bars were available.", trigger, run.status, tickStartedAt, traceId);
+    return recordStrategyBlock(run, actor, symbol, "data_unavailable", "Strategy tick missed because no crypto bars were available.", trigger, provenance, snapshotResult.records.map(record => record.id), run.status, tickStartedAt, traceId);
   }
-  const ingestStartedAt = Date.now();
-  const snapshotResult = cryptoSnapshotDto({ symbols, snapshots: snapshotResponse, orderbooks: orderbookResponse, receivedAt: new Date() });
-  for (const record of snapshotResult.records) store.strategyDataSnapshot({ ...record, runId: run.id });
-  recordStrategySpan(actor, { traceId, name: "strategy.market_data.ingest", startedAt: ingestStartedAt, endedAt: Date.now(), attributes: { runId: run.id, symbol, snapshotCount: snapshotResult.records.length, staleSnapshotCount: snapshotResult.records.filter(record => record.stale).length } });
   const featureStartedAt = Date.now();
-  const strategy = strategyPluginFromId(config.strategyId, config.params ?? {});
-  const decisionOutput = evaluateStrategyPlugin(strategy, bars, bars.length - 1, symbol, { histories: barsBySymbol, snapshots: Object.fromEntries(snapshotResult.records.map(record => [record.symbol, record])) });
+  const decisionOutput = evaluateStrategyPlugin(strategy, bars, bars.length - 1, symbol, { histories: normalizedBarsBySymbol, snapshots: Object.fromEntries(snapshotResult.records.map(record => [record.symbol, record])) });
   recordStrategySpan(actor, { traceId, name: "strategy.feature_calculation", startedAt: featureStartedAt, endedAt: Date.now(), attributes: { runId: run.id, symbol, strategyId: strategy.id, strategyVersion: strategy.version, bars: bars.length } });
   const riskStartedAt = Date.now();
   const hasStaleData = snapshotResult.records.some(record => record.stale);
@@ -715,6 +770,7 @@ async function evaluateStrategyRun(run: StrategyRunRecord, actor: string, trigge
     riskAdjustedSignal: finalReasons.length ? 0 : decisionOutput.risk.riskAdjustedSignal,
     targetPosition: finalReasons.length ? 0 : decisionOutput.targetExposure,
     reason: orderError ? `Paper order was blocked by broker response: ${orderError}` : hasStaleData ? `Blocked by stale crypto market data; intended action was ${intendedAction}.` : paperPolicyBlocked ? `Blocked by crypto paper risk policy: ${finalReasons.join(", ")}.` : operationalPolicyBlocked ? `Blocked by global operations policy: ${finalReasons.join(", ")}.` : targetWithinBand ? "Approved paper run is already within the target exposure band." : decisionOutput.reason,
+    provenance,
     draftOrder: paperDraft?.order ?? undefined,
     paperOrderId: order?.id ?? null,
   });
@@ -750,7 +806,7 @@ async function evaluateStrategyRun(run: StrategyRunRecord, actor: string, trigge
 
 async function evaluateDueShadowStrategies(actor: string) {
   const now = new Date(), runs = store.strategyRuns(100);
-  const dueRuns = runs.filter(run => strategyRunIsDue(run, now, store.strategyDecisions(run.id, 1)[0]?.createdAt ?? null));
+  const dueRuns = runs.filter(run => run.comparable && strategyRunIsDue(run, now, store.strategyDecisions(run.id, 1)[0]?.createdAt ?? null));
   const results = [];
   for (const run of dueRuns) {
     try { results.push(await evaluateStrategyRun(run, actor, "scheduler")); }
@@ -1123,13 +1179,17 @@ async function pollStrategyScheduler() {
         }
         const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
         const bars = await alpaca.marketData.getCryptoBars({ loc: "us", symbols, timeframe, start, end, limit: 10_000 } as any);
-        return json(cryptoBarsDto({ symbols, timeframe, start, end, bars }));
+        const result = cryptoBarsDto({ symbols, timeframe, start, end, bars });
+        return json({ ...result, datasetHash: canonicalHash(withoutAsOf(result)) });
       }
       if (url.pathname === "/api/strategy/crypto/snapshots" && request.method === "POST") {
         if (!allow(`${actor}:strategy-crypto-ingest`, 20)) return json({ error: "Crypto strategy ingestion rate limit exceeded" }, 429);
         const input = await requestJson(request);
         const runId = String(input.runId ?? "").trim();
         if (!runId) return json({ error: "runId is required" }, 400);
+        const run = store.getStrategyRun(runId);
+        if (!run) return json({ error: "Strategy run not found" }, 404);
+        if (!run.comparable) return json({ error: "Legacy strategy runs cannot accept comparable snapshots" }, 409);
         let symbols: string[];
         try { symbols = parseCryptoSymbols(input.symbols); }
         catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid crypto symbols", 400); }
@@ -1142,7 +1202,10 @@ async function pollStrategyScheduler() {
           alpaca.marketData.crypto.cryptoLatestOrderbooks({ loc: "us", symbols: requested }).then(result => result.orderbooks ?? {}).catch(() => ({})),
         ]);
         const result = cryptoSnapshotDto({ symbols, snapshots, orderbooks, receivedAt });
-        for (const record of result.records) store.strategyDataSnapshot({ ...record, runId });
+        for (const record of result.records) {
+          const { id: _, ...content } = record;
+          store.strategyDataSnapshot({ ...record, runId, datasetHash: canonicalHash(content) });
+        }
         recordStrategyMetricRows([
           { runId, name: "strategy_snapshot_ingested_count", value: result.records.length, unit: "count", asOf: result.asOf },
           { runId, name: "strategy_stale_snapshot_count", value: result.records.filter(record => record.stale).length, unit: "count", asOf: result.asOf },
@@ -1250,21 +1313,22 @@ async function pollStrategyScheduler() {
         if (!allow(`${actor}:strategy-backtest`, 20)) return json({ error: "Strategy backtest rate limit exceeded" }, 429);
         const input = await requestJson(request);
         const strategyId = String(input.strategyId ?? "buy-and-hold");
-        let symbols: string[], timeframe: string, days: number;
+        let symbols: string[], params: Record<string, unknown>, timeframe: string, days: number, strategyPlugin;
         try {
           symbols = normalizeStrategySymbols(strategyId, input.symbols);
+          params = parseStrategyParams(strategyId, input.params ?? {});
+          strategyPlugin = strategyPluginFromId(strategyId, params);
           timeframe = parseCryptoTimeframe(input.timeframe);
           days = parseCryptoLookbackDays(input.days);
         } catch (error) {
           throw new ClientError(error instanceof Error ? error.message : "Invalid backtest input", 400);
         }
-        let strategyPlugin;
-        try { strategyPlugin = strategyPluginFromId(strategyId, parseStrategyParams(strategyId, input.params ?? {})); }
-        catch (error) { throw new ClientError(error instanceof Error ? error.message : `strategyId must be ${STRATEGY_ID_MESSAGE}`, 400); }
         const initialCash = Number(input.initialCash ?? 10_000), feeBps = Number(input.feeBps ?? 0), slippageBps = Number(input.slippageBps ?? 5);
         const end = new Date(), start = new Date(end.getTime() - days * 86_400_000);
         const symbol = symbols[0]!;
-        const barsBySymbol = await alpaca.marketData.getCryptoBars({ loc: "us", symbols, timeframe, start, end, limit: 10_000 } as any);
+        const providerBars = await alpaca.marketData.getCryptoBars({ loc: "us", symbols, timeframe, start, end, limit: 10_000 } as any);
+        const dataset = cryptoBarsDto({ symbols, timeframe, start, end, bars: providerBars });
+        const barsBySymbol = dataset.bars;
         const bars = barsBySymbol[symbol] ?? [];
         const strategy = strategyFunctionFromPlugin(strategyPlugin, { histories: barsBySymbol }, symbol);
         const result = runBacktest({ strategyId, bars, strategy, initialCash, feeBps, slippageBps });
@@ -1274,8 +1338,36 @@ async function pollStrategyScheduler() {
         };
         const trainSize = Number(input.trainSize ?? 0), testSize = Number(input.testSize ?? 0);
         const walkForward = trainSize && testSize ? walkForwardWindows(bars, trainSize, testSize).map(window => ({ trainStart: window.trainStart, testStart: window.testStart, trainBars: window.train.length, testBars: window.test.length })) : [];
-        store.event("strategy.backtest.completed", actor, { strategyId, symbol, timeframe, days, totalReturnPercent: result.totalReturnPercent, bars: bars.length });
-        return json({ source: "Alpaca crypto historical bars", symbol, symbols, timeframe, start: start.toISOString(), end: end.toISOString(), result, baselines, walkForward, asOf: new Date().toISOString() });
+        const definition = strategyDefinition(symbols, strategyId, params, timeframe, days);
+        const definitionHash = canonicalHash(definition);
+        const provenance = strategyProvenance({
+          pluginVersion: strategyPlugin.version,
+          policyVersion: STRATEGY_BACKTEST_POLICY_VERSION,
+          definitionHash,
+          start,
+          end,
+          timeframe,
+          symbols,
+          datasetHash: canonicalHash(withoutAsOf(dataset)),
+        });
+        const backtestId = crypto.randomUUID();
+        const output = { source: dataset.source, feed: dataset.feed, symbol, symbols, timeframe, start: dataset.start, end: dataset.end, result, baselines, walkForward, asOf: dataset.asOf };
+        store.strategyBacktest({
+          id: backtestId,
+          actor,
+          strategyId,
+          definitionHash,
+          provenance,
+          request: { ...definition, initialCash, feeBps, slippageBps, trainSize, testSize },
+          result: output,
+        });
+        store.event("strategy.backtest.completed", actor, { backtestId, strategyId, symbol, timeframe, days, datasetHash: provenance.datasetHash, totalReturnPercent: result.totalReturnPercent, bars: bars.length });
+        return json({ backtestId, provenance, ...output }, 201);
+      }
+      const strategyBacktestMatch = request.method === "GET" && url.pathname.match(/^\/api\/strategy\/backtests\/([^/]+)$/);
+      if (strategyBacktestMatch) {
+        const backtest = store.getStrategyBacktest(decodeURIComponent(strategyBacktestMatch[1]!));
+        return backtest && backtest.actor === actor ? json(backtest) : json({ error: "Strategy backtest not found" }, 404);
       }
       if (url.pathname === "/api/strategy/runs" && request.method === "GET") return json({ runs: store.strategyRuns(), asOf: new Date().toISOString() });
       if (url.pathname === "/api/strategy/runs" && request.method === "POST") {
@@ -1295,13 +1387,30 @@ async function pollStrategyScheduler() {
         let intervalMinutes: number | null;
         try { intervalMinutes = parseStrategyIntervalMinutes(input.intervalMinutes ?? input.schedule?.intervalMinutes); }
         catch (error) { throw new ClientError(error instanceof Error ? error.message : "Invalid strategy schedule", 400); }
+        const backtestId = String(input.backtestId ?? "").trim();
+        if (!backtestId) throw new ClientError("A reviewed backtestId is required", 400);
+        const backtest = store.getStrategyBacktest(backtestId);
+        if (!backtest || backtest.actor !== actor) throw new ClientError("Strategy backtest not found", 404);
+        if (!backtest.comparable) throw new ClientError("Backtests from a dirty working tree cannot seed a comparable strategy run", 409);
+        const definitionHash = canonicalHash(strategyDefinition(symbols, strategyId, params, timeframe, days));
+        if (backtest.definitionHash !== definitionHash || backtest.provenance.pluginVersion !== strategyPlugin.version || backtest.provenance.gitCommit !== codeIdentity.gitCommit || backtest.provenance.featureSchemaVersion !== STRATEGY_FEATURE_SCHEMA_VERSION) throw new ClientError("Strategy run code or configuration does not match the reviewed backtest", 409);
         const runId = crypto.randomUUID();
         const schedule = intervalMinutes ? { enabled: true, intervalMinutes, nextRunAt: new Date().toISOString() } : undefined;
-        const config = { symbols, strategyId, params, timeframe, days, mode: "shadow", ...(schedule ? { schedule } : {}) };
+        const config = { symbols, strategyId, params, timeframe, days, mode: "shadow", backtestId, ...(schedule ? { schedule } : {}) };
         const configHash = await strategyConfigHash(config);
-        store.createStrategyRun({ id: runId, strategyId, strategyVersion: "backtest-v1", status: "shadow", configHash, policyVersion: "crypto-shadow-v1", symbols, budget: 0, config, notes: String(input.notes ?? "") || null });
-        recordStrategyAudit(actor, "run_created", "strategy_run", null, store.getStrategyRun(runId), { mode: "shadow", intervalMinutes, pluginVersion: strategyPlugin.version });
-        store.event("strategy.run.created", actor, { runId, strategyId, symbols, mode: "shadow", intervalMinutes });
+        const provenance = strategyProvenance({
+          pluginVersion: strategyPlugin.version,
+          policyVersion: "crypto-shadow-v1",
+          definitionHash,
+          start: new Date(backtest.provenance.query.start),
+          end: new Date(backtest.provenance.query.end),
+          timeframe,
+          symbols,
+          datasetHash: backtest.provenance.datasetHash,
+        });
+        store.createStrategyRun({ id: runId, backtestId, strategyId, strategyVersion: strategyPlugin.version, status: "shadow", configHash, policyVersion: "crypto-shadow-v1", symbols, budget: 0, config, provenance, notes: String(input.notes ?? "") || null });
+        recordStrategyAudit(actor, "run_created", "strategy_run", null, store.getStrategyRun(runId), { mode: "shadow", intervalMinutes, pluginVersion: strategyPlugin.version, backtestId, datasetHash: provenance.datasetHash });
+        store.event("strategy.run.created", actor, { runId, backtestId, strategyId, symbols, mode: "shadow", intervalMinutes, datasetHash: provenance.datasetHash });
         return json({ runId, ...store.getStrategyRun(runId) }, 201);
       }
       if (url.pathname === "/api/strategy/scheduler/tick" && request.method === "POST") {
@@ -1315,6 +1424,7 @@ async function pollStrategyScheduler() {
         const run = store.getStrategyRun(runId);
         if (!run) return json({ error: "Strategy run not found" }, 404);
         if (!["shadow", "paused"].includes(run.status)) return json({ error: "Only shadow or paused runs can be approved for paper automation" }, 409);
+        if (!run.comparable) return json({ error: "Legacy strategy runs cannot be approved without a reviewed backtest" }, 409);
         const input = await requestJson(request);
         let approval: StrategyPaperApproval;
         try { approval = parseStrategyPaperApproval(input, actor); }
