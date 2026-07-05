@@ -9,8 +9,16 @@ afterEach(() => {
   while (stores.length) stores.pop()!.close();
 });
 
-function fakeAlpaca(accountError?: Error) {
+type FakeAlpacaOptions = {
+  accountError?: Error;
+  placementError?: Error;
+  placementGate?: Promise<void>;
+};
+
+function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   let stockConnects = 0;
+  const orderAttempts: any[] = [];
+  const acceptedOrders = new Map<string, any>();
   const stockStream = {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
     subscribeForQuotes() {}, subscribeForBars() {}, unsubscribeFromQuotes() {}, unsubscribeFromBars() {},
@@ -19,6 +27,13 @@ function fakeAlpaca(accountError?: Error) {
   const alpaca = {
     marketData: {
       stockStream: () => stockStream,
+      getLatestPrice: async () => 100,
+      stocks: {
+        stockSnapshotSingle: async () => ({
+          latestQuote: { bp: 99.9, ap: 100.1 },
+          dailyBar: { v: 1_000_000 },
+        }),
+      },
       getCryptoBars: async () => ({
         "BTC/USD": [
           { t: "2026-01-01T00:00:00.000Z", o: 100, h: 102, l: 99, c: 101, v: 10 },
@@ -34,19 +49,80 @@ function fakeAlpaca(accountError?: Error) {
       },
     },
     trading: {
-      account: { getAccount: async () => { if (accountError) throw accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, currency: "USD", status: "ACTIVE" }; } },
+      account: { getAccount: async () => { if (options.accountError) throw options.accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, currency: "USD", status: "ACTIVE" }; } },
       positions: { getAllOpenPositions: async () => [] },
-      orders: { getAllOrders: async () => [] },
+      assets: {
+        getV2AssetsSymbolOrAssetId: async ({ symbolOrAssetId }: any) => ({
+          symbol: symbolOrAssetId,
+          _class: "us_equity",
+          tradable: true,
+          fractionable: true,
+          shortable: true,
+          easyToBorrow: true,
+          marginable: true,
+        }),
+      },
+      calendar: {
+        clock: async () => ({
+          clocks: [{
+            market: { acronym: "NASDAQ" },
+            phase: "open",
+            isMarketDay: true,
+            timestamp: new Date(),
+            nextMarketOpen: new Date(Date.now() + 86_400_000),
+            nextMarketClose: new Date(Date.now() + 3_600_000),
+          }],
+        }),
+      },
+      orders: {
+        getAllOrders: async () => [],
+        market: async (input: any) => {
+          orderAttempts.push(input);
+          if (options.placementGate) await options.placementGate;
+          if (options.placementError) throw options.placementError;
+          const order = {
+            id: crypto.randomUUID(),
+            clientOrderId: input.clientOrderId,
+            symbol: input.symbol,
+            side: input.side,
+            qty: String(input.qty),
+            notional: null,
+            filledQty: "0",
+            filledAvgPrice: null,
+            type: "market",
+            orderClass: "simple",
+            timeInForce: input.timeInForce,
+            status: "accepted",
+            limitPrice: null,
+            stopPrice: null,
+            extendedHours: input.extendedHours,
+            submittedAt: new Date(),
+            filledAt: null,
+            canceledAt: null,
+            updatedAt: new Date(),
+            replacedBy: null,
+            replaces: null,
+            legs: [],
+          };
+          acceptedOrders.set(input.clientOrderId, order);
+          return order;
+        },
+        getOrderByClientOrderId: async ({ clientOrderId }: any) => {
+          const order = acceptedOrders.get(clientOrderId);
+          if (!order) throw new Error("Order not found");
+          return order;
+        },
+      },
     },
   } as unknown as Alpaca;
-  return { alpaca, stockConnects: () => stockConnects };
+  return { alpaca, stockConnects: () => stockConnects, orderAttempts };
 }
 
-function testApp(env: Record<string, string | undefined> = {}, accountError?: Error) {
+function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpacaOptions = {}) {
   const store = createStore(":memory:");
   stores.push(store);
-  const fake = fakeAlpaca(accountError);
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects };
+  const fake = fakeAlpaca(options);
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts };
 }
 
 const productionEnv = {
@@ -213,8 +289,96 @@ test("strategy API persists a reviewed backtest and exact run and decision prove
   expect(await mismatch.json()).toEqual({ error: "Strategy run code or configuration does not match the reviewed backtest" });
 });
 
+async function equityPreview(app: ReturnType<typeof testApp>, qty = 0.1) {
+  const response = await app.fetch(new Request("http://local/api/orders/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbol: "SPY", side: "buy", qty }),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
+function equitySubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
+  return app.fetch(new Request("http://local/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken, idempotencyKey }),
+  }));
+}
+
+test("equity order API persists one idempotent reviewed submission and receipt", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+  const preview = await equityPreview(app);
+  const previewToken = String(preview.previewToken);
+  expect(preview).toMatchObject({
+    allowed: true,
+    simulation: { allowed: true, estimatedNotional: 10 },
+    operationalPolicy: { allowed: true },
+    liquidity: { bid: 99.9, ask: 100.1 },
+    order: { type: "market", qty: 0.1 },
+    previewToken: expect.any(String),
+  });
+
+  const key = "api-order-idempotent";
+  const response = await equitySubmission(app, previewToken, key);
+  const order = await response.json() as any;
+  const orderId = String(order.id);
+  const receiptId = String(order.receiptId);
+  expect(response.status).toBe(200);
+  expect(order).toMatchObject({ id: expect.any(String), clientOrderId: key, symbol: "SPY", side: "buy", qty: 0.1, status: "accepted", receiptId: expect.any(String) });
+  expect(app.orderAttempts).toEqual([expect.objectContaining({ symbol: "SPY", side: "buy", qty: 0.1, clientOrderId: key })]);
+  expect(app.store.getReceipt(receiptId)).toMatchObject({ advisor: "demo-advisor", idempotencyKey: key, orderId, status: "accepted", preview: { qty: 0.1, price: 100 } });
+  expect(app.store.activeRiskReservations()).toMatchObject([{ key, status: "submitted", orderId }]);
+
+  const replay = await equitySubmission(app, previewToken, key);
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(order);
+  expect(app.orderAttempts).toHaveLength(1);
+});
+
+test("equity order API sanitizes broker failure, releases capacity, and permits retry", async () => {
+  const options: FakeAlpacaOptions = { placementError: new Error("private placement failure") };
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const preview = await equityPreview(app);
+  const key = "api-order-retry";
+
+  const failed = await equitySubmission(app, preview.previewToken, key);
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+  expect(app.store.submission(key)).toBeNull();
+  expect(app.store.activeRiskReservations()).toEqual([]);
+
+  options.placementError = undefined;
+  const retried = await equitySubmission(app, preview.previewToken, key);
+  expect(retried.status).toBe(200);
+  expect(await retried.json()).toMatchObject({ clientOrderId: key, status: "accepted" });
+  expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("concurrent equity submissions cannot stack beyond transactional risk capacity", async () => {
+  let releasePlacement!: () => void;
+  const placementGate = new Promise<void>(resolve => { releasePlacement = resolve; });
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { placementGate });
+  const preview = await equityPreview(app, 0.25);
+  const accepted = Array.from({ length: 4 }, (_, index) => equitySubmission(app, preview.previewToken, `capacity-order-${index}`));
+  for (let attempt = 0; attempt < 100 && app.orderAttempts.length < 4; attempt++) await Bun.sleep(1);
+  expect(app.orderAttempts).toHaveLength(4);
+
+  const blocked = await equitySubmission(app, preview.previewToken, "capacity-order-4");
+  expect(blocked.status).toBe(422);
+  expect(await blocked.json()).toMatchObject({ allowed: false, simulation: { allowed: false, reasons: ["Daily turnover exceeds 10% limit"] } });
+  expect(app.store.submission("capacity-order-4")).toBeNull();
+
+  releasePlacement();
+  const responses = await Promise.all(accepted);
+  expect(responses.map(response => response.status)).toEqual([200, 200, 200, 200]);
+  expect(app.orderAttempts).toHaveLength(4);
+  expect(app.store.activeRiskReservations()).toHaveLength(4);
+});
+
 test("unexpected provider errors map to a stable response without leaking details", async () => {
-  const app = testApp({}, new Error("private provider failure"));
+  const app = testApp({}, { accountError: new Error("private provider failure") });
   const response = await app.fetch(new Request("http://local/api/account"));
   expect(response.status).toBe(502);
   expect(await response.json()).toEqual({ error: "The broker service could not complete the request" });

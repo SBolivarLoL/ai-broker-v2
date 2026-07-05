@@ -80,6 +80,7 @@ test("basket risk reservations are all-or-nothing", () => {
   expect(store.activeRiskReservations()).toHaveLength(2);
   store.finishRiskReservation("basket:0", "released");
   store.finishRiskReservation("basket:1", "released");
+  expect(store.reserveRiskBasket("basket", candidates, active => ({ allowed: active.length === 0, value: active.length }))).toMatchObject({ reserved: true, keys: ["basket:0", "basket:1"] });
   store.close();
 });
 
@@ -89,5 +90,6 @@ test("abandoned pre-submission reservations expire safely", async () => {
   await Bun.sleep(3);
   expect(store.activeRiskReservations()).toEqual([]);
   expect(store.markRiskSubmitted("abandoned", "too-late")).toBe(false);
+  expect(store.reserveRisk("abandoned", { symbol: "SPY", side: "buy", qty: 1, price: 100 }, () => ({ allowed: true, value: null }))).toMatchObject({ reserved: true });
   store.close();
 });

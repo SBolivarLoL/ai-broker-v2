@@ -8,12 +8,12 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-05 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 251 tests, 0 failures, 978 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
-| `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
-| `bun run coverage` | Pass: 95.60% functions, 96.60% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
+| `bun run check` | Pass: 254 tests, 0 failures, 1,006 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run eval` | Pass: 39 tests, 0 failures, 177 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
+| `bun run coverage` | Pass: 95.67% functions, 96.67% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 17.90% of functions and 77.98% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. `tsconfig.json` includes `src/` and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
+Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 22.22% of functions and 80.67% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. `tsconfig.json` includes `src/` and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
 
 ## Repository review evidence
 
@@ -39,13 +39,13 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Area | Current confidence | Evidence | Open gap |
 | --- | --- | --- | --- |
 | Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
-| Order policy and signatures | High at module level | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests | Route-level tests and real broker race drills are incomplete |
+| Order policy and signatures | High for modules and the standard equity route | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests plus direct equity preview/submission, retry, and concurrent-capacity contracts | Linked, basket, option, crypto, reconciliation, and real broker race drills remain incomplete |
 | Strategy decisions | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable backtest, linked run, dataset hash, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No genuine out-of-sample walk-forward scoring, versioned long-history dataset, or long paper cohort yet |
 | Persistence and audit | Good for current schema | Ordered transactional migrations through 0013, legacy upgrade fixture, immutable backtest constraints, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
 | Data governance | Complete code inventory, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 21 SQLite tables, references, terms URLs, and fail-closed live-use decisions | Internal classifications are not legal approval; no automatic retention enforcement exists |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
-| HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, and direct common-contract tests across all route families | Broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
+| HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, and standard equity order success/failure/concurrency tests | Other broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
 | Operational scripts | Good static confidence | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist | Most provider behavior requires credentials and is not executed in CI |
 | Browser UI | Targeted interaction confidence | Isolated 2026-07-05 browser check verified disabled creation, successful backtest unlock, linked shadow creation, input invalidation, layout, and a clean console | No maintained automated accessibility/responsive regression suite |
 | Production operations | Code artifacts plus fixture restore proof | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test | No production-sized or closed-beta restore drill, deployment, real participants, or external approval |
@@ -96,6 +96,8 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Actionable advisor ideas require unexpired simulation authority matching symbol, side, quantity, policy, portfolio state, and the reviewed plan.
 - Order confirmation reloads relevant broker and market state and rejects invalid signatures, expiry, drift, capacity, exposure, turnover, or incomplete evidence.
 - Local reservations and working broker orders consume projected capacity, preventing concurrent order stacking.
+- Failed equity placement releases the pending submission and reservation so the same idempotency key can retry; released and expired reservation rows no longer strand capacity.
+- Concurrent standard equity submissions are serialized through SQLite reservation validation and cannot cross the rolling-turnover limit.
 - Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
 - Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
 - Comparable strategy records require an immutable matching backtest and record exact Git/dirty state, plugin/feature/policy versions, query window, provider/feed, and normalized input hashes. Legacy or dirty records cannot be ticked or approved.
