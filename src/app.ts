@@ -728,7 +728,8 @@ async function evaluateStrategyRun(run: StrategyRunRecord, actor: string, trigge
         ? await alpaca.trading.orders.market({ symbol, side: "buy", notional: paperDraft.order.notional, timeInForce: paperDraft.order.timeInForce, clientOrderId })
         : await alpaca.trading.orders.market({ symbol, side: "sell", qty: paperDraft.order.qty, timeInForce: paperDraft.order.timeInForce, clientOrderId });
     } catch (error) {
-      orderError = error instanceof Error ? error.message : String(error);
+      console.error("strategy paper order submission failed", { runId: run.id, symbol, error: error instanceof Error ? error.message : String(error) });
+      orderError = "Broker submission failed";
     }
     recordStrategySpan(actor, { traceId, name: "strategy.paper_order.submit", startedAt: orderStartedAt, endedAt: Date.now(), status: orderError ? "error" : "ok", error: orderError, attributes: { runId: run.id, symbol, side: paperDraft.order.side, notional: paperDraft.order.notional, qty: paperDraft.order.qty, timeInForce: paperDraft.order.timeInForce, brokerOrderId: order?.id, brokerStatus: order?.status } });
   }

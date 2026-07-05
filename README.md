@@ -52,15 +52,15 @@ The application currently runs as one Bun process with a local SQLite database a
 - `src/migrations.ts` and `src/store.ts` own the current SQLite schema and repositories.
 - `src/index.html` contains the current browser application.
 
-The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrations, and 21 SQLite tables. The main concentration points are the 2,505-line request module, 797-line store, and 255,758-byte single-file browser client. The incremental bounded-context target and move order live in `roadmap.md`; no directory move is required to contribute safely today.
+The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrations, and 21 SQLite tables. The main concentration points are the 2,507-line request module, 797-line store, and 255,758-byte single-file browser client. The incremental bounded-context target and move order live in `roadmap.md`; no directory move is required to contribute safely today.
 
 ## Quality snapshot
 
 | Boundary | Reviewed state |
 | --- | --- |
-| Automated checks | 270 tests and 1,184 assertions pass; strict TypeScript covers `src/` and `scripts/` |
-| Instrumented coverage | 96.31% functions and 96.76% lines across imported TypeScript |
-| API composition | Primary orders, mutations, option-position actions, and recovery reconciliation are directly covered; concurrent capacity is transactional |
+| Automated checks | 272 tests and 1,202 assertions pass; strict TypeScript covers `src/` and `scripts/` |
+| Instrumented coverage | 96.31% functions and 96.77% lines across imported TypeScript |
+| API composition | Primary orders, mutations, option actions, strategy paper execution, and recovery reconciliation are directly covered; concurrent capacity is transactional |
 | Browser | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite |
 | Persistence | Transactional migrations through 0013 and a serialized fixture restore pass |
 | Production | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open |
