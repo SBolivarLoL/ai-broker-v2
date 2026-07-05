@@ -314,6 +314,32 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(await run.json()).toEqual({ error: "Invalid cash parameters: Unrecognized key: \"exposure\"" });
 });
 
+async function approvedPaperRun(app: ReturnType<typeof testApp>) {
+  const definition = { symbols: ["BTC/USD"], strategyId: "buy-and-hold", timeframe: "1Hour", days: 30, params: {} };
+  const backtestResponse = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(definition),
+  }));
+  expect(backtestResponse.status).toBe(201);
+  const backtest = await backtestResponse.json() as any;
+  const runResponse = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...definition, backtestId: backtest.backtestId }),
+  }));
+  expect(runResponse.status).toBe(201);
+  const run = await runResponse.json() as any;
+  const approvalResponse = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/paper-approval`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ budget: 100, maxPositionNotional: 100, maxOrderNotional: 25, minOrderNotional: 5, maxSpreadBps: 200, expiresHours: 24, timeInForce: "gtc", maxDailyLossPercent: 5, maxDrawdownPercent: 10, maxDailyTurnoverPercent: 50, errorCooldownMinutes: 1 }),
+  }));
+  expect(approvalResponse.status).toBe(200);
+  expect(await approvalResponse.json()).toMatchObject({ runId: run.runId, status: "paper", budget: 100 });
+  return run;
+}
+
 test("strategy API persists a reviewed backtest and exact run and decision provenance", async () => {
   const app = testApp();
   const definition = { symbols: ["BTC/USD"], strategyId: "moving-average-trend", timeframe: "1Hour", days: 30, params: { fast: 2, slow: 3, exposure: 1 } };
@@ -367,6 +393,31 @@ test("strategy API persists a reviewed backtest and exact run and decision prove
   }));
   expect(mismatch.status).toBe(409);
   expect(await mismatch.json()).toEqual({ error: "Strategy run code or configuration does not match the reviewed backtest" });
+});
+
+test("approved strategy paper tick submits one bounded broker order with trace and receipt", async () => {
+  const app = testApp();
+  const run = await approvedPaperRun(app);
+  const response = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/tick`, { method: "POST" }));
+  expect(response.status).toBe(200);
+  const result = await response.json() as any;
+  const receiptId = String(result.receiptId);
+  expect(result).toMatchObject({ runId: run.runId, trace: { decision: "enter", paperOrderId: expect.any(String), riskChecks: { submittedOrder: true, reasons: [], paper: { draftOrder: { side: "buy", notional: 25 }, orderError: null } } } });
+  expect(app.orderAttempts).toEqual([expect.objectContaining({ symbol: "BTC/USD", side: "buy", notional: 25, timeInForce: "gtc", clientOrderId: expect.any(String) })]);
+  expect(app.store.strategyOrders(run.runId)).toMatchObject([{ paperOrderId: result.trace.paperOrderId, status: "accepted", payload: { side: "buy", notional: 25 } }]);
+  expect(app.store.getReceipt(receiptId)).toMatchObject({ kind: "strategy_paper_decision", runId: run.runId, submittedOrder: true, paperOrderId: result.trace.paperOrderId });
+});
+
+test("strategy paper tick records a stable block when broker submission fails", async () => {
+  const app = testApp({}, { placementError: new Error("private strategy placement failure") });
+  const run = await approvedPaperRun(app);
+  const response = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/tick`, { method: "POST" }));
+  expect(response.status).toBe(200);
+  const result = await response.json() as any;
+  expect(result).toMatchObject({ runId: run.runId, trace: { decision: "block", paperOrderId: null, reason: "Paper order was blocked by broker response: Broker submission failed", riskChecks: { submittedOrder: false, reasons: ["broker_order_rejected"], paper: { orderError: "Broker submission failed" } } } });
+  expect(JSON.stringify(result)).not.toContain("private strategy placement failure");
+  expect(app.store.strategyOrders(run.runId)).toEqual([]);
+  expect(app.orderAttempts).toHaveLength(1);
 });
 
 async function equityPreview(app: ReturnType<typeof testApp>, qty = 0.1) {
