@@ -4,6 +4,7 @@ import { createApp } from "./app";
 import { createStore } from "./store";
 
 const codeIdentity = { gitCommit: "a".repeat(40), workingTreeDirty: false };
+const optionSymbols = ["AAPL260717C00100000", "AAPL260717C00101000"] as const;
 const stores: ReturnType<typeof createStore>[] = [];
 afterEach(() => {
   while (stores.length) stores.pop()!.close();
@@ -67,6 +68,12 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
           dailyBar: { v: 1_000_000 },
         }),
       },
+      options: {
+        optionSnapshots: async () => ({ snapshots: {
+          [optionSymbols[0]]: { latestQuote: { bp: 0.1, ap: 0.2 } },
+          [optionSymbols[1]]: { latestQuote: { bp: 0.1, ap: 0.2 } },
+        } }),
+      },
       getCryptoBars: async () => ({
         "BTC/USD": [
           { t: "2026-01-01T00:00:00.000Z", o: 100, h: 102, l: 99, c: 101, v: 10 },
@@ -82,7 +89,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
     },
     trading: {
-      account: { getAccount: async () => { if (options.accountError) throw options.accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, currency: "USD", status: "ACTIVE" }; } },
+      account: { getAccount: async () => { if (options.accountError) throw options.accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, optionsBuyingPower: 1_000, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
       positions: { getAllOpenPositions: async () => options.positions ?? [] },
       assets: {
         getV2AssetsSymbolOrAssetId: async ({ symbolOrAssetId }: any) => ({
@@ -93,6 +100,15 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
           shortable: true,
           easyToBorrow: true,
           marginable: true,
+        }),
+        getOptionContractSymbolOrId: async ({ symbolOrId }: any) => ({
+          symbol: symbolOrId,
+          underlyingSymbol: "AAPL",
+          expirationDate: new Date("2026-07-17T00:00:00.000Z"),
+          type: "call",
+          strikePrice: symbolOrId === optionSymbols[0] ? "100" : "101",
+          multiplier: "100",
+          tradable: true,
         }),
       },
       calendar: {
@@ -110,6 +126,8 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       orders: {
         getAllOrders: async () => [],
         market: (input: any) => placeOrder(input),
+        limit: (input: any) => placeOrder(input),
+        submit: (input: any) => placeOrder({ ...input, symbol: "AAPL_OPTION_VERTICAL" }, "mleg"),
         bracket: (input: any) => placeOrder(input, "bracket"),
         oco: (input: any) => placeOrder(input, "oco"),
         oto: (input: any) => placeOrder(input, "oto"),
@@ -353,6 +371,24 @@ async function cryptoPreview(app: ReturnType<typeof testApp>, notional = 25) {
 
 function cryptoSubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
   return app.fetch(new Request("http://local/api/strategy/crypto/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken, idempotencyKey }),
+  }));
+}
+
+async function optionPreview(app: ReturnType<typeof testApp>, ticket: Record<string, unknown>) {
+  const response = await app.fetch(new Request("http://local/api/options/orders/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(ticket),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
+function optionSubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
+  return app.fetch(new Request("http://local/api/options/orders", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ previewToken, idempotencyKey }),
@@ -605,6 +641,64 @@ test("concurrent crypto submissions cannot stack beyond transactional turnover c
   expect(responses.map(response => response.status)).toEqual([200, 200, 200, 200]);
   expect(app.orderAttempts).toHaveLength(4);
   expect(app.store.activeRiskReservations()).toHaveLength(4);
+});
+
+test("option order API submits long single and debit vertical orders with durable receipts", async () => {
+  const cases = [
+    {
+      label: "single",
+      ticket: { kind: "single", legs: [{ symbol: optionSymbols[0], side: "buy", positionIntent: "buy_to_open" }], qty: 1, type: "market", limitPrice: null },
+      expectedAttempt: { symbol: optionSymbols[0], side: "buy", qty: 1, positionIntent: "buy_to_open" },
+      expectedOrder: { symbol: optionSymbols[0], orderClass: "simple", type: "market" },
+    },
+    {
+      label: "vertical",
+      ticket: { kind: "vertical", legs: [{ symbol: optionSymbols[0], side: "buy", positionIntent: "buy_to_open" }, { symbol: optionSymbols[1], side: "sell", positionIntent: "sell_to_open" }], qty: 1, type: "limit", limitPrice: 0.2 },
+      expectedAttempt: { type: "limit", orderClass: "mleg", qty: 1, limitPrice: 0.2, legs: [{ symbol: optionSymbols[0], side: "buy", positionIntent: "buy_to_open", ratioQty: "1" }, { symbol: optionSymbols[1], side: "sell", positionIntent: "sell_to_open", ratioQty: "1" }] },
+      expectedOrder: { symbol: "AAPL_OPTION_VERTICAL", orderClass: "mleg", type: "limit" },
+    },
+  ];
+
+  for (const item of cases) {
+    const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+    const preview = await optionPreview(app, item.ticket);
+    const previewToken = String(preview.previewToken);
+    expect(preview).toMatchObject({ allowed: true, preview: { kind: item.label, qty: 1, maxLoss: 20 }, operationalPolicy: { allowed: true } });
+
+    const key = `option-api-${item.label}`;
+    const response = await optionSubmission(app, previewToken, key);
+    expect(response.status).toBe(200);
+    const order = await response.json() as any;
+    const receiptId = String(order.receiptId);
+    expect(order).toMatchObject({ clientOrderId: key, qty: 1, status: "accepted", ...item.expectedOrder });
+    expect(app.orderAttempts).toEqual([expect.objectContaining({ clientOrderId: key, ...item.expectedAttempt })]);
+    expect(app.store.getReceipt(receiptId)).toMatchObject({ kind: "option_order", idempotencyKey: key, orderId: order.id, status: "accepted", preview: { kind: item.label, maxLoss: 20, risk: { portfolioReservedRisk: 20 }, operationalPolicy: { allowed: true } } });
+    expect(app.store.activeRiskReservations()).toMatchObject([{ key, symbol: "OPTIONS_RISK", status: "submitted", orderId: order.id }]);
+
+    const replay = await optionSubmission(app, previewToken, key);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(order);
+    expect(app.orderAttempts).toHaveLength(1);
+  }
+});
+
+test("option order API sanitizes broker failure, releases capacity, and permits retry", async () => {
+  const options: FakeAlpacaOptions = { placementError: new Error("private option placement failure") };
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const preview = await optionPreview(app, { kind: "single", legs: [{ symbol: optionSymbols[0], side: "buy", positionIntent: "buy_to_open" }], qty: 1, type: "market", limitPrice: null });
+  const key = "option-api-retry";
+
+  const failed = await optionSubmission(app, preview.previewToken, key);
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+  expect(app.store.submission(key)).toBeNull();
+  expect(app.store.activeRiskReservations()).toEqual([]);
+
+  options.placementError = undefined;
+  const retried = await optionSubmission(app, preview.previewToken, key);
+  expect(retried.status).toBe(200);
+  expect(await retried.json()).toMatchObject({ clientOrderId: key, symbol: optionSymbols[0], status: "accepted" });
+  expect(app.orderAttempts).toHaveLength(2);
 });
 
 test("unexpected provider errors map to a stable response without leaking details", async () => {

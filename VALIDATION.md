@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `08f3af8`: 2026-07-05.
+Last reviewed against `main` commit `551c958`: 2026-07-05.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,12 +8,12 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-05 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 261 tests, 0 failures, 1,095 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check` | Pass: 263 tests, 0 failures, 1,123 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 177 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
-| `bun run coverage` | Pass: 95.89% functions, 96.71% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
+| `bun run coverage` | Pass: 95.95% functions, 96.72% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 35.14% of functions and 83.13% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. `tsconfig.json` includes `src/` and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
+Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 38.62% of functions and 83.48% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. `tsconfig.json` includes `src/` and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
 
 ## Repository review evidence
 
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Concentration | `app.ts` 2,505 lines; `store.ts` 788 lines; `index.html` 255,758 bytes |
 | Persistence | 13 migrations; 21 tables including migration history |
 | Governance | 16 sources; 12 stored-output categories; every table assigned once |
-| Git state at review | `main`, `dev`, `origin/main`, and `origin/dev` all at `08f3af8`; no open PR or stale feature branch before this increment |
+| Git state at review | `main`, `dev`, `origin/main`, and `origin/dev` all at `551c958`; no open PR or stale feature branch before this increment |
 
 ## Test-layer policy
 
@@ -39,13 +39,13 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Area | Current confidence | Evidence | Open gap |
 | --- | --- | --- | --- |
 | Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
-| Order policy and signatures | High for modules, standard equity, linked, basket, and standalone crypto routes | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests plus direct equity, linked, basket, and crypto success/failure/replay contracts and transactional equity/crypto capacity races | Option, reconciliation, and real broker drills remain incomplete |
+| Order policy and signatures | High for modules, standard equity, linked, basket, option, and standalone crypto routes | Preview, reservation, idempotency, replacement, cancellation, basket, option, short, and crypto tests plus direct equity, linked, basket, option, and crypto success/failure/replay contracts and transactional equity/crypto capacity races | Reconciliation and real broker drills remain incomplete |
 | Strategy decisions | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable backtest, linked run, dataset hash, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No genuine out-of-sample walk-forward scoring, versioned long-history dataset, or long paper cohort yet |
 | Persistence and audit | Good for current schema | Ordered transactional migrations through 0013, legacy upgrade fixture, immutable backtest constraints, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
 | Data governance | Complete code inventory, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 21 SQLite tables, references, terms URLs, and fail-closed live-use decisions | Internal classifications are not legal approval; no automatic retention enforcement exists |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
-| HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, and standard equity/linked/basket/crypto success, failure, idempotency, and selected concurrency tests | Option, reconciliation, stream, and remaining provider paths remain incomplete |
+| HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, and standard equity/linked/basket/option/crypto success, failure, idempotency, and selected concurrency tests | Reconciliation, stream, and remaining provider paths remain incomplete |
 | Operational scripts | Good static confidence | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist | Most provider behavior requires credentials and is not executed in CI |
 | Browser UI | Targeted interaction confidence | Isolated 2026-07-05 browser check verified disabled creation, successful backtest unlock, linked shadow creation, input invalidation, layout, and a clean console | No maintained automated accessibility/responsive regression suite |
 | Production operations | Code artifacts plus fixture restore proof | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test | No production-sized or closed-beta restore drill, deployment, real participants, or external approval |
