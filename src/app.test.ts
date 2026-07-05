@@ -27,11 +27,22 @@ type FakeAlpacaOptions = {
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   let stockConnects = 0;
+  let orderStreamConnects = 0;
   const orderAttempts: any[] = [];
   const cancellationAttempts: string[] = [];
   const replacementAttempts: any[] = [];
   const optionActionAttempts: { action: string; symbol: string }[] = [];
   const acceptedOrders = new Map<string, any>();
+  const orderStreamCallbacks: Record<string, (...args: any[]) => void> = {};
+  const orderStream = {
+    onStateChange(callback: (...args: any[]) => void) { orderStreamCallbacks.state = callback; },
+    onConnect(callback: (...args: any[]) => void) { orderStreamCallbacks.connect = callback; },
+    onDisconnect(callback: (...args: any[]) => void) { orderStreamCallbacks.disconnect = callback; },
+    onError(callback: (...args: any[]) => void) { orderStreamCallbacks.error = callback; },
+    onTradeUpdate(callback: (...args: any[]) => void) { orderStreamCallbacks.trade = callback; },
+    subscribeTradeUpdates() {},
+    connect() { orderStreamConnects++; },
+  };
   const stockStream = {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
     subscribeForQuotes() {}, subscribeForBars() {}, unsubscribeFromQuotes() {}, unsubscribeFromBars() {},
@@ -99,6 +110,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
     },
     trading: {
+      stream: () => orderStream,
       account: { getAccount: async () => { if (options.accountError) throw options.accountError; const equity = options.accountEquity ?? 1_000; return { equity, cash: equity, buyingPower: equity, optionsBuyingPower: equity, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
       positions: {
         getAllOpenPositions: async () => options.positions ?? [],
@@ -195,14 +207,30 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
     },
   } as unknown as Alpaca;
-  return { alpaca, stockConnects: () => stockConnects, orderAttempts, cancellationAttempts, replacementAttempts, optionActionAttempts };
+  return {
+    alpaca,
+    stockConnects: () => stockConnects,
+    orderStreamConnects: () => orderStreamConnects,
+    orderAttempts,
+    cancellationAttempts,
+    replacementAttempts,
+    optionActionAttempts,
+    emitOrderStreamState: (state: string) => orderStreamCallbacks.state?.(state),
+    emitTradeUpdate: (clientOrderId: string, status: string) => {
+      const order = acceptedOrders.get(clientOrderId);
+      if (!order) throw new Error("Order not found");
+      const updated = { ...order, status, filledQty: status === "filled" ? order.qty : order.filledQty, filledAvgPrice: status === "filled" ? "100" : order.filledAvgPrice, filledAt: status === "filled" ? new Date() : order.filledAt, updatedAt: new Date() };
+      acceptedOrders.set(clientOrderId, updated);
+      orderStreamCallbacks.trade?.({ event: status === "filled" ? "fill" : "update", order: updated, timestamp: new Date() });
+    },
+  };
 }
 
 function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpacaOptions = {}) {
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(options);
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -238,6 +266,27 @@ test("createApp is side-effect free and exposes basic HTTP contracts", async () 
   expect(missing.status).toBe(404);
   expect(await missing.json()).toEqual({ error: "Not found" });
   expect(app.stockConnects()).toBe(0);
+});
+
+test("runtime starts once and reconciles terminal trade stream updates", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32), STRATEGY_SCHEDULER_DISABLED: "1" });
+  const order = await (await equitySubmission(app, (await equityPreview(app)).previewToken, "stream-reconcile")).json() as any;
+  expect(app.store.activeRiskReservations()).toHaveLength(1);
+
+  app.startRuntime();
+  app.startRuntime();
+  await Bun.sleep(0);
+  expect(app.orderStreamConnects()).toBe(1);
+  expect(app.stockConnects()).toBe(1);
+
+  app.emitOrderStreamState("authenticated");
+  app.emitTradeUpdate("stream-reconcile", "filled");
+  const response = await app.fetch(new Request("http://local/api/orders"));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ orders: [expect.objectContaining({ id: order.id, status: "filled", filledQty: 0.1 })], sync: { streamState: "authenticated" } });
+  expect(app.store.getReceipt(order.receiptId)).toMatchObject({ orderId: order.id, status: "filled", updatedAt: expect.any(String) });
+  expect(app.store.activeRiskReservations()).toEqual([]);
+  expect(app.store.events(10, "order.stream.update")).toMatchObject([{ payload: { event: "fill", orderId: order.id, clientOrderId: "stream-reconcile", status: "filled" } }]);
 });
 
 test("data-governance API exposes provider and stored-output decisions", async () => {

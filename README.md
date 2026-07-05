@@ -58,9 +58,9 @@ The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrat
 
 | Boundary | Reviewed state |
 | --- | --- |
-| Automated checks | 272 tests and 1,202 assertions pass; strict TypeScript covers `src/` and `scripts/` |
-| Instrumented coverage | 96.31% functions and 96.77% lines across imported TypeScript |
-| API composition | Primary orders, mutations, option actions, strategy paper execution, and recovery reconciliation are directly covered; concurrent capacity is transactional |
+| Automated checks | 273 tests and 1,211 assertions pass; strict TypeScript covers `src/` and `scripts/` |
+| Instrumented coverage | 96.33% functions and 96.80% lines across imported TypeScript |
+| API composition | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional |
 | Browser | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite |
 | Persistence | Transactional migrations through 0013 and a serialized fixture restore pass |
 | Production | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open |
