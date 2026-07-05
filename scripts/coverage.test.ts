@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { meetsCoverageFloor, parseCoverageSummary } from "./coverage";
 
 describe("coverage gate", () => {
+  test("keeps operational scripts in the standard TypeScript project", async () => {
+    expect((await Bun.file("tsconfig.json").json()).include).toEqual(["src", "scripts"]);
+  });
+
   test("parses Bun's aggregate coverage row", () => {
     expect(parseCoverageSummary("All files | 95.01 | 96.44 |\n")).toEqual({
       functions: 95.01,

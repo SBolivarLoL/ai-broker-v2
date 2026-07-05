@@ -18,7 +18,7 @@ The 2026-07-05 audit found a capable deterministic core and a large difference b
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
 | Repository | 59 production TypeScript modules, 62 test files, a 24-line Bun entry point, a 2,488-line request module, a 782-line store, a 255,758-byte browser file, one migration registry, and SQLite persistence | Process startup, schema migration, and strategy provenance are separated; route, repository, and browser composition remain concentrated |
-| Automated checks | 250 tests, 977 assertions, strict TypeScript for `src/`, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI, but operational scripts are outside the standard TypeScript project |
+| Automated checks | 251 tests, 978 assertions, strict TypeScript for `src/` and `scripts/`, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; static and coverage floors are enforced in CI |
 | Instrumented coverage | 95.60% functions and 96.60% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-05 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
@@ -50,7 +50,7 @@ These items should land before broadening strategy automation or adding more UI 
 6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
 7. [x] Persist exact Git commit, dirty state, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on immutable backtests, linked runs, snapshots, and decisions. Legacy and dirty records are explicitly non-comparable and cannot be evaluated or approved.
 8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 21 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
-9. [ ] Include `scripts/*.ts` in a standard strict TypeScript boundary and CI. Keep credentialed smoke execution opt-in, but prevent script/API drift from bypassing the normal static gate.
+9. [x] Include `scripts/*.ts` in the standard strict TypeScript boundary and CI, with a regression assertion that preserves the project include. Credentialed and mutating smoke execution remains opt-in.
 10. [ ] Add direct API happy-path and provider-failure contracts for the highest-risk broker-backed route branches, then cover order reconciliation and concurrent reservation races without browser automation.
 
 Exit gate: a route change can be tested without a real browser or real Alpaca account, operational scripts share the static gate, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
@@ -162,7 +162,7 @@ Keep `README.md`, `AGENTS.md`, `FEATURES.md`, `STRATEGY_LAB.md`, `VALIDATION.md`
 Implementation order:
 
 1. [x] Extract `app.ts` and direct request-boundary tests without changing route behavior.
-2. [ ] Add scripts to the checked TypeScript boundary before reorganizing them.
+2. [x] Add scripts to the checked TypeScript boundary before reorganizing them.
 3. [ ] Split inline browser CSS and JavaScript into `src/web/` during the next UI change, add bounded static-file responses, then tighten CSP by removing `unsafe-inline` where practical.
 4. [ ] Extract the Strategy Lab route family first when it next changes because it has the strongest direct API/system coverage and the most active ownership pressure. Pass a small dependency object; do not introduce a routing framework.
 5. [ ] Move one cohesive deterministic cluster into its bounded context during an active feature, keeping its tests beside it. Do not perform a repository-wide import rewrite.
