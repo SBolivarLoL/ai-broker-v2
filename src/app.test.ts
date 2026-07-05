@@ -14,6 +14,7 @@ type FakeAlpacaOptions = {
   placementError?: Error;
   placementErrorAt?: number;
   placementGate?: Promise<void>;
+  positions?: any[];
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
@@ -24,6 +25,37 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
     subscribeForQuotes() {}, subscribeForBars() {}, unsubscribeFromQuotes() {}, unsubscribeFromBars() {},
     connect() { stockConnects++; },
+  };
+  const placeOrder = async (input: any, orderClass = "simple") => {
+    orderAttempts.push(input);
+    if (options.placementGate) await options.placementGate;
+    if (options.placementError || options.placementErrorAt === orderAttempts.length - 1) throw options.placementError ?? new Error("private basket placement failure");
+    const order = {
+      id: crypto.randomUUID(),
+      clientOrderId: input.clientOrderId,
+      symbol: input.symbol,
+      side: input.side,
+      qty: input.qty === undefined ? null : String(input.qty),
+      notional: input.notional === undefined ? null : String(input.notional),
+      filledQty: "0",
+      filledAvgPrice: null,
+      type: input.limitPrice === undefined ? "market" : "limit",
+      orderClass,
+      timeInForce: input.timeInForce,
+      status: "accepted",
+      limitPrice: input.limitPrice === undefined ? null : String(input.limitPrice),
+      stopPrice: null,
+      extendedHours: input.extendedHours,
+      submittedAt: new Date(),
+      filledAt: null,
+      canceledAt: null,
+      updatedAt: new Date(),
+      replacedBy: null,
+      replaces: null,
+      legs: [],
+    };
+    acceptedOrders.set(input.clientOrderId, order);
+    return order;
   };
   const alpaca = {
     marketData: {
@@ -51,7 +83,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     },
     trading: {
       account: { getAccount: async () => { if (options.accountError) throw options.accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, currency: "USD", status: "ACTIVE" }; } },
-      positions: { getAllOpenPositions: async () => [] },
+      positions: { getAllOpenPositions: async () => options.positions ?? [] },
       assets: {
         getV2AssetsSymbolOrAssetId: async ({ symbolOrAssetId }: any) => ({
           symbol: symbolOrAssetId,
@@ -77,37 +109,10 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
       orders: {
         getAllOrders: async () => [],
-        market: async (input: any) => {
-          orderAttempts.push(input);
-          if (options.placementGate) await options.placementGate;
-          if (options.placementError || options.placementErrorAt === orderAttempts.length - 1) throw options.placementError ?? new Error("private basket placement failure");
-          const order = {
-            id: crypto.randomUUID(),
-            clientOrderId: input.clientOrderId,
-            symbol: input.symbol,
-            side: input.side,
-            qty: input.qty === undefined ? null : String(input.qty),
-            notional: input.notional === undefined ? null : String(input.notional),
-            filledQty: "0",
-            filledAvgPrice: null,
-            type: "market",
-            orderClass: "simple",
-            timeInForce: input.timeInForce,
-            status: "accepted",
-            limitPrice: null,
-            stopPrice: null,
-            extendedHours: input.extendedHours,
-            submittedAt: new Date(),
-            filledAt: null,
-            canceledAt: null,
-            updatedAt: new Date(),
-            replacedBy: null,
-            replaces: null,
-            legs: [],
-          };
-          acceptedOrders.set(input.clientOrderId, order);
-          return order;
-        },
+        market: (input: any) => placeOrder(input),
+        bracket: (input: any) => placeOrder(input, "bracket"),
+        oco: (input: any) => placeOrder(input, "oco"),
+        oto: (input: any) => placeOrder(input, "oto"),
         getOrderByClientOrderId: async ({ clientOrderId }: any) => {
           const order = acceptedOrders.get(clientOrderId);
           if (!order) throw new Error("Order not found");
@@ -308,6 +313,16 @@ function equitySubmission(app: ReturnType<typeof testApp>, previewToken: string,
   }));
 }
 
+async function linkedPreview(app: ReturnType<typeof testApp>, ticket: Record<string, unknown>) {
+  const response = await app.fetch(new Request("http://local/api/orders/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbol: "SPY", qty: 0.1, timeInForce: "day", ...ticket }),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
 async function basketPreview(app: ReturnType<typeof testApp>) {
   const response = await app.fetch(new Request("http://local/api/orders/basket/preview", {
     method: "POST",
@@ -390,6 +405,55 @@ test("equity order API sanitizes broker failure, releases capacity, and permits 
   const retried = await equitySubmission(app, preview.previewToken, key);
   expect(retried.status).toBe(200);
   expect(await retried.json()).toMatchObject({ clientOrderId: key, status: "accepted" });
+  expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("linked order API submits exact bracket, OCO, and OTO payloads with durable receipts", async () => {
+  const cases = [
+    { label: "bracket", ticket: { side: "buy", orderClass: "bracket", takeProfitPrice: 110, stopLossPrice: 90 }, expected: { side: "buy", takeProfit: { limitPrice: 110 }, stopLoss: { stopPrice: 90 } } },
+    { label: "oco", ticket: { side: "sell", orderClass: "oco", takeProfitPrice: 110, stopLossPrice: 90 }, positions: [{ symbol: "SPY", qty: "1", marketValue: "100" }], expected: { side: "sell", takeProfit: { limitPrice: 110 }, stopLoss: { stopPrice: 90 } } },
+    { label: "oto-take-profit", ticket: { side: "buy", orderClass: "oto", takeProfitPrice: 110 }, expected: { side: "buy", takeProfit: { limitPrice: 110 } } },
+    { label: "oto-stop-loss", ticket: { side: "buy", orderClass: "oto", stopLossPrice: 90 }, expected: { side: "buy", stopLoss: { stopPrice: 90 } } },
+  ];
+
+  for (const item of cases) {
+    const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { positions: item.positions });
+    const preview = await linkedPreview(app, item.ticket);
+    const previewToken = String(preview.previewToken);
+    expect(preview).toMatchObject({ allowed: true, order: { orderClass: item.ticket.orderClass, qty: 0.1 }, operationalPolicy: { allowed: true } });
+
+    const key = `linked-api-${item.label}`;
+    const response = await equitySubmission(app, previewToken, key);
+    expect(response.status).toBe(200);
+    const order = await response.json() as any;
+    const receiptId = String(order.receiptId);
+    expect(order).toMatchObject({ clientOrderId: key, symbol: "SPY", side: item.ticket.side, qty: 0.1, orderClass: item.ticket.orderClass, status: "accepted" });
+    expect(app.orderAttempts).toEqual([expect.objectContaining({ symbol: "SPY", qty: 0.1, clientOrderId: key, ...item.expected })]);
+    expect(app.store.getReceipt(receiptId)).toMatchObject({ idempotencyKey: key, orderId: order.id, status: "accepted", preview: { orderClass: item.ticket.orderClass } });
+
+    const replay = await equitySubmission(app, previewToken, key);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(order);
+    expect(app.orderAttempts).toHaveLength(1);
+  }
+});
+
+test("linked order API sanitizes broker failure, releases capacity, and permits retry", async () => {
+  const options: FakeAlpacaOptions = { placementError: new Error("private linked placement failure") };
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const preview = await linkedPreview(app, { side: "buy", orderClass: "bracket", takeProfitPrice: 110, stopLossPrice: 90 });
+  const key = "linked-api-retry";
+
+  const failed = await equitySubmission(app, preview.previewToken, key);
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+  expect(app.store.submission(key)).toBeNull();
+  expect(app.store.activeRiskReservations()).toEqual([]);
+
+  options.placementError = undefined;
+  const retried = await equitySubmission(app, preview.previewToken, key);
+  expect(retried.status).toBe(200);
+  expect(await retried.json()).toMatchObject({ clientOrderId: key, orderClass: "bracket", status: "accepted" });
   expect(app.orderAttempts).toHaveLength(2);
 });
 
