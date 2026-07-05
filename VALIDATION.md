@@ -62,7 +62,7 @@ bun audit
 bunx tsc --ignoreConfig --noEmit --strict --module Preserve --moduleResolution bundler --skipLibCheck --types bun scripts/*.ts
 ```
 
-CI pins Bun 1.2.15 and runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. The explicit script type-check, audit, live-provider smoke checks, and browser checks are not CI gates.
+CI uses the Node 24-based `actions/checkout@v6`, pins Bun 1.2.15, and runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. The explicit script type-check, audit, live-provider smoke checks, and browser checks are not CI gates.
 
 ## Credentialed smoke checks
 
