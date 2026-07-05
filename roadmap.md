@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `95fdc7b`: 2026-07-05.
+Last reviewed against `main` commit `aae2b30`: 2026-07-05.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -18,8 +18,8 @@ The 2026-07-05 audit found a capable deterministic core and a large difference b
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
 | Repository | 59 production TypeScript modules, 62 test files, a 24-line Bun entry point, a 2,505-line request module, a 797-line store, a 255,758-byte browser file, one migration registry, and SQLite persistence | Process startup, schema migration, and strategy provenance are separated; route, repository, and browser composition remain concentrated |
-| Automated checks | 265 tests, 1,139 assertions, strict TypeScript for `src/` and `scripts/`, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; static and coverage floors are enforced in CI |
-| Instrumented coverage | 96.28% functions and 96.76% lines across imported modules | Reviewed floors are 95% functions and 96% lines; `app.ts` is now 41.45% functions and 83.96% lines, while browser coverage is reported separately |
+| Automated checks | 268 tests, 1,164 assertions, strict TypeScript for `src/` and `scripts/`, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; static and coverage floors are enforced in CI |
+| Instrumented coverage | 96.31% functions and 96.76% lines across imported modules | Reviewed floors are 95% functions and 96% lines; `app.ts` is now 43.30% functions and 84.23% lines, while browser coverage is reported separately |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-05 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
 | Research data | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI | The registry covers 16 sources and all 21 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
@@ -51,7 +51,7 @@ These items should land before broadening strategy automation or adding more UI 
 7. [x] Persist exact Git commit, dirty state, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on immutable backtests, linked runs, snapshots, and decisions. Legacy and dirty records are explicitly non-comparable and cannot be evaluated or approved.
 8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 21 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
 9. [x] Include `scripts/*.ts` in the standard strict TypeScript boundary and CI, with a regression assertion that preserves the project include. Credentialed and mutating smoke execution remains opt-in.
-10. [ ] Add direct API happy-path and provider-failure contracts for the highest-risk broker-backed route branches, then cover order reconciliation and concurrent reservation races without browser automation. Standard equity, linked equity, baskets, standalone crypto, and options cover receipts, replayed idempotency, sanitized placement failure/retry, and relevant transactional capacity races. Recovery now retries sanitized provider failures, reconciles standard and basket receipts, and closes terminal reservations by durable broker order ID. Replacement/cancellation, option-position actions, strategy paper execution, and stream callbacks remain.
+10. [ ] Add direct API happy-path and provider-failure contracts for the highest-risk broker-backed route branches, then cover order reconciliation and concurrent reservation races without browser automation. Primary order routes cover receipts, replayed idempotency, sanitized placement failure/retry, and relevant transactional capacity races. Recovery retries sanitized provider failures, reconciles standard and basket receipts, and closes terminal reservations by broker order ID. Replacement releases failed idempotency and replays one broker mutation; exact and snapshot-bound cancel-all paths map broker state changes safely. Option-position actions, strategy paper execution, and stream callbacks remain.
 
 Exit gate: a route change can be tested without a real browser or real Alpaca account, operational scripts share the static gate, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
 

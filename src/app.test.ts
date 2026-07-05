@@ -18,11 +18,17 @@ type FakeAlpacaOptions = {
   positions?: any[];
   recoveryError?: Error;
   recoveredOrderStatus?: string;
+  cancellationError?: Error;
+  replacementError?: Error;
+  placementStatus?: string;
+  accountEquity?: number;
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   let stockConnects = 0;
   const orderAttempts: any[] = [];
+  const cancellationAttempts: string[] = [];
+  const replacementAttempts: any[] = [];
   const acceptedOrders = new Map<string, any>();
   const stockStream = {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
@@ -45,7 +51,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       type: input.limitPrice === undefined ? "market" : "limit",
       orderClass,
       timeInForce: input.timeInForce,
-      status: "accepted",
+      status: options.placementStatus ?? "accepted",
       limitPrice: input.limitPrice === undefined ? null : String(input.limitPrice),
       stopPrice: null,
       extendedHours: input.extendedHours,
@@ -91,7 +97,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
     },
     trading: {
-      account: { getAccount: async () => { if (options.accountError) throw options.accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, optionsBuyingPower: 1_000, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
+      account: { getAccount: async () => { if (options.accountError) throw options.accountError; const equity = options.accountEquity ?? 1_000; return { equity, cash: equity, buyingPower: equity, optionsBuyingPower: equity, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
       positions: { getAllOpenPositions: async () => options.positions ?? [] },
       assets: {
         getV2AssetsSymbolOrAssetId: async ({ symbolOrAssetId }: any) => ({
@@ -126,8 +132,9 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
         }),
       },
       orders: {
-        getAllOrders: async () => {
+        getAllOrders: async (query: any) => {
           if (options.recoveryError) throw options.recoveryError;
+          if (query.status === "open") return [...acceptedOrders.values()].filter(order => ["new", "accepted", "partially_filled"].includes(order.status));
           if (!options.recoveredOrderStatus) return [];
           return [...acceptedOrders.values()].map(order => ({
             ...order,
@@ -149,17 +156,36 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
           if (!order) throw new Error("Order not found");
           return order;
         },
+        getOrderByOrderID: async ({ orderId }: any) => {
+          const order = [...acceptedOrders.values()].find(item => item.id === orderId);
+          if (!order) throw new Error("Order not found");
+          return order;
+        },
+        deleteOrderByOrderID: async ({ orderId }: any) => {
+          cancellationAttempts.push(orderId);
+          if (options.cancellationError) throw options.cancellationError;
+        },
+        patchOrderByOrderId: async (input: any) => {
+          replacementAttempts.push(input);
+          if (options.replacementError) throw options.replacementError;
+          const order = [...acceptedOrders.values()].find(item => item.id === input.orderId);
+          if (!order) throw new Error("Order not found");
+          const request = input.patchOrderRequest;
+          const replaced = { ...order, id: crypto.randomUUID(), clientOrderId: request.clientOrderId, qty: request.qty, limitPrice: request.limitPrice ?? order.limitPrice, stopPrice: request.stopPrice ?? order.stopPrice, replaces: order.id, updatedAt: new Date() };
+          acceptedOrders.set(request.clientOrderId, replaced);
+          return replaced;
+        },
       },
     },
   } as unknown as Alpaca;
-  return { alpaca, stockConnects: () => stockConnects, orderAttempts };
+  return { alpaca, stockConnects: () => stockConnects, orderAttempts, cancellationAttempts, replacementAttempts };
 }
 
 function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpacaOptions = {}) {
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(options);
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts };
 }
 
 const productionEnv = {
@@ -336,6 +362,16 @@ async function equityPreview(app: ReturnType<typeof testApp>, qty = 0.1) {
   return response.json() as Promise<any>;
 }
 
+async function equityLimitPreview(app: ReturnType<typeof testApp>) {
+  const response = await app.fetch(new Request("http://local/api/orders/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbol: "SPY", side: "buy", qty: 1, type: "limit", limitPrice: 100 }),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
 function equitySubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
   return app.fetch(new Request("http://local/api/orders", {
     method: "POST",
@@ -504,6 +540,81 @@ test("linked order API sanitizes broker failure, releases capacity, and permits 
   expect(retried.status).toBe(200);
   expect(await retried.json()).toMatchObject({ clientOrderId: key, orderClass: "bracket", status: "accepted" });
   expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("replacement API releases failed idempotency and replays one successful broker mutation", async () => {
+  const options: FakeAlpacaOptions = { accountEquity: 10_000, placementStatus: "new", replacementError: new Error("private replacement failure") };
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const original = await (await equitySubmission(app, (await equityLimitPreview(app)).previewToken, "replace-original")).json() as any;
+  const previewResponse = await app.fetch(new Request(`http://local/api/orders/${original.id}/replacement-preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ qty: 1, limitPrice: 99, stopPrice: null }),
+  }));
+  expect(previewResponse.status).toBe(200);
+  const preview = await previewResponse.json() as any;
+  const key = "replace-api-retry";
+  const request = () => app.fetch(new Request(`http://local/api/orders/${original.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken: preview.previewToken, idempotencyKey: key }),
+  }));
+
+  const failed = await request();
+  expect(failed.status).toBe(409);
+  expect(await failed.json()).toEqual({ error: "Alpaca could not replace the order because its state changed. Refresh the blotter." });
+  expect(app.store.submission(key)).toBeNull();
+
+  options.replacementError = undefined;
+  const retried = await request();
+  expect(retried.status).toBe(200);
+  const replaced = await retried.json() as any;
+  expect(replaced).toMatchObject({ clientOrderId: key, qty: 1, limitPrice: 99, status: "new", replacedOrderId: original.id });
+  expect(app.replacementAttempts).toEqual([
+    expect.objectContaining({ orderId: original.id, patchOrderRequest: expect.objectContaining({ qty: "1", limitPrice: "99", clientOrderId: key }) }),
+    expect.objectContaining({ orderId: original.id, patchOrderRequest: expect.objectContaining({ qty: "1", limitPrice: "99", clientOrderId: key }) }),
+  ]);
+
+  const replay = await request();
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(replaced);
+  expect(app.replacementAttempts).toHaveLength(2);
+});
+
+test("exact cancellation maps broker state changes to a stable conflict", async () => {
+  const success = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+  const order = await (await equitySubmission(success, (await equityPreview(success)).previewToken, "cancel-exact")).json() as any;
+  const canceled = await success.fetch(new Request(`http://local/api/orders/${order.id}`, { method: "DELETE" }));
+  expect(canceled.status).toBe(202);
+  expect(await canceled.json()).toMatchObject({ orderId: order.id, status: "cancel_requested" });
+  expect(success.cancellationAttempts).toEqual([order.id]);
+
+  const failure = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { cancellationError: new Error("private cancellation failure") });
+  const failedOrder = await (await equitySubmission(failure, (await equityPreview(failure)).previewToken, "cancel-conflict")).json() as any;
+  const failed = await failure.fetch(new Request(`http://local/api/orders/${failedOrder.id}`, { method: "DELETE" }));
+  expect(failed.status).toBe(409);
+  expect(await failed.json()).toEqual({ error: "Alpaca could not accept the cancellation because the order state changed. Refresh the blotter." });
+  expect(failure.cancellationAttempts).toEqual([failedOrder.id]);
+});
+
+test("cancel-all API binds and submits the exact reviewed working-order snapshot", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+  const order = await (await equitySubmission(app, (await equityPreview(app)).previewToken, "cancel-all-order")).json() as any;
+  const previewResponse = await app.fetch(new Request("http://local/api/orders/cancel-all-preview"));
+  expect(previewResponse.status).toBe(200);
+  const preview = await previewResponse.json() as any;
+  const previewToken = String(preview.previewToken);
+  expect(preview).toMatchObject({ orders: [{ id: order.id, status: "accepted" }], previewToken: expect.any(String) });
+
+  const response = await app.fetch(new Request("http://local/api/orders", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken }),
+  }));
+  const result = await response.json();
+  expect(result).toMatchObject({ results: [{ orderId: order.id, status: "cancel_requested" }] });
+  expect(response.status).toBe(202);
+  expect(app.cancellationAttempts).toEqual([order.id]);
 });
 
 test("concurrent equity submissions cannot stack beyond transactional risk capacity", async () => {
