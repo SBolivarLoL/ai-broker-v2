@@ -22,6 +22,7 @@ type FakeAlpacaOptions = {
   replacementError?: Error;
   placementStatus?: string;
   accountEquity?: number;
+  optionActionError?: Error;
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
@@ -29,6 +30,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   const orderAttempts: any[] = [];
   const cancellationAttempts: string[] = [];
   const replacementAttempts: any[] = [];
+  const optionActionAttempts: { action: string; symbol: string }[] = [];
   const acceptedOrders = new Map<string, any>();
   const stockStream = {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
@@ -98,7 +100,22 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     },
     trading: {
       account: { getAccount: async () => { if (options.accountError) throw options.accountError; const equity = options.accountEquity ?? 1_000; return { equity, cash: equity, buyingPower: equity, optionsBuyingPower: equity, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
-      positions: { getAllOpenPositions: async () => options.positions ?? [] },
+      positions: {
+        getAllOpenPositions: async () => options.positions ?? [],
+        getOpenPosition: async ({ symbolOrAssetId }: any) => {
+          const position = options.positions?.find(item => item.symbol === symbolOrAssetId);
+          if (!position) throw new Error("Position not found");
+          return position;
+        },
+        optionExercise: async ({ symbolOrContractId }: any) => {
+          optionActionAttempts.push({ action: "exercise", symbol: symbolOrContractId });
+          if (options.optionActionError) throw options.optionActionError;
+        },
+        optionDoNotExercise: async ({ symbolOrContractId }: any) => {
+          optionActionAttempts.push({ action: "do_not_exercise", symbol: symbolOrContractId });
+          if (options.optionActionError) throw options.optionActionError;
+        },
+      },
       assets: {
         getV2AssetsSymbolOrAssetId: async ({ symbolOrAssetId }: any) => ({
           symbol: symbolOrAssetId,
@@ -178,14 +195,14 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       },
     },
   } as unknown as Alpaca;
-  return { alpaca, stockConnects: () => stockConnects, orderAttempts, cancellationAttempts, replacementAttempts };
+  return { alpaca, stockConnects: () => stockConnects, orderAttempts, cancellationAttempts, replacementAttempts, optionActionAttempts };
 }
 
 function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpacaOptions = {}) {
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(options);
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts };
 }
 
 const productionEnv = {
@@ -441,6 +458,20 @@ function optionSubmission(app: ReturnType<typeof testApp>, previewToken: string,
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ previewToken, idempotencyKey }),
+  }));
+}
+
+async function optionActionPreview(app: ReturnType<typeof testApp>, action: "exercise" | "do_not_exercise") {
+  const response = await app.fetch(new Request(`http://local/api/options/positions/${optionSymbols[0]}/action-preview?action=${action}`));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
+function optionAction(app: ReturnType<typeof testApp>, previewToken: string) {
+  return app.fetch(new Request(`http://local/api/options/positions/${optionSymbols[0]}/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken }),
   }));
 }
 
@@ -859,6 +890,44 @@ test("option order API sanitizes broker failure, releases capacity, and permits 
   expect(retried.status).toBe(200);
   expect(await retried.json()).toMatchObject({ clientOrderId: key, symbol: optionSymbols[0], status: "accepted" });
   expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("option position API binds exact exercise and do-not-exercise instructions", async () => {
+  for (const action of ["exercise", "do_not_exercise"] as const) {
+    const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { positions: [{ symbol: optionSymbols[0], qty: "2" }] });
+    const preview = await optionActionPreview(app, action);
+    const previewToken = String(preview.previewToken);
+    expect(preview).toMatchObject({ preview: { symbol: optionSymbols[0], action, qty: 2, strike: 100, multiplier: 100, exerciseCost: 20_000 }, previewToken: expect.any(String) });
+
+    const response = await optionAction(app, previewToken);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ accepted: true, action, symbol: optionSymbols[0], qty: 2 });
+    expect(app.optionActionAttempts).toEqual([{ action, symbol: optionSymbols[0] }]);
+  }
+});
+
+test("option position API blocks quantity drift and sanitizes provider failure before retry", async () => {
+  const positions = [{ symbol: optionSymbols[0], qty: "1" }];
+  const drift = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { positions });
+  const driftPreview = await optionActionPreview(drift, "exercise");
+  positions[0]!.qty = "2";
+  const blocked = await optionAction(drift, driftPreview.previewToken);
+  expect(blocked.status).toBe(409);
+  expect(await blocked.json()).toEqual({ error: "Option position quantity changed after preview" });
+  expect(drift.optionActionAttempts).toEqual([]);
+
+  const options: FakeAlpacaOptions = { positions: [{ symbol: optionSymbols[0], qty: "1" }], optionActionError: new Error("private option action failure") };
+  const retry = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const retryPreview = await optionActionPreview(retry, "do_not_exercise");
+  const failed = await optionAction(retry, retryPreview.previewToken);
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+
+  options.optionActionError = undefined;
+  const retried = await optionAction(retry, retryPreview.previewToken);
+  expect(retried.status).toBe(200);
+  expect(await retried.json()).toMatchObject({ accepted: true, action: "do_not_exercise" });
+  expect(retry.optionActionAttempts).toHaveLength(2);
 });
 
 test("unexpected provider errors map to a stable response without leaking details", async () => {
