@@ -4,11 +4,21 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `352c26c` on 2026-07-05.
+Code baseline reviewed: `main` at `ace67cc` on 2026-07-05.
 
 ## Quick start
 
 Requirements: [Bun 1.2.15](https://bun.sh/) and an Alpaca paper account. Coverage metrics are runtime-sensitive, so local and CI checks use the pinned version.
+
+## Project layout
+
+- `frontend/` contains browser assets.
+- `backend/features/` contains domain behavior.
+- `backend/integrations/` contains provider adapters.
+- `backend/persistence/` contains SQLite storage.
+- `tests/` mirrors the backend boundaries.
+- `scripts/` contains smoke checks and diagnostics.
+- `docs/architecture/` explains dependency direction and placement rules.
 
 ```sh
 bun install
@@ -46,31 +56,31 @@ The application currently runs as one Bun process with a local SQLite database a
 
 ## Architecture at a glance
 
-- `src/server.ts` starts the Bun process, Alpaca streams, and scheduler.
-- `src/app.ts` builds the dependency-injected request handler and API composition.
-- Focused `src/*.ts` modules own deterministic domain behavior; tests remain beside them.
-- `src/migrations.ts` and `src/store.ts` own the current SQLite schema and repositories.
-- `src/index.html` contains the current browser application.
+- `backend/server.ts` starts the Bun process; `backend/app.ts` composes the dependency-injected HTTP application.
+- `backend/features/` groups product behavior and route handlers by bounded context.
+- `backend/integrations/`, `backend/persistence/`, and `backend/shared/` isolate provider, storage, and cross-cutting code.
+- `frontend/` separates the browser shell, styles, shared utilities, and workspace scripts.
+- `tests/` mirrors the backend boundaries; `scripts/` contains deliberate diagnostics and smoke checks.
 
-The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrations, and 21 SQLite tables. The main concentration points are the 2,507-line request module, 797-line store, and 255,758-byte single-file browser client. The incremental bounded-context target and move order live in `roadmap.md`; no directory move is required to contribute safely today.
+The reviewed tree has 78 production TypeScript modules, 73 test files, 13 migrations, and 21 SQLite tables. The application boundary is 332 lines, feature routes are independently owned, and the browser is split into seven assets instead of one inline client.
 
 ## Quality snapshot
 
-| Boundary | Reviewed state |
-| --- | --- |
-| Automated checks | 273 tests and 1,211 assertions pass; strict TypeScript covers `src/` and `scripts/` |
-| Instrumented coverage | 96.33% functions and 96.80% lines across imported TypeScript |
-| API composition | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional |
-| Browser | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite |
-| Persistence | Transactional migrations through 0013 and a serialized fixture restore pass |
-| Production | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open |
+| Boundary              | Reviewed state                                                                                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Automated checks      | 292 tests and 1,291 assertions pass; strict TypeScript covers `backend/`, `tests/`, and `scripts/`                                                                  |
+| Instrumented coverage | Reviewed deterministic-module mean is 98.27% functions and 97.50% lines                                                                                             |
+| API composition       | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional |
+| Browser               | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite                                                        |
+| Persistence           | Transactional migrations through 0013 and a serialized fixture restore pass                                                                                         |
+| Production            | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open                                                                   |
 
-See [`VALIDATION.md`](VALIDATION.md) for evidence and scope. Aggregate coverage is not application-wide: the browser and process entry are outside it, and credentialed smoke behavior is not exercised in CI.
+See [`docs/VALIDATION.md`](docs/VALIDATION.md) for evidence and scope. Coverage is not application-wide: orchestration, the browser, and the process entry are outside the percentage gate, and credentialed smoke behavior is not exercised in CI.
 
 ## Commands
 
 ```sh
-bun run check             # strict TypeScript for src/scripts, all tests, and coverage floor
+bun run check             # strict TypeScript, all tests, and the deterministic coverage floor
 bun run eval              # focused broker safety and agent trust-boundary suite
 bun run eval:research     # credentialed live research evaluation
 bun run coverage          # 95% function / 96% line coverage gate
@@ -94,15 +104,16 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=<owned-symbol> bun run sm
 
 ## Documentation
 
-- [`FEATURES.md`](FEATURES.md): implemented capabilities, architecture, safety, data contracts, and known limitations.
-- [`STRATEGY_LAB.md`](STRATEGY_LAB.md): strategy catalog, experiment workflow, controls, API examples, and interpretation guidance.
-- [`VALIDATION.md`](VALIDATION.md): reproducible evidence, current test results, coverage boundary, and remaining confidence gaps.
-- [`roadmap.md`](roadmap.md): prioritized future work, data-quality plan, strategy research plan, external gates, and repository structure proposal.
+- [`docs/FEATURES.md`](docs/FEATURES.md): implemented capabilities, architecture, safety, data contracts, and known limitations.
+- [`docs/STRATEGY_LAB.md`](docs/STRATEGY_LAB.md): strategy catalog, experiment workflow, controls, API examples, and interpretation guidance.
+- [`docs/VALIDATION.md`](docs/VALIDATION.md): reproducible evidence, current test results, coverage boundary, and remaining confidence gaps.
+- [`docs/roadmap.md`](docs/roadmap.md): prioritized future work, data-quality plan, strategy research plan, and external gates.
+- [`docs/architecture/README.md`](docs/architecture/README.md): repository boundaries and dependency direction.
 - [`AGENTS.md`](AGENTS.md): project-specific contribution and validation rules for AI-assisted work.
 
 ## Production boundary
 
-Local development grants the demo actor all roles. Production expects a managed OIDC identity-aware proxy, same-origin requests, role headers, a 32+ character proxy secret, a 32+ character secret-vault key, and a non-placeholder SEC contact identity. See `.env.example` and `FEATURES.md` for the full boundary.
+Local development grants the demo actor all roles. Production expects a managed OIDC identity-aware proxy, same-origin requests, role headers, a 32+ character proxy secret, a 32+ character secret-vault key, and a non-placeholder SEC contact identity. See `.env.example` and [`docs/FEATURES.md`](docs/FEATURES.md) for the full boundary.
 
 Source checkouts resolve the running Git commit automatically. Packaged deployments without `.git` metadata must set `APP_GIT_COMMIT` to the full build commit; builds marked dirty are retained for audit but cannot seed comparable strategy runs.
 

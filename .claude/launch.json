@@ -4,7 +4,7 @@
     {
       "name": "ai-broker",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["--env-file=.env", "src/server.ts"],
+      "runtimeArgs": ["--env-file=.env", "backend/server.ts"],
       "port": 3000
     }
   ]

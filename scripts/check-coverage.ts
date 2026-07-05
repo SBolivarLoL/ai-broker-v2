@@ -2,7 +2,7 @@ import {
   FUNCTION_FLOOR,
   LINE_FLOOR,
   meetsCoverageFloor,
-  parseCoverageSummary,
+  parseReviewedCoverage,
 } from "./coverage";
 
 const child = Bun.spawn(["bun", "test", "--coverage"], {
@@ -18,7 +18,10 @@ process.stdout.write(stdout);
 process.stderr.write(stderr);
 if (exitCode !== 0) process.exit(exitCode);
 
-const coverage = parseCoverageSummary(`${stdout}\n${stderr}`);
+const coverage = parseReviewedCoverage(`${stdout}\n${stderr}`);
+console.log(
+  `Reviewed coverage boundary: ${coverage.functions}% functions, ${coverage.lines}% lines`,
+);
 if (!meetsCoverageFloor(coverage)) {
   console.error(
     `Coverage below floor: ${coverage.functions}% functions (need ${FUNCTION_FLOOR}%), ` +

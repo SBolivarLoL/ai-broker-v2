@@ -1,0 +1,1935 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Broker</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <main class="shell">
+    <header class="top">
+      <div class="brand">AI Broker</div>
+      <nav class="nav" aria-label="Main navigation">
+        <button data-view="home" class="active" aria-selected="true">
+          Home</button
+        ><button data-view="markets" aria-selected="false">Markets</button
+        ><button data-view="portfolio" aria-selected="false">Portfolio</button
+        ><button data-view="strategies" aria-selected="false">Strategies</button
+        ><button data-view="research" aria-selected="false">Research</button
+        ><button data-view="options" aria-selected="false">Options</button
+        ><button data-view="advisor" aria-selected="false">AI Advisor</button>
+      </nav>
+      <div class="paper"><i class="dot"></i>Alpaca paper</div>
+    </header>
+    <div class="view" id="home-view">
+      <section class="hero">
+        <div class="hero-head">
+          <div>
+            <div class="eyebrow">Portfolio value</div>
+            <div class="balance private-value" id="equity">—</div>
+            <div class="sub private-value" id="buying-power">Connecting…</div>
+          </div>
+          <button
+            class="ghost"
+            id="privacy-toggle"
+            type="button"
+            aria-pressed="false"
+          >
+            Hide balances
+          </button>
+        </div>
+      </section>
+      <div class="grid">
+        <section class="card">
+          <h2>Market</h2>
+          <form class="quote" id="quote-form">
+            <div class="search-box">
+              <input
+                class="field"
+                id="quote-symbol"
+                value="AAPL"
+                aria-label="Search stocks"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="stock-suggestions"
+                aria-expanded="false"
+                autocomplete="off"
+              />
+              <div
+                class="suggestions"
+                id="stock-suggestions"
+                role="listbox"
+                hidden
+              ></div>
+            </div>
+            <button class="primary">Search</button>
+          </form>
+          <div class="price private-value" id="price">—</div>
+          <div class="muted" id="price-label">Latest available price</div>
+        </section>
+        <section class="card">
+          <h2>Order</h2>
+          <form class="ticket" id="order-form">
+            <div class="segmented">
+              <input
+                id="buy"
+                name="side"
+                value="buy"
+                type="radio"
+                checked
+              /><label for="buy">Buy</label
+              ><input id="sell" name="side" value="sell" type="radio" /><label
+                for="sell"
+                >Sell</label
+              >
+            </div>
+            <input
+              class="field"
+              id="order-symbol"
+              value="AAPL"
+              aria-label="Stock symbol"
+            /><select
+              class="field"
+              id="order-strategy"
+              aria-label="Order strategy"
+            >
+              <option value="simple">Simple order</option>
+              <option value="bracket">Bracket entry</option>
+              <option value="oco">OCO position exit</option>
+              <option value="oto_take_profit">OTO with take profit</option>
+              <option value="oto_stop_loss">OTO with stop loss</option>
+            </select>
+            <div class="ticket-row">
+              <select
+                class="field"
+                id="amount-type"
+                aria-label="Order amount type"
+              >
+                <option value="quantity">Shares</option>
+                <option value="notional">Dollars</option></select
+              ><input
+                class="field"
+                id="qty"
+                type="number"
+                min="0.000001"
+                step="any"
+                value="1"
+                aria-label="Quantity"
+              />
+            </div>
+            <div class="ticket-row">
+              <select class="field" id="order-type" aria-label="Order type">
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+                <option value="stop">Stop</option>
+                <option value="stop_limit">Stop limit</option>
+                <option value="trailing_stop">Trailing stop</option></select
+              ><select
+                class="field"
+                id="time-in-force"
+                aria-label="Time in force"
+              >
+                <option value="day">DAY</option>
+                <option value="gtc">GTC</option>
+              </select>
+            </div>
+            <input
+              class="field"
+              id="limit-price"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="Limit price"
+              aria-label="Limit price"
+              hidden
+            /><input
+              class="field"
+              id="stop-price"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="Stop price"
+              aria-label="Stop price"
+              hidden
+            /><input
+              class="field"
+              id="trail-percent"
+              type="number"
+              min="0.01"
+              max="100"
+              step="0.01"
+              placeholder="Trailing percent"
+              aria-label="Trailing percent"
+              hidden
+            /><input
+              class="field"
+              id="take-profit-price"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="Take-profit limit price"
+              aria-label="Take-profit price"
+              hidden
+            /><input
+              class="field"
+              id="stop-loss-price"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="Stop-loss trigger price"
+              aria-label="Stop-loss price"
+              hidden
+            /><input
+              class="field"
+              id="stop-loss-limit-price"
+              type="number"
+              min="0.0001"
+              step="0.0001"
+              placeholder="Stop-loss limit price (optional)"
+              aria-label="Stop-loss limit price"
+              hidden
+            /><label class="extended-hours" id="extended-hours-label" hidden
+              ><input id="extended-hours" type="checkbox" /> Eligible extended
+              hours</label
+            ><label class="extended-hours" id="allow-short-label" hidden
+              ><input id="allow-short" type="checkbox" /> Explicitly allow a new
+              paper short</label
+            ><button class="primary" id="order-button">
+              Review paper order
+            </button>
+          </form>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Operations guardrails</h2>
+              <div class="muted" id="operations-policy-asof">
+                Loading global order policy…
+              </div>
+            </div>
+            <button class="ghost" id="operations-refresh" type="button">
+              Refresh
+            </button>
+          </div>
+          <div class="metrics" id="operations-policy">
+            <div class="empty">Loading operations policy…</div>
+          </div>
+          <form class="policy-editor" id="operations-policy-form">
+            <label
+              ><span class="muted">Order cap</span
+              ><input
+                class="field"
+                id="operations-max-order"
+                type="number"
+                min="1"
+                step="1"
+                aria-label="Maximum order notional" /></label
+            ><label
+              ><span class="muted">Symbol cap</span
+              ><input
+                class="field"
+                id="operations-max-symbol"
+                type="number"
+                min="1"
+                step="1"
+                aria-label="Maximum symbol exposure notional" /></label
+            ><label
+              ><span class="muted">Position %</span
+              ><input
+                class="field"
+                id="operations-max-position"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.1"
+                aria-label="Maximum position exposure percent" /></label
+            ><label
+              ><span class="muted">Sector %</span
+              ><input
+                class="field"
+                id="operations-max-sector"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.1"
+                aria-label="Maximum sector exposure percent" /></label
+            ><label
+              ><span class="muted">Drawdown %</span
+              ><input
+                class="field"
+                id="operations-max-drawdown"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.1"
+                aria-label="Maximum drawdown percent" /></label
+            ><label
+              ><span class="muted">Turnover %</span
+              ><input
+                class="field"
+                id="operations-max-turnover"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.1"
+                aria-label="Maximum daily turnover percent" /></label
+            ><button class="primary" id="operations-policy-save" type="submit">
+              Save limits
+            </button>
+          </form>
+          <div class="ticket-row" style="margin-top: 12px">
+            <input
+              class="field"
+              id="operations-kill-reason"
+              maxlength="500"
+              placeholder="Kill-switch reason"
+              aria-label="Kill-switch reason"
+            /><button class="danger" id="operations-kill-toggle" type="button">
+              Activate kill switch
+            </button>
+          </div>
+          <div class="muted" id="operations-runbook"></div>
+          <div
+            class="section-head"
+            style="
+              margin-top: 24px;
+              padding-top: 20px;
+              border-top: 1px solid var(--border);
+            "
+          >
+            <div>
+              <h3>Paper beta evidence</h3>
+              <div class="muted" id="closed-beta-evidence-asof">
+                Measuring persisted safety evidence…
+              </div>
+            </div>
+            <span class="pill" id="closed-beta-evidence-status">Loading</span>
+          </div>
+          <div id="closed-beta-evidence">
+            <div class="empty">Loading beta evidence…</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="markets-view" hidden>
+      <div class="view-title">
+        <h1>Markets</h1>
+        <div class="muted">
+          Discover movement, track companies and understand the current trading
+          session.
+        </div>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Market session</h2>
+              <div class="muted" id="market-asof">
+                Loading the NASDAQ clock…
+              </div>
+            </div>
+            <div class="session-line">
+              <i class="dot"></i
+              ><strong class="session-phase" id="market-phase">—</strong>
+            </div>
+          </div>
+          <div class="metrics" id="market-session">
+            <div class="empty">Loading session…</div>
+          </div>
+          <div class="session-calendar" id="market-calendar"></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Market discovery</h2>
+              <div class="muted">
+                Raw Alpaca SIP screeners. Movement alone is not an investment
+                signal.
+              </div>
+            </div>
+          </div>
+          <div class="discovery-grid" id="market-discovery">
+            <div class="empty">Loading movers…</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Watchlists</h2>
+              <div class="muted">
+                Saved directly to your Alpaca paper account.
+              </div>
+            </div>
+          </div>
+          <form class="watchlist-create" id="watchlist-form">
+            <input
+              class="field"
+              id="watchlist-name"
+              maxlength="64"
+              placeholder="Watchlist name"
+              aria-label="Watchlist name"
+              required
+            /><input
+              class="field"
+              id="watchlist-symbols"
+              placeholder="AAPL, MSFT (optional)"
+              aria-label="Initial symbols"
+            /><button class="primary">Create watchlist</button>
+          </form>
+          <div class="watchlists" id="watchlists">
+            <div class="empty">Loading watchlists…</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Portfolio monitoring</h2>
+              <div class="muted" id="monitoring-asof">
+                Loading relevant news, corporate actions and official SEC
+                filings…
+              </div>
+            </div>
+            <button class="ghost" id="refresh-monitoring" type="button">
+              Refresh
+            </button>
+          </div>
+          <div id="monitoring-warnings"></div>
+          <div class="monitoring-grid">
+            <div class="monitoring-panel">
+              <h3>Relevant news</h3>
+              <div class="news-list" id="monitoring-news">
+                <div class="empty">Loading news…</div>
+              </div>
+            </div>
+            <div class="monitoring-panel">
+              <h3>Corporate-action impact</h3>
+              <div id="monitoring-actions">
+                <div class="empty">Loading corporate actions…</div>
+              </div>
+            </div>
+          </div>
+          <div class="monitoring-filings">
+            <div class="section-head">
+              <div>
+                <h3>Official SEC 8-K alerts</h3>
+                <div class="muted" id="monitoring-filings-coverage">
+                  Loading recent filing items…
+                </div>
+              </div>
+            </div>
+            <div id="monitoring-filings">
+              <div class="empty">Loading SEC filings…</div>
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Multi-asset monitor</h2>
+              <div class="muted" id="multi-asset-asof">
+                Loading entitled Alpaca index, FX and 24/7 crypto data…
+              </div>
+            </div>
+          </div>
+          <div id="multi-asset-warnings"></div>
+          <div class="metrics" id="multi-asset-data">
+            <div class="empty">Loading multi-asset coverage…</div>
+          </div>
+          <div class="muted" id="crypto-risk" style="margin-top: 12px"></div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="portfolio-view" hidden>
+      <div class="view-title">
+        <h1>Portfolio</h1>
+        <div class="muted">
+          Positions, performance, risk and account history.
+        </div>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Portfolio risk</h2>
+              <div class="muted" id="risk-asof">
+                Calculating current exposure…
+              </div>
+            </div>
+          </div>
+          <div class="metrics" id="risk">
+            <div class="empty">Calculating…</div>
+          </div>
+          <div class="analytics-grid">
+            <div>
+              <div class="muted">Allocation</div>
+              <div class="allocation" id="allocation">
+                <div class="empty">Calculating…</div>
+              </div>
+            </div>
+            <div>
+              <div class="muted">Diversification</div>
+              <div class="metric" id="diversification">
+                <strong>—</strong><span class="muted">Calculating</span>
+              </div>
+            </div>
+          </div>
+          <div class="stress-grid" id="stress"></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Portfolio exposure</h2>
+              <div class="muted" id="exposure-asof">
+                Loading asset, SIC and return-factor coverage…
+              </div>
+            </div>
+            <span class="pill" id="exposure-coverage">Coverage pending</span>
+          </div>
+          <div class="metrics" id="exposure-factors">
+            <div class="empty">Loading factor diagnostics…</div>
+          </div>
+          <div class="exposure-grid">
+            <div class="exposure-panel">
+              <h3>Asset classes</h3>
+              <div id="asset-class-exposure">
+                <div class="empty">Loading…</div>
+              </div>
+            </div>
+            <div class="exposure-panel">
+              <h3>SEC SIC divisions</h3>
+              <div id="sector-exposure"><div class="empty">Loading…</div></div>
+            </div>
+            <div class="exposure-panel">
+              <h3>SEC SIC industries</h3>
+              <div id="industry-exposure">
+                <div class="empty">Loading…</div>
+              </div>
+            </div>
+          </div>
+          <div id="exposure-warnings"></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Scenario library</h2>
+              <div class="muted" id="portfolio-scenarios-asof">
+                Loading deterministic portfolio shocks…
+              </div>
+            </div>
+          </div>
+          <div id="portfolio-scenarios">
+            <div class="empty">
+              Loading rate, technology and volatility scenarios…
+            </div>
+          </div>
+          <form class="portfolio-custom-form" id="portfolio-scenario-form">
+            <label
+              ><span class="muted">Scenario name</span
+              ><input
+                class="field"
+                id="portfolio-scenario-name"
+                maxlength="60"
+                value="Custom stress"
+                required /></label
+            ><label
+              ><span class="muted">Symbol shocks (%)</span
+              ><textarea
+                class="field"
+                id="portfolio-scenario-shocks"
+                placeholder="AAPL -20&#10;NVDA -25"
+                required
+              ></textarea></label
+            ><button class="primary" id="portfolio-scenario-button">
+              Run custom scenario
+            </button>
+          </form>
+          <div id="portfolio-scenario-warnings"></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Optimizer proposals</h2>
+              <div class="muted" id="optimizer-asof">
+                Generate target weights from current holdings before constrained
+                planning.
+              </div>
+            </div>
+          </div>
+          <form class="optimizer-form" id="optimizer-form">
+            <label
+              ><span class="muted">Max weight %</span
+              ><input
+                class="field"
+                id="optimizer-max-weight"
+                type="number"
+                min="1"
+                max="100"
+                step="0.1"
+                value="20" /></label
+            ><label
+              ><span class="muted">Max turnover %</span
+              ><input
+                class="field"
+                id="optimizer-max-turnover"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="10" /></label
+            ><label
+              ><span class="muted">Cash reserve %</span
+              ><input
+                class="field"
+                id="optimizer-cash-reserve"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="5" /></label
+            ><label
+              ><span class="muted">Min observations</span
+              ><input
+                class="field"
+                id="optimizer-min-observations"
+                type="number"
+                min="10"
+                max="252"
+                step="1"
+                value="30" /></label
+            ><button class="primary" id="optimizer-button">
+              Build proposals
+            </button>
+          </form>
+          <div id="optimizer-output">
+            <div class="empty">No optimizer proposals have been built.</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Constrained rebalance</h2>
+              <div class="muted" id="rebalance-plan-asof">
+                Draft target weights with turnover, cash, fee and FIFO-tax
+                constraints.
+              </div>
+            </div>
+          </div>
+          <form class="rebalance-plan-form" id="rebalance-plan-form">
+            <label class="rebalance-targets"
+              ><span class="muted">Target weights (%)</span
+              ><textarea
+                class="field"
+                id="rebalance-targets"
+                placeholder="AAPL 25&#10;MSFT 25"
+                required
+              ></textarea></label
+            ><label
+              ><span class="muted">Max turnover %</span
+              ><input
+                class="field"
+                id="rebalance-max-turnover"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="10" /></label
+            ><label
+              ><span class="muted">Fee bps</span
+              ><input
+                class="field"
+                id="rebalance-fee-bps"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.1"
+                value="0" /></label
+            ><label
+              ><span class="muted">Short tax %</span
+              ><input
+                class="field"
+                id="rebalance-short-tax"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="0" /></label
+            ><label
+              ><span class="muted">Long tax %</span
+              ><input
+                class="field"
+                id="rebalance-long-tax"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="0" /></label
+            ><label
+              ><span class="muted">Max tax $</span
+              ><input
+                class="field"
+                id="rebalance-max-tax"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="No cap" /></label
+            ><label
+              ><span class="muted">Cash buffer %</span
+              ><input
+                class="field"
+                id="rebalance-cash-buffer"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value="5" /></label
+            ><label
+              ><span class="muted">Min trade $</span
+              ><input
+                class="field"
+                id="rebalance-min-trade"
+                type="number"
+                min="0"
+                step="1"
+                value="25" /></label
+            ><button class="primary" id="rebalance-plan-button">
+              Build plan
+            </button>
+          </form>
+          <div id="rebalance-plan-output">
+            <div class="empty">No constrained plan has been built.</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Portfolio record</h2>
+              <div class="muted" id="snapshot-asof">
+                Creating a reconciled daily snapshot…
+              </div>
+            </div>
+          </div>
+          <div class="metrics" id="snapshot-metrics">
+            <div class="empty">Validating broker data…</div>
+          </div>
+          <div id="snapshot-flags"></div>
+          <div class="muted" style="margin-top: 18px">
+            Daily snapshot history
+          </div>
+          <div id="snapshot-history"></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Performance</h2>
+              <div class="muted">
+                Cashflow-adjusted portfolio returns and benchmark attribution
+              </div>
+            </div>
+            <div class="periods" id="periods">
+              <button data-period="1M">1M</button
+              ><button data-period="3M" class="active">3M</button
+              ><button data-period="6M">6M</button
+              ><button data-period="1Y">1Y</button>
+            </div>
+          </div>
+          <div class="metrics" id="performance-metrics">
+            <div class="empty">Loading performance…</div>
+          </div>
+          <div id="performance-quality"></div>
+          <div class="analytics-grid">
+            <div class="chart" id="performance-chart">
+              <div class="muted">Loading equity curve…</div>
+            </div>
+            <div>
+              <div class="muted">Current unrealized attribution</div>
+              <div id="attribution"></div>
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Account activity ledger</h2>
+              <div class="muted" id="ledger-asof">
+                Syncing fills and cash activity from Alpaca…
+              </div>
+            </div>
+            <select
+              class="field"
+              id="activity-category"
+              aria-label="Filter account activities"
+            >
+              <option value="">All activity</option>
+              <option value="trade">Trades</option>
+              <option value="dividend">Dividends</option>
+              <option value="interest">Interest</option>
+              <option value="fee">Fees</option>
+              <option value="transfer">Transfers</option>
+              <option value="corporate_action">Corporate actions</option>
+              <option value="option">Options</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="metrics" id="ledger-metrics">
+            <div class="empty">Building ledger…</div>
+          </div>
+          <div id="ledger-warnings"></div>
+          <div class="ledger-head">
+            <span>Activity</span><span>Cash impact</span><span>Date</span>
+          </div>
+          <div id="activity-ledger">
+            <div class="empty">Loading activity…</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <h2>Positions</h2>
+          <div class="list-head">
+            <span>Asset</span><span>Price</span><span>Value</span
+            ><span>Return</span>
+          </div>
+          <div id="positions"><div class="empty">No positions yet</div></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Rebalance basket</h2>
+              <div class="muted">
+                Preview 2–10 market legs together. Alpaca submits them
+                sequentially, so fills are not atomic.
+              </div>
+            </div>
+          </div>
+          <form class="ticket" id="basket-form">
+            <textarea
+              class="field"
+              id="basket-legs"
+              aria-label="Rebalance basket legs"
+              placeholder="AAPL sell 1&#10;MSFT buy 2"
+              required
+            ></textarea>
+            <div class="ticket-row">
+              <select
+                class="field"
+                id="basket-tif"
+                aria-label="Basket time in force"
+              >
+                <option value="day">DAY</option>
+                <option value="gtc">GTC</option></select
+              ><button class="primary" id="basket-button">Review basket</button>
+            </div>
+            <div class="muted">
+              One leg per line: ticker, buy/sell, quantity. Sell proceeds are
+              not assumed to fund buys during risk review.
+            </div>
+          </form>
+        </section>
+        <section class="card wide" id="orders-card">
+          <div class="section-head">
+            <div>
+              <h2>Order blotter</h2>
+              <div class="muted" id="orders-asof">
+                Loading broker order state…
+              </div>
+            </div>
+            <div class="watchlist-actions">
+              <select
+                class="field"
+                id="order-status"
+                aria-label="Filter orders"
+              >
+                <option value="all">All orders</option>
+                <option value="open">Working orders</option>
+                <option value="closed">Closed orders</option></select
+              ><button class="danger" id="cancel-all-orders" type="button">
+                Cancel all working
+              </button>
+            </div>
+          </div>
+          <div class="blotter-head">
+            <span>Order</span><span>Quantity</span><span>Price</span
+            ><span>Status / time</span><span></span>
+          </div>
+          <div id="orders"><div class="empty">Loading orders…</div></div>
+        </section>
+        <section class="card wide">
+          <h2>Decision receipts</h2>
+          <div id="receipts">
+            <div class="empty">No decisions recorded yet</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="strategies-view" hidden>
+      <div class="view-title">
+        <h1>Strategy Lab</h1>
+        <div class="muted">
+          Crypto backtests, shadow runs and decision traces before any automated
+          paper execution.
+        </div>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Crypto experiment controls</h2>
+              <div class="muted">
+                Run deterministic strategies on Alpaca crypto bars, then persist
+                shadow decisions with traceable inputs.
+              </div>
+            </div>
+            <button class="ghost" id="strategy-refresh" type="button">
+              Refresh runs
+            </button>
+          </div>
+          <div class="strategy-layout">
+            <form class="strategy-form" id="strategy-form">
+              <div class="ticket-row">
+                <input
+                  class="field"
+                  id="strategy-symbol"
+                  value="BTC/USD"
+                  aria-label="Crypto symbol"
+                /><select class="field" id="strategy-id" aria-label="Strategy">
+                  <option value="moving-average-trend">
+                    Moving average trend
+                  </option>
+                  <option value="breakout-momentum">Breakout momentum</option>
+                  <option value="volatility-filter">Volatility filter</option>
+                  <option value="btc-eth-relative-strength">
+                    BTC/ETH relative strength
+                  </option>
+                  <option value="order-book-liquidity-scout">
+                    Order-book liquidity scout
+                  </option>
+                  <option value="mean-reversion">Mean reversion</option>
+                  <option value="time-sliced-accumulation">
+                    Time-sliced accumulation
+                  </option>
+                  <option value="buy-and-hold">Buy and hold</option>
+                  <option value="cash">Cash baseline</option>
+                </select>
+              </div>
+              <div class="ticket-row">
+                <select
+                  class="field"
+                  id="strategy-timeframe"
+                  aria-label="Timeframe"
+                >
+                  <option value="1Hour">1 hour bars</option>
+                  <option value="1Day">1 day bars</option>
+                  <option value="15Min">15 minute bars</option></select
+                ><input
+                  class="field"
+                  id="strategy-days"
+                  type="number"
+                  min="1"
+                  max="90"
+                  value="30"
+                  aria-label="Lookback days"
+                />
+              </div>
+              <div class="ticket-row">
+                <input
+                  class="field"
+                  id="strategy-interval"
+                  type="number"
+                  min="0"
+                  max="1440"
+                  step="1"
+                  value="0"
+                  aria-label="Schedule interval minutes"
+                /><textarea
+                  class="field"
+                  id="strategy-params"
+                  aria-label="Strategy parameters JSON"
+                >
+{"fast":5,"slow":20,"exposure":1}</textarea>
+              </div>
+              <div class="ticket-row">
+                <button
+                  class="ghost"
+                  id="strategy-backtest-button"
+                  type="button"
+                >
+                  Run backtest</button
+                ><button class="primary" id="strategy-create-button" disabled>
+                  Create shadow run
+                </button>
+              </div>
+              <div class="muted">
+                A clean, persisted backtest of the current inputs is required
+                before creating a comparable shadow run. Shadow mode records
+                decisions and receipts but submits no orders.
+              </div>
+            </form>
+            <div>
+              <div class="metrics" id="strategy-backtest">
+                <div class="empty">Backtest results will appear here.</div>
+              </div>
+              <div
+                id="strategy-backtest-chart"
+                class="chart"
+                style="margin-top: 14px"
+              >
+                <div class="muted">No strategy equity curve yet.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Standalone paper crypto order</h2>
+              <div class="muted">
+                Manual Alpaca paper ticket for supported crypto order types.
+              </div>
+            </div>
+          </div>
+          <form class="strategy-form" id="crypto-order-form">
+            <div class="ticket-row">
+              <select
+                class="field"
+                id="crypto-order-symbol"
+                aria-label="Crypto order symbol"
+              >
+                <option value="BTC/USD">BTC/USD</option>
+                <option value="ETH/USD">ETH/USD</option>
+                <option value="SOL/USD">SOL/USD</option></select
+              ><select
+                class="field"
+                id="crypto-order-side"
+                aria-label="Crypto order side"
+              >
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option></select
+              ><select
+                class="field"
+                id="crypto-order-type"
+                aria-label="Crypto order type"
+              >
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+                <option value="stop_limit">Stop limit</option></select
+              ><select
+                class="field"
+                id="crypto-order-amount-type"
+                aria-label="Crypto amount type"
+              >
+                <option value="notional">Dollars</option>
+                <option value="quantity">Quantity</option>
+              </select>
+            </div>
+            <div class="ticket-row">
+              <input
+                class="field"
+                id="crypto-order-amount"
+                type="number"
+                min="0.000001"
+                step="any"
+                value="50"
+                aria-label="Crypto order amount"
+              /><input
+                class="field"
+                id="crypto-order-limit"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                placeholder="Limit price"
+                aria-label="Crypto limit price"
+                hidden
+              /><input
+                class="field"
+                id="crypto-order-stop"
+                type="number"
+                min="0.0001"
+                step="0.0001"
+                placeholder="Stop price"
+                aria-label="Crypto stop price"
+                hidden
+              /><select
+                class="field"
+                id="crypto-order-tif"
+                aria-label="Crypto time in force"
+              >
+                <option value="gtc">GTC</option>
+                <option value="ioc">IOC</option></select
+              ><button
+                class="primary"
+                id="crypto-order-preview-button"
+                type="submit"
+              >
+                Review crypto order
+              </button>
+            </div>
+          </form>
+          <div class="metrics" id="crypto-order-preview">
+            <div class="empty">
+              A reviewed paper crypto order will appear here.
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Shadow run observability</h2>
+              <div class="muted" id="strategy-runs-asof">
+                Loading persisted strategy runs…
+              </div>
+            </div>
+            <div class="ticket-row">
+              <button
+                class="ghost"
+                id="strategy-report-button"
+                type="button"
+                disabled
+              >
+                Export report</button
+              ><button
+                class="ghost"
+                id="strategy-scheduler-button"
+                type="button"
+              >
+                Run scheduler</button
+              ><button
+                class="primary"
+                id="strategy-tick-button"
+                type="button"
+                disabled
+              >
+                Tick selected run
+              </button>
+            </div>
+          </div>
+          <div class="strategy-layout">
+            <div class="strategy-list" id="strategy-runs">
+              <div class="empty">Loading runs…</div>
+            </div>
+            <div>
+              <div class="metrics" id="strategy-dashboard">
+                <div class="empty">Select a run to load dashboard metrics.</div>
+              </div>
+              <div id="strategy-alerts" class="trace-table">
+                <div class="empty">
+                  Strategy alerts will appear after a run has decisions, metrics
+                  or paper orders.
+                </div>
+              </div>
+              <div id="strategy-audit" class="trace-table">
+                <div class="empty">
+                  Strategy audit chain appears after run lifecycle changes.
+                </div>
+              </div>
+              <div id="strategy-performance" class="trace-table">
+                <div class="empty">
+                  Active-run P&amp;L will appear after filled paper orders have
+                  market bars.
+                </div>
+              </div>
+              <div id="strategy-attribution" class="trace-table">
+                <div class="empty">
+                  Post-fill attribution will appear after paper orders have fill
+                  evidence.
+                </div>
+              </div>
+              <div class="ticket-row" style="margin: 12px 0">
+                <input
+                  class="field"
+                  id="strategy-filter-symbol"
+                  aria-label="Filter decision symbol"
+                  placeholder="Symbol"
+                /><select
+                  class="field"
+                  id="strategy-filter-decision"
+                  aria-label="Filter decision"
+                >
+                  <option value="">All decisions</option>
+                  <option value="hold">Hold</option>
+                  <option value="enter">Enter</option>
+                  <option value="increase">Increase</option>
+                  <option value="reduce">Reduce</option>
+                  <option value="exit">Exit</option>
+                  <option value="pause">Pause</option>
+                  <option value="block">Block</option></select
+                ><input
+                  class="field"
+                  id="strategy-filter-reason"
+                  aria-label="Filter block reason"
+                  placeholder="Block reason"
+                /><select
+                  class="field"
+                  id="strategy-filter-order"
+                  aria-label="Filter order outcome"
+                >
+                  <option value="">All order outcomes</option>
+                  <option value="none">No order</option>
+                  <option value="drafted">Drafted</option>
+                  <option value="linked">Linked</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="filled">Filled</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div class="metrics" id="strategy-trace-summary">
+                <div class="empty">
+                  Select a run, then tick it or open an existing decision trace.
+                </div>
+              </div>
+              <div id="strategy-decisions" class="trace-table"></div>
+              <div id="strategy-trace-detail"></div>
+              <form
+                class="strategy-form"
+                id="strategy-paper-form"
+                style="margin-top: 16px"
+              >
+                <h3>Paper automation approval</h3>
+                <div class="ticket-row">
+                  <input
+                    class="field"
+                    id="strategy-paper-budget"
+                    type="number"
+                    min="1"
+                    max="100000"
+                    value="250"
+                    aria-label="Paper strategy budget"
+                  /><input
+                    class="field"
+                    id="strategy-paper-max-position"
+                    type="number"
+                    min="1"
+                    value="250"
+                    aria-label="Maximum position notional"
+                  /><input
+                    class="field"
+                    id="strategy-paper-max-order"
+                    type="number"
+                    min="1"
+                    value="50"
+                    aria-label="Maximum order notional"
+                  />
+                </div>
+                <div class="ticket-row">
+                  <input
+                    class="field"
+                    id="strategy-paper-min-order"
+                    type="number"
+                    min="1"
+                    value="5"
+                    aria-label="Minimum order notional"
+                  /><input
+                    class="field"
+                    id="strategy-paper-max-spread"
+                    type="number"
+                    min="1"
+                    value="100"
+                    aria-label="Maximum spread bps"
+                  /><input
+                    class="field"
+                    id="strategy-paper-expires"
+                    type="number"
+                    min="1"
+                    max="720"
+                    value="24"
+                    aria-label="Approval expiry hours"
+                  /><select
+                    class="field"
+                    id="strategy-paper-tif"
+                    aria-label="Crypto time in force"
+                  >
+                    <option value="gtc">GTC</option>
+                    <option value="ioc">IOC</option>
+                  </select>
+                </div>
+                <div class="ticket-row">
+                  <input
+                    class="field"
+                    id="strategy-paper-max-daily-loss"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    value="5"
+                    aria-label="Maximum daily loss percent"
+                  /><input
+                    class="field"
+                    id="strategy-paper-max-drawdown"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    value="10"
+                    aria-label="Maximum drawdown percent"
+                  /><input
+                    class="field"
+                    id="strategy-paper-max-turnover"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="1"
+                    value="50"
+                    aria-label="Maximum daily turnover percent"
+                  /><input
+                    class="field"
+                    id="strategy-paper-cooldown"
+                    type="number"
+                    min="1"
+                    max="1440"
+                    step="1"
+                    value="30"
+                    aria-label="Error cooldown minutes"
+                  />
+                </div>
+                <div class="ticket-row">
+                  <button
+                    class="primary"
+                    id="strategy-paper-approve"
+                    type="submit"
+                  >
+                    Approve paper run</button
+                  ><button
+                    class="ghost"
+                    id="strategy-pause-button"
+                    type="button"
+                  >
+                    Pause run</button
+                  ><button
+                    class="danger"
+                    id="strategy-kill-button"
+                    type="button"
+                  >
+                    Kill run
+                  </button>
+                </div>
+                <div class="muted">
+                  Paper approval allows this selected run to submit bounded
+                  Alpaca paper crypto market orders only. Live trading remains
+                  unavailable.
+                </div>
+              </form>
+              <form
+                class="strategy-form"
+                id="strategy-review-form"
+                style="margin-top: 16px"
+              >
+                <h3>Experiment review</h3>
+                <div class="ticket-row">
+                  <select
+                    class="field"
+                    id="strategy-review-action"
+                    aria-label="Review action"
+                  >
+                    <option value="continue">Continue</option>
+                    <option value="pause">Pause</option>
+                    <option value="retire">Retire</option>
+                    <option value="revise">Revise</option>
+                    <option value="promote">Promote</option></select
+                  ><input
+                    class="field"
+                    id="strategy-review-note"
+                    aria-label="Review note"
+                    placeholder="Decision and why"
+                  /><input
+                    class="field"
+                    id="strategy-review-revision"
+                    aria-label="Revision note"
+                    placeholder="Parameter/config changes"
+                  />
+                </div>
+                <div class="ticket-row">
+                  <button
+                    class="primary"
+                    id="strategy-review-submit"
+                    type="submit"
+                  >
+                    Save review
+                  </button>
+                </div>
+                <div class="muted">
+                  Reviews update the selected run status, append review history
+                  and keep a note in exported reports.
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="options-view" hidden>
+      <div class="view-title">
+        <h1>Options Research</h1>
+        <div class="muted">
+          Alpaca contract metadata and indicative OPRA snapshots. Research
+          first; execution remains paper-only and defined-risk.
+        </div>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <form class="watchlist-create" id="options-form">
+            <input
+              class="field"
+              id="options-symbol"
+              value="AAPL"
+              aria-label="Options underlying"
+            /><select
+              class="field"
+              id="options-expiration"
+              aria-label="Option expiration"
+            >
+              <option value="">Nearest expiration</option></select
+            ><button class="primary" id="options-button">Load chain</button>
+          </form>
+          <div class="metrics" id="options-metrics">
+            <div class="empty">
+              Open this workspace to load a bounded chain.
+            </div>
+          </div>
+          <div class="ticket-row" style="margin-top: 16px">
+            <select
+              class="field"
+              id="options-type"
+              aria-label="Option type filter"
+            >
+              <option value="all">Calls and puts</option>
+              <option value="call">Calls</option>
+              <option value="put">Puts</option></select
+            ><input
+              class="field"
+              id="options-open-interest"
+              type="number"
+              min="0"
+              value="0"
+              aria-label="Minimum open interest"
+              placeholder="Minimum open interest"
+            /><input
+              class="field"
+              id="options-spread"
+              type="number"
+              min="0"
+              value="1000"
+              aria-label="Maximum spread bps"
+              placeholder="Maximum spread bps"
+            />
+          </div>
+          <div class="analytics-grid" style="margin-top: 18px">
+            <div class="chart" id="options-payoff">
+              <div class="empty">
+                Select a liquid contract to view a long-option expiry payoff.
+              </div>
+            </div>
+            <div id="options-selected">
+              <div class="empty">No contract selected</div>
+            </div>
+          </div>
+          <div class="option-head">
+            <span>Contract</span><span>Bid / ask</span><span>OI / volume</span
+            ><span>IV</span><span>Delta</span><span>Spread</span>
+          </div>
+          <div id="options-chain"><div class="empty">No chain loaded</div></div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Defined-risk paper ticket</h2>
+              <div class="muted">
+                Long buy-to-open contracts and two-leg net-debit verticals only.
+                Naked selling is intentionally unavailable.
+              </div>
+            </div>
+          </div>
+          <form class="ticket" id="option-order-form">
+            <div class="ticket-row">
+              <select
+                class="field"
+                id="option-order-kind"
+                aria-label="Option strategy"
+              >
+                <option value="single">Long single leg</option>
+                <option value="vertical">Debit vertical</option></select
+              ><select
+                class="field"
+                id="option-order-type"
+                aria-label="Option order type"
+              >
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+              </select>
+            </div>
+            <textarea
+              class="field"
+              id="option-order-legs"
+              aria-label="Option order contracts"
+              placeholder="AAPL260717C00300000&#10;AAPL260717C00310000"
+            ></textarea>
+            <div class="ticket-row">
+              <input
+                class="field"
+                id="option-order-qty"
+                type="number"
+                min="1"
+                max="10"
+                step="1"
+                value="1"
+                aria-label="Option strategy quantity"
+              /><input
+                class="field"
+                id="option-order-limit"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="Net debit limit"
+                aria-label="Option limit price"
+                hidden
+              /><button class="primary" id="option-order-button">
+                Review option order
+              </button>
+            </div>
+          </form>
+          <div class="metrics" id="option-portfolio-greeks">
+            <div class="empty">Loading portfolio option exposure…</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="advisor-view" hidden>
+      <div class="view-title">
+        <h1>AI Advisor</h1>
+        <div class="muted">
+          Evidence-backed portfolio analysis with human-approved execution.
+        </div>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Portfolio Q&amp;A</h2>
+              <div class="muted" id="portfolio-question-asof">
+                Current Alpaca paper account and deterministic risk data.
+              </div>
+            </div>
+          </div>
+          <form class="qa-form" id="portfolio-question-form">
+            <input
+              class="field"
+              id="portfolio-question"
+              maxlength="500"
+              minlength="3"
+              required
+              placeholder="What is my largest position?"
+              aria-label="Portfolio question"
+            /><button class="primary" id="portfolio-question-button">
+              Ask
+            </button>
+          </form>
+          <div id="portfolio-answer">
+            <div class="empty">
+              Ask about holdings, cash, risk, prices, recent history, market
+              status, news or open orders.
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="copilot-head">
+            <div>
+              <h2>Guided Rebalance Agent</h2>
+              <div class="muted">
+                Researches your portfolio and drafts ideas. The agent cannot
+                place orders.
+              </div>
+            </div>
+            <div>
+              <select class="field" id="intent" aria-label="Plan intent">
+                <option value="balanced_growth">Balanced growth</option>
+                <option value="reduce_concentration">
+                  Reduce concentration
+                </option>
+                <option value="preserve_capital">Preserve capital</option>
+              </select>
+              <button class="primary" id="copilot-button">Create plan</button>
+            </div>
+          </div>
+          <div id="copilot">
+            <div class="empty">
+              Choose an objective to begin a portfolio review.
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Trade journal</h2>
+              <div class="muted" id="trade-journal-asof">
+                Receipt-linked thesis history and post-trade evidence.
+              </div>
+            </div>
+            <span class="pill" id="trade-journal-count">0 entries</span>
+          </div>
+          <form class="journal-create" id="trade-journal-form">
+            <label class="journal-field"
+              ><span class="muted">Receipt</span
+              ><select
+                class="field"
+                id="trade-journal-receipt"
+                required
+              ></select></label
+            ><label class="journal-field"
+              ><span class="muted">Original thesis</span
+              ><textarea
+                class="field"
+                id="trade-journal-thesis"
+                minlength="10"
+                maxlength="1000"
+                required
+              ></textarea></label
+            ><label class="journal-field"
+              ><span class="muted">Invalidation</span
+              ><textarea
+                class="field"
+                id="trade-journal-invalidation"
+                minlength="5"
+                maxlength="500"
+                required
+              ></textarea></label
+            ><button class="primary" id="trade-journal-add">Add entry</button>
+          </form>
+          <div id="trade-journal">
+            <div class="empty">No journal entries yet.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="view" id="research-view" hidden>
+      <div class="view-title">
+        <h1>Company Research</h1>
+        <div class="muted">
+          Market data, news and cited AI analysis with automated quality checks.
+        </div>
+        <form class="research-form" id="research-form">
+          <input
+            class="field"
+            id="research-symbol"
+            value="AAPL"
+            aria-label="Company ticker"
+            autocomplete="off"
+          /><button class="ghost" type="button" id="company-button">
+            View company</button
+          ><button class="primary" id="research-button">Run AI analysis</button>
+        </form>
+      </div>
+      <div class="grid">
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <div class="company-heading">
+                <img
+                  class="company-logo"
+                  id="company-logo"
+                  alt=""
+                  width="44"
+                  height="44"
+                />
+                <div>
+                  <h2 id="company-title">Company market view</h2>
+                  <div class="muted" id="company-asof">
+                    Loading quote, price history, volume and news…
+                  </div>
+                </div>
+              </div>
+              <div class="company-meta" id="company-meta"></div>
+            </div>
+            <div class="company-controls">
+              <select
+                class="field benchmark-select"
+                id="company-benchmark"
+                aria-label="Comparison benchmark"
+              >
+                <option value="SPY">vs SPY</option>
+                <option value="QQQ">vs QQQ</option>
+                <option value="DIA">vs DIA</option>
+              </select>
+              <div class="periods" id="company-periods">
+                <button data-period="1M">1M</button
+                ><button data-period="3M" class="active">3M</button
+                ><button data-period="1Y">1Y</button>
+              </div>
+            </div>
+          </div>
+          <div class="section-head identity-head">
+            <div>
+              <h3>Security identity</h3>
+              <div class="muted" id="openfigi-asof">
+                Resolving the US-equity ticker with OpenFIGI v3…
+              </div>
+            </div>
+            <span class="pill">Official identity</span>
+          </div>
+          <div id="openfigi-identity">
+            <div class="empty spin">Loading OpenFIGI identity…</div>
+          </div>
+          <div class="metrics" id="company-metrics">
+            <div class="empty">Loading company data…</div>
+          </div>
+          <div id="company-quality"></div>
+          <div class="market-grid">
+            <div class="market-chart" id="company-chart">
+              <div class="empty">Loading daily bars…</div>
+            </div>
+            <div class="market-stats" id="company-stats"></div>
+          </div>
+          <h3>Recent licensed news</h3>
+          <div class="news-list" id="company-news">
+            <div class="empty">Loading news…</div>
+          </div>
+          <div class="section-head gdelt-head">
+            <div>
+              <h3>Broad media signals</h3>
+              <div class="muted" id="gdelt-asof">
+                Loading GDELT public-web coverage…
+              </div>
+            </div>
+            <span class="pill">Media signal</span>
+          </div>
+          <div class="news-list" id="gdelt-news">
+            <div class="empty spin">Loading GDELT coverage…</div>
+          </div>
+          <div class="section-head gdelt-head">
+            <div>
+              <h3>Optional company enrichment</h3>
+              <div class="muted" id="finnhub-asof">
+                Checking Finnhub profile, earnings and company news coverage…
+              </div>
+            </div>
+            <span class="pill">Licensed provider</span>
+          </div>
+          <div id="finnhub-enrichment">
+            <div class="empty spin">Loading optional Finnhub enrichment…</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Official macro context</h2>
+              <div class="muted" id="macro-asof">
+                Loading rates, inflation, labor, growth and fiscal observations…
+              </div>
+            </div>
+          </div>
+          <div id="macro-context">
+            <div class="empty spin">Loading official macro sources…</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>SEC EDGAR evidence</h2>
+              <div class="muted">
+                Official filing sections, comparable financial trends and XBRL
+                facts with accession provenance.
+              </div>
+            </div>
+          </div>
+          <div id="edgar-evidence">
+            <div class="empty">
+              Run AI analysis to populate filings, Risk Factors, MD&amp;A and
+              accession-linked financial trends.
+            </div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head comparables-head">
+            <div>
+              <h2>Comparable valuation</h2>
+              <div class="muted" id="comparables-asof">
+                Annual SEC fundamentals with current Alpaca IEX prices.
+              </div>
+            </div>
+            <form class="comparables-form" id="comparables-form">
+              <input
+                class="field"
+                id="comparable-peers"
+                aria-label="Peer ticker symbols"
+                placeholder="MSFT, GOOGL, AMZN"
+                autocomplete="off"
+              /><button class="ghost" id="comparables-button">Compare</button>
+            </form>
+          </div>
+          <div id="comparables-table">
+            <div class="empty">No peer set selected.</div>
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Scenario valuation memos</h2>
+              <div class="muted" id="scenarios-asof">
+                Twelve-month user assumptions applied to cited SEC inputs.
+              </div>
+            </div>
+          </div>
+          <form class="scenario-form" id="scenario-form">
+            <div class="scenario-assumption-row">
+              <strong class="scenario-case">Bear</strong
+              ><label class="scenario-input"
+                ><span class="muted">Revenue growth %</span
+                ><input
+                  class="field"
+                  id="scenario-bear-growth"
+                  type="number"
+                  min="-99"
+                  max="200"
+                  step="0.1"
+                  value="-5"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">Net margin %</span
+                ><input
+                  class="field"
+                  id="scenario-bear-margin"
+                  type="number"
+                  min="-100"
+                  max="100"
+                  step="0.1"
+                  value="15"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">P/E multiple</span
+                ><input
+                  class="field"
+                  id="scenario-bear-pe"
+                  type="number"
+                  min="0.1"
+                  max="200"
+                  step="0.1"
+                  value="15"
+                  required
+              /></label>
+            </div>
+            <div class="scenario-assumption-row">
+              <strong class="scenario-case">Base</strong
+              ><label class="scenario-input"
+                ><span class="muted">Revenue growth %</span
+                ><input
+                  class="field"
+                  id="scenario-base-growth"
+                  type="number"
+                  min="-99"
+                  max="200"
+                  step="0.1"
+                  value="5"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">Net margin %</span
+                ><input
+                  class="field"
+                  id="scenario-base-margin"
+                  type="number"
+                  min="-100"
+                  max="100"
+                  step="0.1"
+                  value="20"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">P/E multiple</span
+                ><input
+                  class="field"
+                  id="scenario-base-pe"
+                  type="number"
+                  min="0.1"
+                  max="200"
+                  step="0.1"
+                  value="20"
+                  required
+              /></label>
+            </div>
+            <div class="scenario-assumption-row">
+              <strong class="scenario-case">Bull</strong
+              ><label class="scenario-input"
+                ><span class="muted">Revenue growth %</span
+                ><input
+                  class="field"
+                  id="scenario-bull-growth"
+                  type="number"
+                  min="-99"
+                  max="200"
+                  step="0.1"
+                  value="15"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">Net margin %</span
+                ><input
+                  class="field"
+                  id="scenario-bull-margin"
+                  type="number"
+                  min="-100"
+                  max="100"
+                  step="0.1"
+                  value="25"
+                  required /></label
+              ><label class="scenario-input"
+                ><span class="muted">P/E multiple</span
+                ><input
+                  class="field"
+                  id="scenario-bull-pe"
+                  type="number"
+                  min="0.1"
+                  max="200"
+                  step="0.1"
+                  value="25"
+                  required
+              /></label>
+            </div>
+            <button class="primary" id="scenarios-button">
+              Build scenario memos
+            </button>
+          </form>
+          <div id="scenario-results">
+            <div class="empty">No scenario valuation has been run.</div>
+          </div>
+        </section>
+        <section class="card wide" id="research-result">
+          <div class="empty">
+            Run AI analysis for a cited fundamental, filing and risk review.
+          </div>
+        </section>
+        <section class="card wide">
+          <div class="section-head">
+            <div>
+              <h2>Agent reliability</h2>
+              <div class="muted">
+                Rolling production metrics from the last 50 completed research
+                runs.
+              </div>
+            </div>
+          </div>
+          <div class="metrics" id="research-history">
+            <div class="empty">No completed runs yet</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <div class="toast" id="toast"></div>
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <section
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      <h2 id="modal-title">Review action</h2>
+      <div class="modal-body" id="modal-body"></div>
+      <label class="modal-field" id="modal-field" hidden
+        ><span class="muted" id="modal-label"></span
+        ><input class="field" id="modal-input"
+      /></label>
+      <div class="modal-actions">
+        <button class="ghost" id="modal-cancel" type="button">Cancel</button
+        ><button class="primary" id="modal-confirm" type="button">
+          Confirm
+        </button>
+      </div>
+    </section>
+  </div>
+  <script src="/core.js"></script>
+  <script src="/portfolio.js"></script>
+  <script src="/strategies.js"></script>
+  <script src="/market-detail.js"></script>
+  <script src="/research.js"></script>
+  <script src="/app.js"></script>
+</html>
