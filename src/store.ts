@@ -255,14 +255,16 @@ export function createStore(filename = "data/app.db") {
     WHERE status = 'submitted' OR (status = 'reserved' AND expires_at_ms > ?) ORDER BY created_at, reservation_key`).all(now) as RiskReservation[];
 
   const reserveRiskTransaction = db.transaction(<T>(key: string, candidate: ReservationCandidate, validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs: number) => {
-    const existing = db.query("SELECT reservation_key FROM risk_reservations WHERE reservation_key = ?").get(key);
-    if (existing) return { reserved: false as const, reason: "exists" as const };
     if (!key || !candidate.symbol || !Number.isFinite(candidate.qty) || candidate.qty <= 0 || !Number.isFinite(candidate.price) || candidate.price <= 0) throw new Error("Invalid risk reservation");
     const now = Date.now();
     db.query("UPDATE risk_reservations SET status = 'released', updated_at = CURRENT_TIMESTAMP WHERE status = 'reserved' AND expires_at_ms <= ?").run(now);
+    const existing = db.query("SELECT reservation_key FROM risk_reservations WHERE reservation_key = ? AND status <> 'released'").get(key);
+    if (existing) return { reserved: false as const, reason: "exists" as const };
     const validation = validate(reservationRows(now));
     if (!validation.allowed) return { reserved: false as const, reason: "risk" as const, validation: validation.value };
-    db.query("INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)")
+    db.query(`INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)
+      ON CONFLICT(reservation_key) DO UPDATE SET symbol=excluded.symbol, side=excluded.side, qty=excluded.qty, price=excluded.price,
+      status='reserved', order_id=NULL, expires_at_ms=excluded.expires_at_ms, updated_at=CURRENT_TIMESTAMP WHERE risk_reservations.status='released'`)
       .run(key, candidate.symbol, candidate.side, candidate.qty, candidate.price, now + ttlMs);
     return { reserved: true as const, validation: validation.value };
   });
@@ -270,12 +272,14 @@ export function createStore(filename = "data/app.db") {
     if (!key || candidates.length < 2 || candidates.length > 10 || candidates.some(candidate => !candidate.symbol || !Number.isFinite(candidate.qty) || candidate.qty <= 0 || !Number.isFinite(candidate.price) || candidate.price <= 0)) throw new Error("Invalid basket risk reservation");
     const keys = candidates.map((_, index) => `${key}:${index}`);
     const placeholders = keys.map(() => "?").join(",");
-    if (db.query(`SELECT reservation_key FROM risk_reservations WHERE reservation_key IN (${placeholders}) LIMIT 1`).get(...keys)) return { reserved: false as const, reason: "exists" as const };
     const now = Date.now();
     db.query("UPDATE risk_reservations SET status = 'released', updated_at = CURRENT_TIMESTAMP WHERE status = 'reserved' AND expires_at_ms <= ?").run(now);
+    if (db.query(`SELECT reservation_key FROM risk_reservations WHERE reservation_key IN (${placeholders}) AND status <> 'released' LIMIT 1`).get(...keys)) return { reserved: false as const, reason: "exists" as const };
     const validation = validate(reservationRows(now));
     if (!validation.allowed) return { reserved: false as const, reason: "risk" as const, validation: validation.value };
-    const insert = db.query("INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)");
+    const insert = db.query(`INSERT INTO risk_reservations (reservation_key, symbol, side, qty, price, status, expires_at_ms) VALUES (?, ?, ?, ?, ?, 'reserved', ?)
+      ON CONFLICT(reservation_key) DO UPDATE SET symbol=excluded.symbol, side=excluded.side, qty=excluded.qty, price=excluded.price,
+      status='reserved', order_id=NULL, expires_at_ms=excluded.expires_at_ms, updated_at=CURRENT_TIMESTAMP WHERE risk_reservations.status='released'`);
     candidates.forEach((candidate, index) => insert.run(keys[index]!, candidate.symbol, candidate.side, candidate.qty, candidate.price, now + ttlMs));
     return { reserved: true as const, keys, validation: validation.value };
   });
