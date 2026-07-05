@@ -100,9 +100,9 @@ function authorizeRoute(auth: AuthContext, path: string, method: string) {
 
 type AppEnvironment = Record<string, string | undefined>;
 type AppStore = ReturnType<typeof createStore>;
-export type AppDependencies = { alpaca: Alpaca; store: AppStore; codeIdentity: CodeIdentity; env?: AppEnvironment; indexPath?: string };
+export type AppDependencies = { alpaca: Alpaca; store: AppStore; codeIdentity: CodeIdentity; env?: AppEnvironment; indexPath?: string; setIntervalFn?: (callback: () => void, milliseconds: number) => unknown };
 
-export function createApp({ alpaca, store, codeIdentity, env = process.env, indexPath = "src/index.html" }: AppDependencies) {
+export function createApp({ alpaca, store, codeIdentity, env = process.env, indexPath = "src/index.html", setIntervalFn = setInterval }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
   const allow = rateLimiter();
 
@@ -2489,13 +2489,13 @@ async function pollStrategyScheduler() {
     orderUpdates.connect();
     stockUpdates.connect();
     void recoverOrders().then(() => capturePortfolioSnapshot()).catch(error => console.error("startup recovery failed", error instanceof Error ? error.message : error));
-    setInterval(() => void recoverOrders().catch(error => console.error("order recovery failed", error instanceof Error ? error.message : error)), 30_000);
-    setInterval(() => void capturePortfolioSnapshot().catch(error => console.error("portfolio snapshot failed", error instanceof Error ? error.message : error)), 15 * 60_000);
+    setIntervalFn(() => void recoverOrders().catch(error => console.error("order recovery failed", error instanceof Error ? error.message : error)), 30_000);
+    setIntervalFn(() => void capturePortfolioSnapshot().catch(error => console.error("portfolio snapshot failed", error instanceof Error ? error.message : error)), 15 * 60_000);
     if (env.STRATEGY_SCHEDULER_DISABLED !== "1") {
       const pollMs = Number(env.STRATEGY_SCHEDULER_POLL_MS ?? 60_000);
-      if (Number.isFinite(pollMs) && pollMs >= 10_000) setInterval(() => void pollStrategyScheduler(), pollMs);
+      if (Number.isFinite(pollMs) && pollMs >= 10_000) setIntervalFn(() => void pollStrategyScheduler(), pollMs);
     }
-    setInterval(() => {
+    setIntervalFn(() => {
       for (const [id, subscriber] of streamSubscribers) {
         try { subscriber.controller.enqueue(streamEncoder.encode(": heartbeat\n\n")); }
         catch { removeStreamSubscriber(id); }
