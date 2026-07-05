@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main`: 2026-07-05.
+Last reviewed against `main` commit `352c26c`: 2026-07-05.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -70,7 +70,7 @@ The browser exposes seven workspaces:
 
 - Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence.
 - Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, optional walk-forward window segmentation, and exact normalized dataset hashes.
-- Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable.
+- Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable, and a changed commit or definition requires a new reviewed backtest.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
 - Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, deterministic alerts, and experiment review history.
@@ -78,9 +78,18 @@ The browser exposes seven workspaces:
 
 See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 
+## Runtime and operations
+
+- `GET /health` reports process liveness. `GET /ready` additionally requires preview signing, production security configuration when applicable, a valid SEC identity, and a reachable Alpaca paper account.
+- Startup resolves an exact 40-character Git commit and working-tree state. Packaged deployments without `.git` metadata must provide `APP_GIT_COMMIT`; `APP_GIT_DIRTY=1` keeps results auditable but non-comparable.
+- One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, and the strategy scheduler. Runtime jobs are idempotent where implemented but not durable across restarts.
+- The schema has 13 ordered migrations and 21 application tables including migration history. Serialized backup export includes a SHA-256 digest; fixture restore and both audit chains are tested.
+- The source/output governance registry has 16 sources and 12 stored-output categories. It records policy decisions but does not enforce retention deletion or constitute external terms approval.
+
 ## Safety and authorization
 
 - `paper: true` is hard-coded where the Alpaca client is constructed. There is no live client or runtime switch.
+- `LIVE_TRADING_ENABLED` and `LIVE_TRADING_REVIEW_ID` are read only by the governance report to show that live requests remain blocked; they do not construct or enable a live broker client.
 - The global kill switch blocks every order surface. Reducing sells may pass exposure/turnover caps, but never bypass the kill switch.
 - Ordinary sells cannot exceed holdings. New equity shorts require a separate explicit opt-in and cannot exceed the configured short boundary.
 - Default equity order policy caps a ticket at the lesser of $2,500 or 2.5% of equity, resulting position concentration at 20%, and rolling 24-hour turnover at 10% of equity. Persisted operations policy can be stricter.
@@ -128,6 +137,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Backtests remain bounded to a single provider request and are not yet backed by a versioned long-history dataset; a stored hash proves exact input identity, not completeness or point-in-time correctness.
 - `src/app.ts` remains a 2,488-line request/composition module; `src/index.html` is a roughly 256 KB single-file client; `src/store.ts` still contains all repositories. The small `src/server.ts` entry and `src/migrations.ts` schema boundary are separate, but per-domain route, repository, and UI maintenance remain concentrated.
 - The 250-test suite includes direct request-boundary contracts and enforces 95% function and 96% line coverage across imported TypeScript modules. `src/app.ts` is instrumented at 17.90% of functions and 77.98% of lines, many broker-backed route branches remain uncovered, and the browser client is validated separately rather than included in that percentage.
+- `tsconfig.json` includes `src/` only. The operational scripts currently pass a separate strict TypeScript invocation, but that invocation is not part of `bun run check` or CI, and credentialed smoke behavior is exercised only when those commands are run.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Ordered migrations, rollback/upgrade fixtures, and serialized backup restore with audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.
 - The governance registry is an internal decision record, not legal approval. Alpaca, Finnhub, GDELT, Treasury, FRED, BEA, SEC, BLS, OpenFIGI, and OpenAI terms still require an external entitlement review for the intended deployment.

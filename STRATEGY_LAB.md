@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main`: 2026-07-05.
+Last reviewed against `main` commit `352c26c`: 2026-07-05.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -20,6 +20,8 @@ Open `http://localhost:3000/#strategies`. For another port:
 ```sh
 PORT=3017 bun --env-file=.env src/server.ts
 ```
+
+The process records its Git commit and working-tree state at startup. A dirty checkout can run and retain backtests for audit, but those artifacts cannot create comparable shadow runs. Restart after checking out another commit so the process identity matches the running code.
 
 ## Experiment lifecycle
 
@@ -134,6 +136,8 @@ It does not yet:
 
 Treat a backtest as a screening tool. A stored hash proves which input was used, not that the input was complete or representative. A useful result earns prospective shadow observation, not a larger budget.
 
+Backtest artifacts are immutable and actor-scoped at retrieval. Run creation checks the exact strategy definition, plugin version, feature schema, dataset hash, and Git commit against the selected backtest. A server restarted on a different commit must produce a new reviewed backtest even when the visible parameters are unchanged.
+
 ## Shadow runs and traces
 
 Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.
@@ -160,7 +164,7 @@ The full snapshot remains in SQLite even when the browser displays a compact sum
 
 ## Data and retention boundary
 
-Strategy experiments persist immutable backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
+Strategy experiments persist immutable backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records across eight strategy tables. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
 
 Retention metadata does not delete data. There is no automatic pruning job, so a long-running experiment can grow the local SQLite database until an operator removes or archives records under a reviewed policy. Inspect `/api/operations/data-governance` for the current provider and stored-output decisions; external entitlement review remains required before any different user, redistribution, or live use.
 
@@ -199,7 +203,7 @@ Experiment reports include config, assumptions, coverage, metrics, orders, attri
 These examples are for local development, where the demo actor has all roles. Production requests must pass the configured proxy identity and origin boundary.
 
 ```sh
-# Run a backtest and retain its backtestId
+# Run a backtest; HTTP 201 returns the immutable backtestId and provenance
 curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
   -d '{"symbols":["BTC/USD"],"strategyId":"moving-average-trend","timeframe":"1Hour","days":30,"params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
@@ -259,7 +263,7 @@ Before continuing or increasing a paper experiment:
 | Problem | Check |
 | --- | --- |
 | Backtest rejected | Paper credentials, symbol, timeframe, 1-90 day bound, JSON, and finite parameters |
-| Run creation rejected | Supported strategy ID and one valid symbol, or the bounded BTC/ETH pair |
+| Run creation rejected | Clean current commit, actor-owned `backtestId`, exact strategy/parameters/timeframe/lookback match, and one valid symbol or bounded BTC/ETH pair |
 | Tick blocked | Run status, fresh bars/snapshot, approval expiry, spread, budget, loss/drawdown/turnover, cooldown, and kill switch |
 | Scheduled tick missing | Nonzero interval, running server process, due timestamp, and `STRATEGY_SCHEDULER_DISABLED` |
 | Features unavailable | Increase history; indicators remain null until enough valid bars exist |

@@ -4,6 +4,8 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
+Code baseline reviewed: `main` at `352c26c` on 2026-07-05.
+
 ## Quick start
 
 Requirements: [Bun 1.2.15](https://bun.sh/) and an Alpaca paper account. Coverage metrics are runtime-sensitive, so local and CI checks use the pinned version.
@@ -28,6 +30,8 @@ SEC_USER_AGENT=ai-broker-v2 your-monitored-email@example.com
 
 `OPENAI_API_KEY` is optional. Without it, deterministic broker, portfolio, market, research-source, and Strategy Lab features still work; AI Advisor and generated company analysis return an explicit unavailable response.
 
+Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and `OPENFIGI_API_KEY`. Production proxy settings, scheduler controls, model selection, portfolio benchmark, and deployed-build identity are documented in [`.env.example`](.env.example). Local secrets and SQLite files are ignored by Git.
+
 ## What is included
 
 - Alpaca paper account, positions, orders, activities, watchlists, market clock, calendar, and IEX market data.
@@ -48,13 +52,27 @@ The application currently runs as one Bun process with a local SQLite database a
 - `src/migrations.ts` and `src/store.ts` own the current SQLite schema and repositories.
 - `src/index.html` contains the current browser application.
 
-The large request, store, and browser files are the next useful extraction boundaries. The incremental target structure and move order live in `roadmap.md`; no directory move is required to contribute safely today.
+The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrations, and 21 SQLite tables. The main concentration points are the 2,488-line request module, 782-line store, and 255,758-byte single-file browser client. The incremental bounded-context target and move order live in `roadmap.md`; no directory move is required to contribute safely today.
+
+## Quality snapshot
+
+| Boundary | Reviewed state |
+| --- | --- |
+| Automated checks | 250 tests and 977 assertions pass |
+| Instrumented coverage | 95.60% functions and 96.60% lines across imported TypeScript |
+| API composition | Common auth, parsing, error, strategy, and system contracts exist; broker-backed success and concurrency coverage remain incomplete |
+| Browser | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite |
+| Persistence | Transactional migrations through 0013 and a serialized fixture restore pass |
+| Production | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open |
+
+See [`VALIDATION.md`](VALIDATION.md) for evidence and scope. Aggregate coverage is not application-wide: the browser and process entry are outside it, and the standard TypeScript project currently includes `src/` but not operational scripts.
 
 ## Commands
 
 ```sh
-bun run check             # strict TypeScript, all tests, and coverage floor
+bun run check             # strict TypeScript for src, all tests, and coverage floor
 bun run eval              # focused broker safety and agent trust-boundary suite
+bun run eval:research     # credentialed live research evaluation
 bun run coverage          # 95% function / 96% line coverage gate
 bun audit                 # dependency vulnerability audit
 bun run alpaca:doctor     # independent Alpaca paper/API diagnostic

@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main`: 2026-07-05.
+Last reviewed against `main` commit `352c26c`: 2026-07-05.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -17,8 +17,8 @@ The 2026-07-05 audit found a capable deterministic core and a large difference b
 
 | Area | Current state | Evidence / implication |
 | --- | --- | --- |
-| Repository | 59 production TypeScript modules, 62 test files, a small Bun entry point, one request module, one migration registry, one browser HTML file, SQLite persistence | Process startup, schema migration, and strategy provenance are separated; route and browser composition remain concentrated |
-| Automated checks | 250 tests, 977 assertions, strict TypeScript, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI |
+| Repository | 59 production TypeScript modules, 62 test files, a 24-line Bun entry point, a 2,488-line request module, a 782-line store, a 255,758-byte browser file, one migration registry, and SQLite persistence | Process startup, schema migration, and strategy provenance are separated; route, repository, and browser composition remain concentrated |
+| Automated checks | 250 tests, 977 assertions, strict TypeScript for `src/`, 39 focused safety/evaluation tests | `bun run check` and `bun run eval` pass; coverage floors are enforced in CI, but operational scripts are outside the standard TypeScript project |
 | Instrumented coverage | 95.60% functions and 96.60% lines across imported modules | Reviewed floors are 95% functions and 96% lines; browser coverage is reported separately |
 | Dependency audit | No known vulnerabilities | `bun audit` passed on 2026-07-05 |
 | Execution | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy | Strong fail-closed order boundary |
@@ -50,8 +50,10 @@ These items should land before broadening strategy automation or adding more UI 
 6. [x] Publish `bun run coverage` with reviewed 95% function and 96% line thresholds for imported deterministic/request code, enforce it through `bun run check` in CI, and report the uninstrumented browser client separately.
 7. [x] Persist exact Git commit, dirty state, plugin version, feature-schema version, policy version, query window, provider/feed, and input dataset hashes on immutable backtests, linked runs, snapshots, and decisions. Legacy and dirty records are explicitly non-comparable and cannot be evaluated or approved.
 8. [x] Expand the data-governance registry to include SEC EDGAR, Treasury, BLS, FRED, BEA, OpenAI, and every stored output category, with terms, retention, redistribution, and live-use decisions. The registry now covers 16 sources and all 21 SQLite tables through 12 categories; external approval and retention enforcement remain separate open work.
+9. [ ] Include `scripts/*.ts` in a standard strict TypeScript boundary and CI. Keep credentialed smoke execution opt-in, but prevent script/API drift from bypassing the normal static gate.
+10. [ ] Add direct API happy-path and provider-failure contracts for the highest-risk broker-backed route branches, then cover order reconciliation and concurrent reservation races without browser automation.
 
-Exit gate: a route change can be tested without a real browser or real Alpaca account, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
+Exit gate: a route change can be tested without a real browser or real Alpaca account, operational scripts share the static gate, invalid strategy configuration cannot become a run, and a historical database upgrade/restore is reproducible.
 
 ## Priority 1: strategy research quality
 
@@ -121,40 +123,53 @@ Recommended incremental target structure:
 
 ```text
 src/
-  server.ts                 # process startup only
-  app.ts                    # createApp(dependencies) request handler
-  routes/
-    market.ts
-    operations.ts
-    orders.ts
-    portfolio.ts
-    research.ts
-    strategy.ts
-  domain/                   # deterministic modules and co-located unit tests
-  providers/                # Alpaca, SEC, macro, news, identity, and model adapters
+  server.ts                     # stable process entry
+  app.ts                        # stable createApp(dependencies) composition entry
+  http/
+    errors.ts
+    responses.ts
+    routes/
+      market.ts
+      operations.ts
+      orders.ts
+      portfolio.ts
+      research.ts
+      strategy.ts
+  operations/                   # policy, security, governance, audit/readiness
+  orders/                       # tickets, reservations, reconciliation, receipts
+  portfolio/                    # analytics, risk, exposure, scenarios, rebalance
+  research/                     # evidence, SEC, valuation, agents, monitoring
+  strategy/                     # plugins, backtests, lineage, paper runner, reports
+  providers/                    # Alpaca, SEC, macro, news, identity, model adapters
   persistence/
     migrations.ts
     store.ts
-    repositories/          # extract one domain only when store ownership is unclear
+    repositories/              # one bounded context at a time
   web/
     index.html
     styles.css
     app.ts
     views/
 tests/
-  system/                   # cross-domain flows only
-  fixtures/                 # reusable recorded/redacted provider and database fixtures
+  system/                       # cross-context flows only
+  fixtures/                     # reusable recorded/redacted provider and DB fixtures
 ```
+
+Do not create empty directories or move all 59 modules to match this sketch. Keep a root module until an active change gives it a clear bounded-context owner. In particular, avoid a generic `domain/` or `utils/` bucket that merely relocates the current flat tree.
 
 Keep `README.md`, `AGENTS.md`, `FEATURES.md`, `STRATEGY_LAB.md`, `VALIDATION.md`, and `roadmap.md` at the repository root for now. Six visible documents do not justify link churn or a `docs/` hierarchy; revisit only when a real documentation category needs several files.
 
 Implementation order:
 
 1. [x] Extract `app.ts` and direct request-boundary tests without changing route behavior.
-2. [ ] Split inline browser CSS and JavaScript into `src/web/` during the next UI change, add bounded static-file responses, then tighten CSP by removing `unsafe-inline` where practical.
-3. [ ] Split one route family from `app.ts` when that family next changes and has direct API tests. Pass a small dependency object; do not introduce a routing framework.
-4. [x] Extract ordered SQLite migrations only with rollback, historical upgrade, and serialized restore tests. Keep repositories co-located in `store.ts` until a concrete ownership boundary justifies splitting them.
-5. [ ] Extract one repository or provider family at a time when `store.ts` or provider wiring becomes the source of a concrete change; move its tests with it.
+2. [ ] Add scripts to the checked TypeScript boundary before reorganizing them.
+3. [ ] Split inline browser CSS and JavaScript into `src/web/` during the next UI change, add bounded static-file responses, then tighten CSP by removing `unsafe-inline` where practical.
+4. [ ] Extract the Strategy Lab route family first when it next changes because it has the strongest direct API/system coverage and the most active ownership pressure. Pass a small dependency object; do not introduce a routing framework.
+5. [ ] Move one cohesive deterministic cluster into its bounded context during an active feature, keeping its tests beside it. Do not perform a repository-wide import rewrite.
+6. [x] Extract ordered SQLite migrations with rollback, historical upgrade, and serialized restore tests.
+7. [ ] Extract one repository or provider family at a time only when `store.ts` or provider wiring is the concrete source of a change.
+
+The target is ownership clarity, not a prettier tree. A move is complete only when tests and documentation move with the behavior and no compatibility wrapper is added solely to preserve old internal imports.
 
 ## Priority 3: triggered improvements
 
@@ -192,7 +207,7 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, ordered migrations, fixture-level backup restore, export endpoints, governance reports, and beta target definitions.
 - [x] Source/output governance registry covering SEC, Treasury, BLS, FRED, BEA, OpenAI, Alpaca, news, identity, local analytics, and every current SQLite table.
 
-The former `LATER_FEATURES.md` list is fully accounted for: portfolio Q&A, diversification proposals, and what-if scenarios are implemented above; daily briefings and evidence-based price-move explanations remain in Priority 2. No separate later-features file should be recreated.
+The former `LATER_FEATURES.md` and `future-improvements.md` inventories are fully absorbed here. Portfolio Q&A, diversification proposals, and what-if scenarios are implemented; daily briefings and evidence-based price-move explanations remain in Priority 2; scale-triggered caches, virtualization, indexing, scheduling, screeners, profiles, and account settings remain in Priority 3. No separate later-features file should be recreated.
 
 Implemented does not imply production-approved. See `FEATURES.md` for exact limitations and `VALIDATION.md` for current evidence.
 

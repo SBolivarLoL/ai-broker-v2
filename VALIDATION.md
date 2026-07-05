@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main`: 2026-07-05.
+Last reviewed against `main` commit `352c26c`: 2026-07-05.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,12 +8,24 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-05 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 250 tests, 0 failures, 977 assertions across 62 files | Strict TypeScript, all Bun tests, and the coverage floor |
+| `bun run check` | Pass: 250 tests, 0 failures, 977 assertions across 62 files | Strict TypeScript for `src/`, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 175 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
 | `bun run coverage` | Pass: 95.60% functions, 96.60% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
+| Explicit `scripts/*.ts` type-check | Pass | Strict standalone TypeScript invocation; not yet part of `bun run check` or CI |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
 
-Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 17.90% of functions and 77.98% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
+Coverage is not application-wide. `scripts/check-coverage.ts` enforces the reviewed floor only for TypeScript modules imported by the Bun test suite. `src/app.ts` is instrumented at 17.90% of functions and 77.98% of lines; the process entry and `src/index.html` browser client remain outside Bun coverage. `tsconfig.json` includes only `src/`, so smoke and maintenance scripts are outside the normal static check even though they pass the explicit command below. Browser confidence is reported separately through UI-specific validation, and the overall percentage must not be used to claim route or browser completeness.
+
+## Repository review evidence
+
+| Inventory | Reviewed result |
+| --- | --- |
+| Documentation | Six tracked root Markdown files; no separate later-features file |
+| TypeScript | 59 production modules and 62 test files |
+| Concentration | `app.ts` 2,488 lines; `store.ts` 782 lines; `index.html` 255,758 bytes |
+| Persistence | 13 migrations; 21 tables including migration history |
+| Governance | 16 sources; 12 stored-output categories; every table assigned once |
+| Git state at review | `main`, `dev`, `origin/main`, and `origin/dev` all at `352c26c`; no open PR or stale feature branch |
 
 ## Test-layer policy
 
@@ -35,6 +47,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Data governance | Complete code inventory, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 21 SQLite tables, references, terms URLs, and fail-closed live-use decisions | Internal classifications are not legal approval; no automatic retention enforcement exists |
 | Agents | Guardrails tested, runtime partially covered | Output schemas, citation/numeric checks, counter-thesis, Q&A validation | Live model/tool orchestration paths have lower coverage and require credentials |
 | HTTP/API composition | Moderate | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, and direct common-contract tests across all route families | Broker-backed success, reconciliation, stream, and concurrency paths remain incomplete |
+| Operational scripts | Moderate | Scripts pass an explicit strict TypeScript command; bounded smoke commands exist | Scripts are outside the normal project/CI type-check and most require credentials to execute |
 | Browser UI | Targeted interaction confidence | Isolated 2026-07-05 browser check verified disabled creation, successful backtest unlock, linked shadow creation, input invalidation, layout, and a clean console | No maintained automated accessibility/responsive regression suite |
 | Production operations | Code artifacts plus fixture restore proof | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test | No production-sized or closed-beta restore drill, deployment, real participants, or external approval |
 
@@ -46,9 +59,10 @@ bun run check
 bun run eval
 bun run coverage
 bun audit
+bunx tsc --ignoreConfig --noEmit --strict --module Preserve --moduleResolution bundler --skipLibCheck --types bun scripts/*.ts
 ```
 
-CI pins Bun 1.2.15 and runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. Audit, live-provider smoke checks, and browser checks are not CI gates.
+CI pins Bun 1.2.15 and runs install, `bun run check`, and `bun run eval` on pushes and pull requests. Because `bun run check` invokes `bun run coverage`, the 95% function and 96% line thresholds are CI gates. The explicit script type-check, audit, live-provider smoke checks, and browser checks are not CI gates.
 
 ## Credentialed smoke checks
 
@@ -63,6 +77,7 @@ bun run smoke:gdelt
 bun run smoke:finnhub
 bun run smoke:openfigi
 bun run smoke:comparables
+bun run eval:research
 ```
 
 The full smoke suite was not rerun during this 2026-07-05 review. The isolated UI check performed one read-only Alpaca crypto backtest; this record makes no broader claim about provider availability.
@@ -97,12 +112,13 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 
 The following are not validated and remain open in `roadmap.md`:
 
-1. Broader direct API happy-path and broker-failure coverage for each route family, including reconciliation and concurrency.
-2. A timed production-sized restore and a closed-beta operations restore drill.
-3. Versioned long-history, point-in-time datasets and genuine walk-forward strategy evaluation.
-4. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
-5. External legal/compliance and data-entitlement review.
-6. Separate live deployment architecture and review. Live trading remains unavailable.
+1. Add operational scripts to the standard TypeScript/CI boundary.
+2. Broader direct API happy-path and broker-failure coverage for each route family, including reconciliation and concurrency.
+3. A timed production-sized restore and a closed-beta operations restore drill.
+4. Versioned long-history, point-in-time datasets and genuine walk-forward strategy evaluation.
+5. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
+6. External legal/compliance and data-entitlement review.
+7. Separate live deployment architecture and review. Live trading remains unavailable.
 
 ## Documentation-change validation
 
