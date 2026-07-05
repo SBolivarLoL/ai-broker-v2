@@ -2193,7 +2193,7 @@ async function pollStrategyScheduler() {
         const { previewToken, idempotencyKey } = await requestJson(request);
         if (typeof previewToken !== "string" || typeof idempotencyKey !== "string" || !/^[\w-]{8,80}$/.test(idempotencyKey)) return json({ error: "Valid basket preview token and idempotency key are required" }, 400);
         const previous = store.submission(idempotencyKey);
-        if (previous) return previous.pending ? json({ error: "Basket submission is already processing" }, 409) : json(previous);
+        if (previous) return previous.pending ? json({ error: "Basket submission is already processing" }, 409) : json(previous, previous.status === "partial" ? 207 : 200);
         if (!store.reserveSubmission(idempotencyKey)) return json({ error: "Basket submission is already processing" }, 409);
         let preview;
         let freshLegs: { symbol: string; side: "buy" | "sell"; qty: number; price: number }[] = [];
@@ -2271,9 +2271,9 @@ async function pollStrategyScheduler() {
             if (riskStatus) store.finishRiskReservation(reservationKeys[index]!, riskStatus);
             orderTracker.update(order);
             results.push({ symbol: leg.symbol, side: leg.side, qty: leg.qty, orderId: order.id, status: String(order.status) });
-          } catch (error) {
+          } catch {
             store.finishRiskReservation(reservationKeys[index]!, "released");
-            results.push({ symbol: leg.symbol, side: leg.side, qty: leg.qty, orderId: null, status: "not_submitted", error: error instanceof Error ? error.message : "Broker submission failed" });
+            results.push({ symbol: leg.symbol, side: leg.side, qty: leg.qty, orderId: null, status: "not_submitted", error: "Broker submission failed" });
             for (let remaining = index + 1; remaining < reservationKeys.length; remaining++) store.finishRiskReservation(reservationKeys[remaining]!, "released");
             break;
           }

@@ -12,6 +12,7 @@ afterEach(() => {
 type FakeAlpacaOptions = {
   accountError?: Error;
   placementError?: Error;
+  placementErrorAt?: number;
   placementGate?: Promise<void>;
 };
 
@@ -79,7 +80,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
         market: async (input: any) => {
           orderAttempts.push(input);
           if (options.placementGate) await options.placementGate;
-          if (options.placementError) throw options.placementError;
+          if (options.placementError || options.placementErrorAt === orderAttempts.length - 1) throw options.placementError ?? new Error("private basket placement failure");
           const order = {
             id: crypto.randomUUID(),
             clientOrderId: input.clientOrderId,
@@ -307,6 +308,24 @@ function equitySubmission(app: ReturnType<typeof testApp>, previewToken: string,
   }));
 }
 
+async function basketPreview(app: ReturnType<typeof testApp>) {
+  const response = await app.fetch(new Request("http://local/api/orders/basket/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ legs: [{ symbol: "SPY", side: "buy", qty: 0.1 }, { symbol: "QQQ", side: "buy", qty: 0.1 }], timeInForce: "day" }),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
+function basketSubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
+  return app.fetch(new Request("http://local/api/orders/basket", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken, idempotencyKey }),
+  }));
+}
+
 test("equity order API persists one idempotent reviewed submission and receipt", async () => {
   const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
   const preview = await equityPreview(app);
@@ -375,6 +394,67 @@ test("concurrent equity submissions cannot stack beyond transactional risk capac
   expect(responses.map(response => response.status)).toEqual([200, 200, 200, 200]);
   expect(app.orderAttempts).toHaveLength(4);
   expect(app.store.activeRiskReservations()).toHaveLength(4);
+});
+
+test("basket order API persists one idempotent multi-leg submission and receipt", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+  const preview = await basketPreview(app);
+  const previewToken = String(preview.previewToken);
+  expect(preview).toMatchObject({
+    allowed: true,
+    simulation: { allowed: true, summary: { buyNotional: 20, netCashChange: -20 } },
+    operationalPolicies: [{ allowed: true }, { allowed: true }],
+    liquidity: [{ symbol: "SPY" }, { symbol: "QQQ" }],
+  });
+
+  const key = "basket-api-success";
+  const response = await basketSubmission(app, previewToken, key);
+  expect(response.status).toBe(200);
+  const result = await response.json() as any;
+  const receiptId = String(result.receiptId);
+  expect(result).toMatchObject({
+    status: "submitted",
+    results: [
+      { symbol: "SPY", orderId: expect.any(String), status: "accepted" },
+      { symbol: "QQQ", orderId: expect.any(String), status: "accepted" },
+    ],
+  });
+  expect(app.orderAttempts).toEqual([
+    expect.objectContaining({ symbol: "SPY", clientOrderId: `${key}-0` }),
+    expect.objectContaining({ symbol: "QQQ", clientOrderId: `${key}-1` }),
+  ]);
+  expect(app.store.getReceipt(receiptId)).toMatchObject({ advisor: "demo-advisor", kind: "rebalance_basket", idempotencyKey: key, status: "submitted", orderIds: result.results.map((item: any) => item.orderId) });
+  expect(app.store.activeRiskReservations()).toMatchObject([{ key: `${key}:0`, status: "submitted" }, { key: `${key}:1`, status: "submitted" }]);
+
+  const replay = await basketSubmission(app, previewToken, key);
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(result);
+  expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("basket order API preserves partial status and hides broker failure details", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { placementErrorAt: 1 });
+  const preview = await basketPreview(app);
+  const key = "basket-api-partial";
+  const response = await basketSubmission(app, preview.previewToken, key);
+  expect(response.status).toBe(207);
+  const result = await response.json() as any;
+  const receiptId = String(result.receiptId);
+  expect(result).toMatchObject({
+    status: "partial",
+    results: [
+      { symbol: "SPY", orderId: expect.any(String), status: "accepted" },
+      { symbol: "QQQ", orderId: null, status: "not_submitted", error: "Broker submission failed" },
+    ],
+  });
+  expect(JSON.stringify(result)).not.toContain("private basket placement failure");
+  expect(app.store.getReceipt(receiptId)).toMatchObject({ kind: "rebalance_basket", status: "partial", orderIds: [result.results[0].orderId] });
+  expect(app.store.activeRiskReservations()).toMatchObject([{ key: `${key}:0`, status: "submitted" }]);
+
+  const replay = await basketSubmission(app, preview.previewToken, key);
+  expect(replay.status).toBe(207);
+  expect(await replay.json()).toEqual(result);
+  expect(app.orderAttempts).toHaveLength(2);
 });
 
 test("unexpected provider errors map to a stable response without leaking details", async () => {
