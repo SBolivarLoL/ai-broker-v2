@@ -58,19 +58,19 @@ The reviewed tree has 59 production TypeScript modules, 62 test files, 13 migrat
 
 | Boundary | Reviewed state |
 | --- | --- |
-| Automated checks | 250 tests and 977 assertions pass |
+| Automated checks | 251 tests and 978 assertions pass; strict TypeScript covers `src/` and `scripts/` |
 | Instrumented coverage | 95.60% functions and 96.60% lines across imported TypeScript |
 | API composition | Common auth, parsing, error, strategy, and system contracts exist; broker-backed success and concurrency coverage remain incomplete |
 | Browser | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite |
 | Persistence | Transactional migrations through 0013 and a serialized fixture restore pass |
 | Production | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open |
 
-See [`VALIDATION.md`](VALIDATION.md) for evidence and scope. Aggregate coverage is not application-wide: the browser and process entry are outside it, and the standard TypeScript project currently includes `src/` but not operational scripts.
+See [`VALIDATION.md`](VALIDATION.md) for evidence and scope. Aggregate coverage is not application-wide: the browser and process entry are outside it, and credentialed smoke behavior is not exercised in CI.
 
 ## Commands
 
 ```sh
-bun run check             # strict TypeScript for src, all tests, and coverage floor
+bun run check             # strict TypeScript for src/scripts, all tests, and coverage floor
 bun run eval              # focused broker safety and agent trust-boundary suite
 bun run eval:research     # credentialed live research evaluation
 bun run coverage          # 95% function / 96% line coverage gate

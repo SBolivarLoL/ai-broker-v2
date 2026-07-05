@@ -38,7 +38,7 @@ Review baseline: `main` at `352c26c` on 2026-07-05.
 - Add a direct API test when changing route parsing, authorization, status codes, response shapes, or error handling.
 - Add an append-only migration and historical upgrade/restore fixture for every schema change; never rewrite an applied migration identity or checksum.
 - Keep `bun run check` green against the reviewed 95% function and 96% line coverage floor for imported deterministic and request-layer TypeScript.
-- `tsconfig.json` currently includes only `src/`. Until the roadmap closes that gap, validate an edited operational script by running it in its safe mode and type-checking `scripts/*.ts` explicitly with `bunx tsc --ignoreConfig --noEmit --strict --module Preserve --moduleResolution bundler --skipLibCheck --types bun scripts/*.ts`.
+- `tsconfig.json` includes both `src/` and `scripts/`; keep operational scripts inside the standard strict check. Credentialed or mutating smoke execution remains deliberate and opt-in.
 - Update `VALIDATION.md` when the test count, coverage boundary, live-smoke status, or validation policy changes.
 - Never describe coverage as application-wide when `src/server.ts` or the browser client is outside instrumentation.
 - When adding a provider or persisted output, update `src/data-governance.ts`; every SQLite table must belong to exactly one stored-output category with retention, redistribution, and live-use decisions.
