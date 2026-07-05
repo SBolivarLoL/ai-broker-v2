@@ -3,6 +3,7 @@ import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { createApp } from "./app";
 import { createStore } from "./store";
 
+const codeIdentity = { gitCommit: "a".repeat(40), workingTreeDirty: false };
 const stores: ReturnType<typeof createStore>[] = [];
 afterEach(() => {
   while (stores.length) stores.pop()!.close();
@@ -16,7 +17,22 @@ function fakeAlpaca(accountError?: Error) {
     connect() { stockConnects++; },
   };
   const alpaca = {
-    marketData: { stockStream: () => stockStream },
+    marketData: {
+      stockStream: () => stockStream,
+      getCryptoBars: async () => ({
+        "BTC/USD": [
+          { t: "2026-01-01T00:00:00.000Z", o: 100, h: 102, l: 99, c: 101, v: 10 },
+          { t: "2026-01-01T01:00:00.000Z", o: 101, h: 103, l: 100, c: 102, v: 12 },
+        ],
+      }),
+      crypto: {
+        cryptoSnapshots: async () => {
+          const timestamp = new Date().toISOString();
+          return { snapshots: { "BTC/USD": { latestQuote: { bp: 101, bs: 2, ap: 102, as: 2, t: timestamp }, latestTrade: { p: 101.5, s: 1, t: timestamp }, latestBar: { o: 100, h: 103, l: 99, c: 101.5, v: 20, t: timestamp } } } };
+        },
+        cryptoLatestOrderbooks: async () => ({ orderbooks: { "BTC/USD": { a: [{ p: 102, s: 2 }], b: [{ p: 101, s: 2 }] } } }),
+      },
+    },
     trading: {
       account: { getAccount: async () => { if (accountError) throw accountError; return { equity: 1_000, cash: 1_000, buyingPower: 1_000, currency: "USD", status: "ACTIVE" }; } },
       positions: { getAllOpenPositions: async () => [] },
@@ -30,7 +46,7 @@ function testApp(env: Record<string, string | undefined> = {}, accountError?: Er
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(accountError);
-  return { ...createApp({ alpaca: fake.alpaca, store, env }), store, stockConnects: fake.stockConnects };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env }), store, stockConnects: fake.stockConnects };
 }
 
 const productionEnv = {
@@ -140,6 +156,61 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   }));
   expect(run.status).toBe(400);
   expect(await run.json()).toEqual({ error: "Invalid cash parameters: Unrecognized key: \"exposure\"" });
+});
+
+test("strategy API persists a reviewed backtest and exact run and decision provenance", async () => {
+  const app = testApp();
+  const definition = { symbols: ["BTC/USD"], strategyId: "moving-average-trend", timeframe: "1Hour", days: 30, params: { fast: 2, slow: 3, exposure: 1 } };
+  const backtestResponse = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(definition),
+  }));
+  expect(backtestResponse.status).toBe(201);
+  const backtest = await backtestResponse.json() as any;
+  const backtestId = String(backtest.backtestId);
+  expect(backtest).toMatchObject({
+    backtestId: expect.any(String),
+    provenance: {
+      gitCommit: codeIdentity.gitCommit,
+      pluginVersion: "strategy-plugin-v1",
+      featureSchemaVersion: "strategy-features-v1",
+      policyVersion: "crypto-backtest-v1",
+      datasetHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    },
+  });
+
+  expect(app.store.getStrategyBacktest(backtestId)).toMatchObject({ actor: "demo-advisor" });
+  const persisted = await app.fetch(new Request(`http://local/api/strategy/backtests/${backtestId}`));
+  expect(persisted.status).toBe(200);
+  expect(await persisted.json()).toMatchObject({ id: backtestId, comparable: true, result: { result: { strategyId: definition.strategyId } } });
+
+  const runResponse = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...definition, backtestId }),
+  }));
+  expect(runResponse.status).toBe(201);
+  const run = await runResponse.json() as any;
+  expect(run).toMatchObject({ backtestId, comparable: true, strategyVersion: "strategy-plugin-v1", provenance: { datasetHash: backtest.provenance.datasetHash } });
+
+  const tick = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/tick`, { method: "POST" }));
+  expect(tick.status).toBe(200);
+  expect(await tick.json()).toMatchObject({
+    trace: {
+      comparable: true,
+      provenance: { gitCommit: codeIdentity.gitCommit, pluginVersion: "strategy-plugin-v1", datasetHash: expect.stringMatching(/^sha256:/) },
+      snapshots: [expect.objectContaining({ datasetHash: expect.stringMatching(/^sha256:/) })],
+    },
+  });
+
+  const mismatch = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...definition, days: 31, backtestId }),
+  }));
+  expect(mismatch.status).toBe(409);
+  expect(await mismatch.json()).toEqual({ error: "Strategy run code or configuration does not match the reviewed backtest" });
 });
 
 test("unexpected provider errors map to a stable response without leaking details", async () => {

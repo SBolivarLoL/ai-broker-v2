@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main`: 2026-07-01.
+Last reviewed against `main`: 2026-07-05.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -69,7 +69,8 @@ The browser exposes seven workspaces:
 ### Strategy Lab
 
 - Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence.
-- Bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, and optional walk-forward window segmentation.
+- Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, optional walk-forward window segmentation, and exact normalized dataset hashes.
+- Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
 - Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, deterministic alerts, and experiment review history.
@@ -88,7 +89,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - Production authorization trusts only verified proxy headers and roles: `viewer`, `researcher`, `trader`, `operator`, and `admin`.
 - Mutation bodies are bounded, mutation origins are checked, broker DTOs are allow-listed, output is escaped, and sensitive routes are rate limited.
 - The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
-- `/api/operations/data-governance` inventories 16 provider/derived sources and all 20 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
+- `/api/operations/data-governance` inventories 16 provider/derived sources and all 21 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
 
 ## Data flow
 
@@ -124,10 +125,9 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Backtest history is currently bounded to 90 days by both the server and Strategy Lab input, which is too short to establish robustness across long market regimes.
 - “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
-- Backtest results are returned to the browser but are not persisted as immutable experiment records or linked to the shadow run created afterward.
-- Strategy records use static version labels and config hashes but do not yet persist the exact Git commit, feature-schema version, or input dataset hash promised by a fully reproducible experiment.
-- `src/app.ts` remains a 2,378-line request/composition module; `src/index.html` is a roughly 255 KB single-file client; `src/store.ts` still contains all repositories. The 22-line `src/server.ts` entry and `src/migrations.ts` schema boundary are now separate, but per-domain route, repository, and UI maintenance remain concentrated.
-- The 246-test suite includes direct request-boundary contracts and enforces 95% function and 96% line coverage across imported TypeScript modules. `src/app.ts` remains at 6.08% of functions and 67.13% of lines, many broker-backed route branches remain uncovered, and the browser client is validated separately rather than included in that percentage.
+- Backtests remain bounded to a single provider request and are not yet backed by a versioned long-history dataset; a stored hash proves exact input identity, not completeness or point-in-time correctness.
+- `src/app.ts` remains a 2,488-line request/composition module; `src/index.html` is a roughly 256 KB single-file client; `src/store.ts` still contains all repositories. The small `src/server.ts` entry and `src/migrations.ts` schema boundary are separate, but per-domain route, repository, and UI maintenance remain concentrated.
+- The 250-test suite includes direct request-boundary contracts and enforces 95% function and 96% line coverage across imported TypeScript modules. `src/app.ts` is instrumented at 17.90% of functions and 77.98% of lines, many broker-backed route branches remain uncovered, and the browser client is validated separately rather than included in that percentage.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Ordered migrations, rollback/upgrade fixtures, and serialized backup restore with audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.
 - The governance registry is an internal decision record, not legal approval. Alpaca, Finnhub, GDELT, Treasury, FRED, BEA, SEC, BLS, OpenFIGI, and OpenAI terms still require an external entitlement review for the intended deployment.

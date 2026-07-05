@@ -305,6 +305,31 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
       db.run("CREATE INDEX IF NOT EXISTS events_type_created ON events(type, created_at DESC)");
     },
   },
+  {
+    id: "0013",
+    name: "strategy experiment provenance",
+    checksum: "sha256:strategy-experiment-provenance-v1",
+    up(db) {
+      run(db, [
+        `CREATE TABLE strategy_backtests (
+          id TEXT PRIMARY KEY,
+          actor TEXT NOT NULL,
+          strategy_id TEXT NOT NULL,
+          definition_hash TEXT NOT NULL,
+          provenance TEXT NOT NULL,
+          request TEXT NOT NULL,
+          result TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )`,
+        "CREATE INDEX strategy_backtests_created ON strategy_backtests(created_at DESC)",
+        "ALTER TABLE strategy_runs ADD COLUMN backtest_id TEXT REFERENCES strategy_backtests(id)",
+        "ALTER TABLE strategy_runs ADD COLUMN provenance TEXT",
+        "CREATE INDEX strategy_runs_backtest ON strategy_runs(backtest_id)",
+        "ALTER TABLE strategy_data_snapshots ADD COLUMN dataset_hash TEXT",
+        "ALTER TABLE strategy_decisions ADD COLUMN provenance TEXT",
+      ]);
+    },
+  },
 ];
 
 export function migrateDatabase(db: Database, migrations: readonly SchemaMigration[] = SCHEMA_MIGRATIONS) {

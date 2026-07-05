@@ -7,6 +7,18 @@ const finite = (value: unknown) => {
   return Number.isFinite(number) ? number : null;
 };
 
+export type NormalizedCryptoBar = {
+  symbol: string;
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  vwap: number | null;
+  tradeCount: number | null;
+};
+
 export function parseCryptoSymbols(value: unknown, maximum = 3) {
   const raw = String(value ?? "BTC/USD,ETH/USD,SOL/USD").split(",").map(symbol => symbol.trim().toUpperCase()).filter(Boolean);
   const symbols = [...new Set(raw)];
@@ -44,7 +56,7 @@ export function cryptoBarsDto(input: { symbols: string[]; timeframe: string; sta
       volume: finite(bar.volume ?? bar.v),
       vwap: finite(bar.vwap ?? bar.vw),
       tradeCount: finite(bar.tradeCount ?? bar.n),
-    })).filter(bar => [bar.open, bar.high, bar.low, bar.close, bar.volume].every(value => value !== null))])),
+    })).filter((bar): bar is NormalizedCryptoBar => [bar.open, bar.high, bar.low, bar.close, bar.volume].every(value => value !== null))])),
     asOf: new Date().toISOString(),
   };
 }

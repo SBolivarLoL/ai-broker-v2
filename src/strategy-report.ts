@@ -1,7 +1,9 @@
 import type { StrategyDecisionKind, StrategyRunStatus } from "./store";
+import type { StrategyProvenance } from "./strategy-provenance";
 
 type StrategyRunReportInput = {
   id: string;
+  backtestId?: string | null;
   strategyId: string;
   strategyVersion: string;
   status: StrategyRunStatus;
@@ -11,6 +13,8 @@ type StrategyRunReportInput = {
   budget: number;
   config: any;
   notes?: string | null;
+  provenance?: StrategyProvenance | null;
+  comparable?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -25,12 +29,14 @@ type StrategyDecisionReportInput = {
   rawSignal: number | null;
   riskAdjustedSignal: number | null;
   orderOutcome?: string;
+  provenance?: StrategyProvenance | null;
+  comparable?: boolean;
   createdAt: string;
 };
 type StrategyTraceReportInput = StrategyDecisionReportInput & {
   features: Record<string, unknown>;
   thresholds: Record<string, unknown>;
-  snapshots: { id: string; symbol: string; source: string; feed: string; stale: boolean; observedAt: string }[];
+  snapshots: { id: string; symbol: string; source: string; feed: string; stale: boolean; observedAt: string; datasetHash?: string | null }[];
 };
 
 const countBy = <T>(values: T[], key: (value: T) => string | null | undefined) => values.reduce<Record<string, number>>((counts, value) => {
@@ -80,6 +86,7 @@ export function buildStrategyExperimentReport(input: {
     generatedAt,
     run: {
       id: input.run.id,
+      backtestId: input.run.backtestId ?? null,
       strategyId: input.run.strategyId,
       strategyVersion: input.run.strategyVersion,
       status: input.run.status,
@@ -89,6 +96,12 @@ export function buildStrategyExperimentReport(input: {
       budget: input.run.budget,
       createdAt: input.run.createdAt,
       updatedAt: input.run.updatedAt,
+      comparable: input.run.comparable ?? false,
+    },
+    provenance: {
+      run: input.run.provenance ?? null,
+      decisionDatasetHashes: unique(input.decisions.map(decision => decision.provenance?.datasetHash)),
+      snapshotDatasetHashes: unique(snapshots.map(snapshot => snapshot.datasetHash)),
     },
     config: input.run.config,
     assumptions: {
