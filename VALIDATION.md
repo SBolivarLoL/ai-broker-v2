@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `aae2b30`: 2026-07-05.
+Last reviewed against `main` commit `b921996`: 2026-07-05.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check | Result on 2026-07-05 | Scope |
 | --- | --- | --- |
-| `bun run check` | Pass: 268 tests, 0 failures, 1,164 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check` | Pass: 270 tests, 0 failures, 1,184 assertions across 62 files | Strict TypeScript for `src/` and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval` | Pass: 39 tests, 0 failures, 177 assertions across 7 files | Broker safety, order state, security, agent grounding, and research trust boundaries |
 | `bun run coverage` | Pass: 96.31% functions, 96.76% lines against 95% function and 96% line thresholds | Imported deterministic and request-handler TypeScript modules |
 | `bun audit` | Pass: no known vulnerabilities | Locked dependency graph at audit time |
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Concentration | `app.ts` 2,505 lines; `store.ts` 797 lines; `index.html` 255,758 bytes |
 | Persistence | 13 migrations; 21 tables including migration history |
 | Governance | 16 sources; 12 stored-output categories; every table assigned once |
-| Git state at review | `main`, `dev`, `origin/main`, and `origin/dev` all at `aae2b30`; no open PR or stale feature branch before this increment |
+| Git state at review | `main`, `dev`, `origin/main`, and `origin/dev` all at `b921996`; no open PR or stale feature branch before this increment |
 
 ## Test-layer policy
 
@@ -39,7 +39,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` enforces the revie
 | Area | Current confidence | Evidence | Open gap |
 | --- | --- | --- | --- |
 | Risk and portfolio math | High at module level | Unit, regression, and portfolio system tests | No independent production reconciliation over a long account history |
-| Order policy and signatures | High for modules and primary order routes | Direct primary order, replacement, exact/cancel-all cancellation, concurrent-capacity, and recovery-reconciliation contracts | Option-position actions, strategy paper execution, and real broker drills remain incomplete |
+| Order policy and signatures | High for modules and primary order routes | Direct primary order, mutation, option-position action, concurrent-capacity, and recovery-reconciliation contracts | Strategy paper execution and real broker drills remain incomplete |
 | Strategy decisions | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable backtest, linked run, dataset hash, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No genuine out-of-sample walk-forward scoring, versioned long-history dataset, or long paper cohort yet |
 | Persistence and audit | Good for current schema | Ordered transactional migrations through 0013, legacy upgrade fixture, immutable backtest constraints, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill |
 | Provider normalization | Good with fixtures | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests | Live provider contracts are not run in CI and point-in-time datasets are not persisted |
@@ -113,7 +113,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 
 The following are not validated and remain open in `roadmap.md`:
 
-1. Direct API contracts for option-position actions, strategy paper execution, and stream callbacks.
+1. Direct API contracts for strategy paper execution and stream callbacks.
 2. A timed production-sized restore and a closed-beta operations restore drill.
 3. Versioned long-history, point-in-time datasets and genuine walk-forward strategy evaluation.
 4. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
