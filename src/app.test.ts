@@ -16,6 +16,8 @@ type FakeAlpacaOptions = {
   placementErrorAt?: number;
   placementGate?: Promise<void>;
   positions?: any[];
+  recoveryError?: Error;
+  recoveredOrderStatus?: string;
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
@@ -124,7 +126,18 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
         }),
       },
       orders: {
-        getAllOrders: async () => [],
+        getAllOrders: async () => {
+          if (options.recoveryError) throw options.recoveryError;
+          if (!options.recoveredOrderStatus) return [];
+          return [...acceptedOrders.values()].map(order => ({
+            ...order,
+            status: options.recoveredOrderStatus,
+            filledQty: options.recoveredOrderStatus === "filled" ? order.qty : order.filledQty,
+            filledAvgPrice: options.recoveredOrderStatus === "filled" ? "100" : order.filledAvgPrice,
+            filledAt: options.recoveredOrderStatus === "filled" ? new Date() : order.filledAt,
+            updatedAt: new Date(),
+          }));
+        },
         market: (input: any) => placeOrder(input),
         limit: (input: any) => placeOrder(input),
         submit: (input: any) => placeOrder({ ...input, symbol: "AAPL_OPTION_VERTICAL" }, "mleg"),
@@ -573,6 +586,42 @@ test("basket order API preserves partial status and hides broker failure details
   expect(replay.status).toBe(207);
   expect(await replay.json()).toEqual(result);
   expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("order recovery reconciles receipts and terminal risk reservations by broker order id", async () => {
+  const options: FakeAlpacaOptions = {};
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const equityOrder = await (await equitySubmission(app, (await equityPreview(app)).previewToken, "reconcile-equity")).json() as any;
+  const basketResult = await (await basketSubmission(app, (await basketPreview(app)).previewToken, "reconcile-basket")).json() as any;
+  expect(app.store.activeRiskReservations()).toHaveLength(3);
+
+  options.recoveredOrderStatus = "filled";
+  const recovered = await app.fetch(new Request("http://local/api/orders"));
+  expect(recovered.status).toBe(200);
+  expect(await recovered.json()).toMatchObject({ orders: [{ status: "filled" }, { status: "filled" }, { status: "filled" }] });
+  expect(app.store.getReceipt(equityOrder.receiptId)).toMatchObject({ orderId: equityOrder.id, status: "filled", updatedAt: expect.any(String) });
+  expect(app.store.getReceipt(basketResult.receiptId)).toMatchObject({ results: [{ status: "filled" }, { status: "filled" }], updatedAt: expect.any(String) });
+  expect(app.store.activeRiskReservations()).toEqual([]);
+});
+
+test("order recovery sanitizes provider failure and succeeds on retry", async () => {
+  const options: FakeAlpacaOptions = {};
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const order = await (await equitySubmission(app, (await equityPreview(app)).previewToken, "reconcile-retry")).json() as any;
+  options.recoveryError = new Error("private recovery failure");
+
+  const failed = await app.fetch(new Request("http://local/api/orders"));
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+  expect(app.store.getReceipt(order.receiptId)).toMatchObject({ status: "accepted" });
+  expect(app.store.activeRiskReservations()).toHaveLength(1);
+
+  options.recoveryError = undefined;
+  options.recoveredOrderStatus = "filled";
+  const retried = await app.fetch(new Request("http://local/api/orders"));
+  expect(retried.status).toBe(200);
+  expect(app.store.getReceipt(order.receiptId)).toMatchObject({ status: "filled" });
+  expect(app.store.activeRiskReservations()).toEqual([]);
 });
 
 test("crypto order API persists one idempotent reviewed notional submission and receipt", async () => {

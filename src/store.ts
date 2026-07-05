@@ -377,8 +377,8 @@ export function createStore(filename = "data/app.db") {
     markRiskSubmitted(key: string, orderId: string) {
       return db.query("UPDATE risk_reservations SET status = 'submitted', order_id = ?, expires_at_ms = NULL, updated_at = CURRENT_TIMESTAMP WHERE reservation_key = ? AND status = 'reserved' AND expires_at_ms > ?").run(orderId, key, Date.now()).changes === 1;
     },
-    finishRiskReservation(key: string, status: Exclude<RiskReservationStatus, "reserved" | "submitted">) {
-      return db.query("UPDATE risk_reservations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE reservation_key = ? AND status IN ('reserved', 'submitted')").run(status, key).changes === 1;
+    finishRiskReservation(keyOrOrderId: string, status: Exclude<RiskReservationStatus, "reserved" | "submitted">) {
+      return db.query("UPDATE risk_reservations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE (reservation_key = ? OR order_id = ?) AND status IN ('reserved', 'submitted')").run(status, keyOrOrderId, keyOrOrderId).changes === 1;
     },
     receipt(id: string, payload: unknown) {
       db.query("INSERT INTO receipts (id, payload) VALUES (?, ?)").run(id, JSON.stringify(payload));
@@ -432,8 +432,17 @@ export function createStore(filename = "data/app.db") {
       const rows = db.query("SELECT id, payload FROM receipts").all() as { id: string; payload: string }[];
       for (const row of rows) {
         const receipt = JSON.parse(row.payload);
+        let changed = false;
         if (receipt.orderId === orderId && receipt.status !== status) {
           receipt.status = status;
+          changed = true;
+        }
+        const result = Array.isArray(receipt.results) ? receipt.results.find((item: any) => item.orderId === orderId) : null;
+        if (result && result.status !== status) {
+          result.status = status;
+          changed = true;
+        }
+        if (changed) {
           receipt.updatedAt = new Date().toISOString();
           db.query("UPDATE receipts SET payload = ? WHERE id = ?").run(JSON.stringify(receipt), row.id);
         }
