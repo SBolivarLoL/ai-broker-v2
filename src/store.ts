@@ -24,6 +24,8 @@ export type RiskReservation = {
 
 type ReservationCandidate = Pick<RiskReservation, "symbol" | "side" | "qty" | "price">;
 type ReservationValidation<T> = { allowed: boolean; value: T };
+type RiskReservationResult<T> = { reserved: true; validation: T } | { reserved: false; reason: "exists" } | { reserved: false; reason: "risk"; validation: T };
+type RiskBasketReservationResult<T> = { reserved: true; keys: string[]; validation: T } | { reserved: false; reason: "exists" } | { reserved: false; reason: "risk"; validation: T };
 export type StrategyRunStatus = "backtest" | "shadow" | "paper" | "paused" | "completed" | "retired" | "failed";
 export type StrategyDecisionKind = "hold" | "enter" | "increase" | "reduce" | "exit" | "pause" | "block";
 export type StrategyRunInput = {
@@ -362,14 +364,14 @@ export function createStore(filename = "data/app.db") {
       db.query("UPDATE submissions SET order_id = ?, response = ? WHERE idempotency_key = ?").run(orderId, JSON.stringify(response), key);
     },
     /** Atomically validates against every active local reservation and reserves capacity. */
-    reserveRisk<T>(key: string, candidate: ReservationCandidate, validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000) {
+    reserveRisk<T>(key: string, candidate: ReservationCandidate, validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000): RiskReservationResult<T> {
       if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("Risk reservation TTL must be positive");
-      return reserveRiskTransaction.immediate(key, candidate, validate, ttlMs);
+      return reserveRiskTransaction.immediate(key, candidate, validate, ttlMs) as RiskReservationResult<T>;
     },
     /** Atomically validates and reserves every leg of one application-level basket. */
-    reserveRiskBasket<T>(key: string, candidates: ReservationCandidate[], validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000) {
+    reserveRiskBasket<T>(key: string, candidates: ReservationCandidate[], validate: (active: RiskReservation[]) => ReservationValidation<T>, ttlMs = 120_000): RiskBasketReservationResult<T> {
       if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("Risk reservation TTL must be positive");
-      return reserveRiskBasketTransaction.immediate(key, candidates, validate, ttlMs);
+      return reserveRiskBasketTransaction.immediate(key, candidates, validate, ttlMs) as RiskBasketReservationResult<T>;
     },
     activeRiskReservations() { return reservationRows(); },
     markRiskSubmitted(key: string, orderId: string) {
