@@ -333,9 +333,10 @@ async function syncAccountActivities() {
 function reconcileOrder(order: any) {
   if (order.id && order.status) store.reconcileOrder(order.id, order.status);
   if (order.id && order.status) store.reconcileStrategyOrder(order.id, order.status, { broker: managedOrderDto(order), brokerReconciledAt: new Date().toISOString() });
-  if (!order.clientOrderId || !order.status) return;
+  if (!order.status) return;
   const riskStatus = riskReservationStatusForBrokerStatus(order.status);
-  if (riskStatus) store.finishRiskReservation(order.clientOrderId, riskStatus);
+  if (!riskStatus || (order.id && store.finishRiskReservation(order.id, riskStatus))) return;
+  if (order.clientOrderId) store.finishRiskReservation(order.clientOrderId, riskStatus);
 }
 
 async function recoverOrders() {
@@ -1982,7 +1983,7 @@ async function pollStrategyScheduler() {
         const status = url.searchParams.get("status") ?? "all";
         const limit = Number(url.searchParams.get("limit") ?? 50);
         if (!["open", "closed", "all"].includes(status) || !Number.isInteger(limit) || limit < 1 || limit > 100) return json({ error: "Status must be open, closed, or all and limit must be 1 to 100" }, 400);
-        if (orderTracker.size === 0) await recoverOrders();
+        if (orderTracker.size === 0 || orderTracker.metadata().stale) await recoverOrders();
         const orders = orderTracker.list(status as "open" | "closed" | "all", limit);
         return json({ status, orders: orders.map(managedOrderDto), sync: orderTracker.metadata(), asOf: new Date().toISOString() });
       }
