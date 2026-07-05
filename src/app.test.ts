@@ -86,8 +86,8 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
             clientOrderId: input.clientOrderId,
             symbol: input.symbol,
             side: input.side,
-            qty: String(input.qty),
-            notional: null,
+            qty: input.qty === undefined ? null : String(input.qty),
+            notional: input.notional === undefined ? null : String(input.notional),
             filledQty: "0",
             filledAvgPrice: null,
             type: "market",
@@ -326,6 +326,24 @@ function basketSubmission(app: ReturnType<typeof testApp>, previewToken: string,
   }));
 }
 
+async function cryptoPreview(app: ReturnType<typeof testApp>, notional = 25) {
+  const response = await app.fetch(new Request("http://local/api/strategy/crypto/order-preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbol: "BTC/USD", side: "buy", type: "market", amountType: "notional", notional, timeInForce: "gtc" }),
+  }));
+  expect(response.status).toBe(200);
+  return response.json() as Promise<any>;
+}
+
+function cryptoSubmission(app: ReturnType<typeof testApp>, previewToken: string, idempotencyKey: string) {
+  return app.fetch(new Request("http://local/api/strategy/crypto/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ previewToken, idempotencyKey }),
+  }));
+}
+
 test("equity order API persists one idempotent reviewed submission and receipt", async () => {
   const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
   const preview = await equityPreview(app);
@@ -455,6 +473,74 @@ test("basket order API preserves partial status and hides broker failure details
   expect(replay.status).toBe(207);
   expect(await replay.json()).toEqual(result);
   expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("crypto order API persists one idempotent reviewed notional submission and receipt", async () => {
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) });
+  const preview = await cryptoPreview(app);
+  const previewToken = String(preview.previewToken);
+  expect(preview).toMatchObject({
+    allowed: true,
+    preview: { symbol: "BTC/USD", side: "buy", type: "market", amountType: "notional", notional: 25, estimatedNotional: 25 },
+    operationalPolicy: { allowed: true },
+    market: { bid: 101, ask: 102 },
+  });
+
+  const key = "crypto-api-success";
+  const response = await cryptoSubmission(app, previewToken, key);
+  expect(response.status).toBe(200);
+  const order = await response.json() as any;
+  const orderId = String(order.id);
+  const receiptId = String(order.receiptId);
+  expect(order).toMatchObject({ id: expect.any(String), clientOrderId: key, symbol: "BTC/USD", side: "buy", qty: null, notional: 25, status: "accepted", receiptId: expect.any(String) });
+  expect(app.orderAttempts).toEqual([expect.objectContaining({ symbol: "BTC/USD", side: "buy", notional: 25, clientOrderId: key })]);
+  expect(app.store.getReceipt(receiptId)).toMatchObject({ advisor: "demo-advisor", kind: "crypto_order", idempotencyKey: key, orderId, status: "accepted", preview: { estimatedNotional: 25, operationalPolicy: { allowed: true } } });
+  expect(app.store.activeRiskReservations()).toMatchObject([{ key, symbol: "BTC/USD", status: "submitted", orderId }]);
+
+  const replay = await cryptoSubmission(app, previewToken, key);
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(order);
+  expect(app.orderAttempts).toHaveLength(1);
+});
+
+test("crypto order API sanitizes broker failure, releases capacity, and permits retry", async () => {
+  const options: FakeAlpacaOptions = { placementError: new Error("private crypto placement failure") };
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, options);
+  const preview = await cryptoPreview(app);
+  const key = "crypto-api-retry";
+
+  const failed = await cryptoSubmission(app, preview.previewToken, key);
+  expect(failed.status).toBe(502);
+  expect(await failed.json()).toEqual({ error: "The broker service could not complete the request" });
+  expect(app.store.submission(key)).toBeNull();
+  expect(app.store.activeRiskReservations()).toEqual([]);
+
+  options.placementError = undefined;
+  const retried = await cryptoSubmission(app, preview.previewToken, key);
+  expect(retried.status).toBe(200);
+  expect(await retried.json()).toMatchObject({ clientOrderId: key, notional: 25, status: "accepted" });
+  expect(app.orderAttempts).toHaveLength(2);
+});
+
+test("concurrent crypto submissions cannot stack beyond transactional turnover capacity", async () => {
+  let releasePlacement!: () => void;
+  const placementGate = new Promise<void>(resolve => { releasePlacement = resolve; });
+  const app = testApp({ PREVIEW_SECRET: "p".repeat(32) }, { placementGate });
+  const preview = await cryptoPreview(app);
+  const accepted = Array.from({ length: 4 }, (_, index) => cryptoSubmission(app, preview.previewToken, `crypto-capacity-${index}`));
+  for (let attempt = 0; attempt < 100 && app.orderAttempts.length < 4; attempt++) await Bun.sleep(1);
+  expect(app.orderAttempts).toHaveLength(4);
+
+  const blocked = await cryptoSubmission(app, preview.previewToken, "crypto-capacity-4");
+  expect(blocked.status).toBe(422);
+  expect(await blocked.json()).toMatchObject({ allowed: false, reasons: ["max_daily_turnover"], operationalPolicy: { allowed: false, reasons: ["max_daily_turnover"] } });
+  expect(app.store.submission("crypto-capacity-4")).toBeNull();
+
+  releasePlacement();
+  const responses = await Promise.all(accepted);
+  expect(responses.map(response => response.status)).toEqual([200, 200, 200, 200]);
+  expect(app.orderAttempts).toHaveLength(4);
+  expect(app.store.activeRiskReservations()).toHaveLength(4);
 });
 
 test("unexpected provider errors map to a stable response without leaking details", async () => {

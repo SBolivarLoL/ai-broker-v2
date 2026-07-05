@@ -184,7 +184,7 @@ Use `Pause run` to stop evaluation. `Kill run` retires the run and records a kil
 
 The manual ticket is separate from strategy automation. It supports market, limit, and stop-limit paper orders with `GTC` or `IOC`.
 
-Preview checks include fresh crypto market evidence, a default 200 bps spread gate for market orders, a $2,500 maximum notional, cash for buys, holdings for sells, global operations policy, and a two-minute HMAC-signed preview. Submission reloads account, positions, and market state; price movement above 1% requires a new preview. Crypto shorting is unavailable.
+Preview checks include fresh crypto market evidence, a default 200 bps spread gate for market orders, a $2,500 maximum notional, cash for buys, holdings for sells, global operations policy, and a two-minute HMAC-signed preview. Submission reloads account, positions, working orders, and market state, then atomically reserves local turnover and exposure capacity before calling Alpaca. Confirmed failure releases both the idempotency key and reservation so the same reviewed request can be retried; price movement above 1% requires a new preview. Crypto shorting is unavailable.
 
 ## Metrics, alerts, and reports
 

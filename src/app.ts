@@ -1254,6 +1254,7 @@ async function pollStrategyScheduler() {
         let freshMarket!: ReturnType<typeof cryptoOrderMarketFromSnapshot>;
         let freshSnapshot!: Awaited<ReturnType<typeof latestCryptoOrderMarket>>["record"];
         let freshOperationalPolicy: OperationsPolicyEvaluation | null = null;
+        let riskReserved = false;
         try {
           preview = verifyCryptoOrderPreview(previewToken, previewSecret);
           const ticket = CryptoOrderTicket.parse({ symbol: preview.symbol, side: preview.side, type: preview.type, amountType: preview.amountType, qty: preview.qty, notional: preview.notional, limitPrice: preview.limitPrice, stopPrice: preview.stopPrice, timeInForce: preview.timeInForce });
@@ -1272,16 +1273,27 @@ async function pollStrategyScheduler() {
             store.releaseSubmission(idempotencyKey);
             return json({ allowed: false, reasons: fresh.reasons, market: fresh.market, snapshot: latest.record }, 422);
           }
-          freshOperationalPolicy = evaluateOperationsPolicy({ policy: store.operationsPolicy(), order: { assetClass: "crypto", symbol: preview.symbol, side: preview.side, notional: fresh.preview.estimatedNotional }, account, positions, dailyTurnover: rollingTurnover(recentOrders) });
-          if (!freshOperationalPolicy.allowed) {
+          const brokerPending = await pendingBrokerOrders(recentOrders, new Map([[preview.symbol, fresh.preview.referencePrice]]));
+          const riskPrice = fresh.preview.estimatedNotional / fresh.preview.estimatedQty;
+          const reservation = store.reserveRisk<OperationsPolicyEvaluation>(idempotencyKey, { symbol: preview.symbol, side: preview.side, qty: fresh.preview.estimatedQty, price: riskPrice }, active => {
+            const brokerIds = new Set(brokerPending.map(order => order.orderId));
+            const localPending = active.filter(order => !order.orderId || !brokerIds.has(order.orderId));
+            const operationalPolicy = evaluateOperationsPolicy({ policy: store.operationsPolicy(), order: { assetClass: "crypto", symbol: preview.symbol, side: preview.side, notional: fresh.preview.estimatedNotional }, account, positions, dailyTurnover: rollingTurnover(recentOrders), pendingOrders: [...brokerPending, ...localPending] });
+            return { allowed: operationalPolicy.allowed, value: operationalPolicy };
+          });
+          if (!reservation.reserved) {
             store.releaseSubmission(idempotencyKey);
-            return operationalPolicyBlocked(freshOperationalPolicy, { market: fresh.market, snapshot: latest.record });
+            if (reservation.reason === "risk") return operationalPolicyBlocked(reservation.validation, { market: fresh.market, snapshot: latest.record });
+            return json({ error: "Crypto order submission is already processing" }, 409);
           }
+          riskReserved = true;
+          freshOperationalPolicy = reservation.validation;
           if (Math.abs(fresh.preview.referencePrice / preview.referencePrice - 1) > 0.01) throw new ClientError("Crypto reference price moved more than 1%; review the order again", 409);
           freshPreview = fresh.preview;
           freshMarket = fresh.market;
           freshSnapshot = latest.record;
         } catch (error) {
+          if (riskReserved) store.finishRiskReservation(idempotencyKey, "released");
           store.releaseSubmission(idempotencyKey);
           if (error instanceof ClientError) throw error;
           if (error instanceof Error && ["Invalid crypto order preview token", "Crypto order preview expired"].includes(error.message)) throw new ClientError(error.message, 400);
@@ -1294,14 +1306,19 @@ async function pollStrategyScheduler() {
         } catch (placementError) {
           try { order = await alpaca.trading.orders.getOrderByClientOrderId({ clientOrderId: idempotencyKey }); }
           catch {
+            store.finishRiskReservation(idempotencyKey, "released");
             store.releaseSubmission(idempotencyKey);
             throw placementError;
           }
         }
         if (!order.id) {
+          store.finishRiskReservation(idempotencyKey, "released");
           store.releaseSubmission(idempotencyKey);
           throw new Error("Alpaca returned a crypto order without an id");
         }
+        if (!store.markRiskSubmitted(idempotencyKey, order.id)) console.error("crypto risk reservation transition failed", { idempotencyKey, orderId: order.id });
+        const riskStatus = riskReservationStatusForBrokerStatus(order.status);
+        if (riskStatus) store.finishRiskReservation(idempotencyKey, riskStatus);
         const receiptId = crypto.randomUUID();
         const response = { ...managedOrderDto(order), receiptId };
         store.completeSubmission(idempotencyKey, order.id, response);
