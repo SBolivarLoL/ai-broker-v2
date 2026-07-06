@@ -35,6 +35,27 @@ export type BacktestTradeMetrics = {
   exposureTimePercent: number;
   capacityWarnings: string[];
 };
+export type BacktestUncertaintyRange = {
+  pointEstimate: number;
+  lowerPercentile: number;
+  median: number;
+  upperPercentile: number;
+};
+export type BacktestUncertainty = {
+  status: "available" | "insufficient_data";
+  method: "moving_block_bootstrap";
+  confidenceLevel: 0.9;
+  lowerPercentile: 5;
+  upperPercentile: 95;
+  sampleSize: number;
+  minimumSampleSize: number;
+  resamples: number;
+  blockLength: number | null;
+  rankingUse: "not_rankable";
+  reason: string;
+  totalReturnPercent: BacktestUncertaintyRange | null;
+  maxDrawdownPercent: BacktestUncertaintyRange | null;
+};
 export type BacktestResult = {
   strategyId: string;
   initialCash: number;
@@ -46,6 +67,7 @@ export type BacktestResult = {
   totalCost: number;
   exposureTimePercent: number;
   tradeMetrics: BacktestTradeMetrics;
+  uncertainty: BacktestUncertainty;
   points: BacktestPoint[];
   assumptions: { feeBps: number; slippageBps: number; execution: "close" };
 };
@@ -206,6 +228,11 @@ function maxDrawdown(equity: number[]) {
 }
 
 const finiteOrNull = (value: number) => Number.isFinite(value) ? value : null;
+const UNCERTAINTY_MIN_SAMPLE_SIZE = 20;
+const UNCERTAINTY_RESAMPLES = 500;
+const UNCERTAINTY_CONFIDENCE_LEVEL = 0.9 as const;
+const UNCERTAINTY_LOWER_PERCENTILE = 5 as const;
+const UNCERTAINTY_UPPER_PERCENTILE = 95 as const;
 
 function buildTradeMetrics(input: {
   points: BacktestPoint[];
@@ -334,6 +361,113 @@ function buildTradeMetrics(input: {
   };
 }
 
+function compoundedReturnPercent(returns: number[]) {
+  return (returns.reduce((growth, value) => growth * (1 + value), 1) - 1) * 100;
+}
+
+function maxDrawdownPercentFromReturns(returns: number[]) {
+  let equity = 1, peak = 1, drawdown = 0;
+  for (const value of returns) {
+    equity *= 1 + value;
+    peak = Math.max(peak, equity);
+    if (peak > 0) drawdown = Math.max(drawdown, (peak - equity) / peak);
+  }
+  return drawdown * 100;
+}
+
+function percentile(sorted: number[], target: number) {
+  if (!sorted.length) return 0;
+  const position = (target / 100) * (sorted.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower]!;
+  const weight = position - lower;
+  return sorted[lower]! * (1 - weight) + sorted[upper]! * weight;
+}
+
+function range(pointEstimate: number, samples: number[]): BacktestUncertaintyRange {
+  const sorted = [...samples].sort((left, right) => left - right);
+  return {
+    pointEstimate,
+    lowerPercentile: percentile(sorted, UNCERTAINTY_LOWER_PERCENTILE),
+    median: percentile(sorted, 50),
+    upperPercentile: percentile(sorted, UNCERTAINTY_UPPER_PERCENTILE),
+  };
+}
+
+function uncertaintySeed(returns: number[]) {
+  let seed = 2166136261;
+  for (const value of returns) {
+    const scaled = Math.round((value + 10) * 1_000_000);
+    seed ^= scaled;
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  return seed || 1;
+}
+
+function nextRandom(seed: number) {
+  const next = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  return { seed: next, value: next / 2 ** 32 };
+}
+
+export function buildReturnUncertainty(returns: number[]): BacktestUncertainty {
+  const cleanReturns = returns.filter(Number.isFinite);
+  const sampleSize = cleanReturns.length;
+  const base = {
+    method: "moving_block_bootstrap" as const,
+    confidenceLevel: UNCERTAINTY_CONFIDENCE_LEVEL,
+    lowerPercentile: UNCERTAINTY_LOWER_PERCENTILE,
+    upperPercentile: UNCERTAINTY_UPPER_PERCENTILE,
+    sampleSize,
+    minimumSampleSize: UNCERTAINTY_MIN_SAMPLE_SIZE,
+    resamples: UNCERTAINTY_RESAMPLES,
+    rankingUse: "not_rankable" as const,
+  };
+  if (sampleSize < UNCERTAINTY_MIN_SAMPLE_SIZE)
+    return {
+      ...base,
+      status: "insufficient_data",
+      blockLength: null,
+      reason: `At least ${UNCERTAINTY_MIN_SAMPLE_SIZE} scored return observations are required for a time-series-aware uncertainty range.`,
+      totalReturnPercent: null,
+      maxDrawdownPercent: null,
+    };
+
+  const blockLength = Math.max(2, Math.ceil(Math.sqrt(sampleSize)));
+  const totalReturnSamples: number[] = [];
+  const drawdownSamples: number[] = [];
+  let seed = uncertaintySeed(cleanReturns);
+  for (let sample = 0; sample < UNCERTAINTY_RESAMPLES; sample++) {
+    const sampled: number[] = [];
+    while (sampled.length < sampleSize) {
+      const random = nextRandom(seed);
+      seed = random.seed;
+      const start = Math.floor(random.value * sampleSize);
+      for (let offset = 0; offset < blockLength && sampled.length < sampleSize; offset++)
+        sampled.push(cleanReturns[(start + offset) % sampleSize]!);
+    }
+    totalReturnSamples.push(compoundedReturnPercent(sampled));
+    drawdownSamples.push(maxDrawdownPercentFromReturns(sampled));
+  }
+  return {
+    ...base,
+    status: "available",
+    blockLength,
+    reason: "Moving-block bootstrap preserves short-run return clustering for uncertainty evidence; it is not a ranking or promotion score.",
+    totalReturnPercent: range(compoundedReturnPercent(cleanReturns), totalReturnSamples),
+    maxDrawdownPercent: range(maxDrawdownPercentFromReturns(cleanReturns), drawdownSamples),
+  };
+}
+
+function returnsFromBacktestPoints(points: BacktestPoint[], initialCash: number) {
+  let previousEquity = initialCash;
+  return points.map((point) => {
+    const value = point.equity / previousEquity - 1;
+    previousEquity = point.equity;
+    return value;
+  });
+}
+
 export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; strategy: BacktestStrategy; initialCash?: number; feeBps?: number; slippageBps?: number; evaluationStartIndex?: number }): BacktestResult {
   const bars = normalizeBars(input.bars);
   const initialCash = input.initialCash ?? 10_000, feeBps = input.feeBps ?? 0, slippageBps = input.slippageBps ?? 5;
@@ -386,6 +520,9 @@ export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; st
       exposureTimePercent,
       maxDrawdownPercent,
     }),
+    uncertainty: buildReturnUncertainty(
+      returnsFromBacktestPoints(points, initialCash),
+    ),
     points,
     assumptions: { feeBps, slippageBps, execution: "close" },
   };
