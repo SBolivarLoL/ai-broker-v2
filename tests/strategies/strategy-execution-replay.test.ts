@@ -165,6 +165,87 @@ test("classifies partial fills and latency-based missed fills", () => {
   );
 });
 
+test("calibrates friction assumptions from receipt and order-book evidence", () => {
+  const orders = Array.from({ length: 20 }, (_, index) => {
+    const at = new Date(Date.UTC(2026, 5, 24, 10, index, 0));
+    return {
+      id: `row-${index}`,
+      decisionId: `decision-${index}`,
+      paperOrderId: `paper-${index}`,
+      status: "filled",
+      payload: {
+        symbol: "BTC/USD",
+        side: "buy",
+        qty: 1,
+        referencePrice: 100,
+        submittedAt: new Date(at.getTime() + 200).toISOString(),
+        broker: {
+          status: "filled",
+          side: "buy",
+          filledQty: "1",
+          filledAvgPrice: "100.3",
+          fee: "0.01",
+        },
+      },
+      createdAt: new Date(at.getTime() + 200).toISOString(),
+      updatedAt: new Date(at.getTime() + 400).toISOString(),
+    };
+  });
+  const traces = orders.map((order, index) => {
+    const observedAt = new Date(Date.UTC(2026, 5, 24, 10, index, 0));
+    return {
+      id: order.decisionId,
+      traceId: `trace-${index}`,
+      symbol: "BTC/USD",
+      snapshots: [
+        {
+          symbol: "BTC/USD",
+          observedAt: observedAt.toISOString(),
+          latencyMs: 50,
+          payload: {
+            orderbook: {
+              bids: [{ p: 99.5, s: 2 }],
+              asks: [{ p: 100.5, s: 2 }],
+            },
+          },
+        },
+      ],
+    };
+  });
+
+  const replay = buildStrategyExecutionReplay({
+    run,
+    orders,
+    traces,
+    assumptions: { assumedOrderLatencyMs: 250, maxReplayLatencyMs: 5_000 },
+  });
+
+  expect(replay.calibration).toMatchObject({
+    calibrationVersion: "strategy-friction-calibration-v1",
+    status: "available",
+    minimumSampleSize: 20,
+    sampleSize: {
+      paperOrders: 20,
+      receiptFillSlippageSamples: 20,
+      receiptFeeSamples: 20,
+      orderBookReplaySamples: 20,
+      spreadSamples: 20,
+      latencySamples: 20,
+    },
+    recommendedAssumptions: {
+      feeBps: 1,
+      slippageBps: 50,
+      maxSpreadBps: 125,
+      assumedOrderLatencyMs: 500,
+    },
+  });
+  expect(replay.calibration.evidence.receiptSlippageBps.p95).toBeCloseTo(30);
+  expect(replay.calibration.evidence.replaySlippageBps.p95).toBeCloseTo(50);
+  expect(replay.calibration.evidence.partialFillRate).toBe(0);
+  expect(replay.calibration.evidence.missedFillRate).toBe(0);
+  expect(replay.calibration.overridePolicy.costModel).toContain("larger");
+});
+
 test("keeps missing order-book evidence explicit", () => {
   const replay = buildStrategyExecutionReplay({
     run,
@@ -212,4 +293,8 @@ test("keeps missing order-book evidence explicit", () => {
   expect(replay.warnings).toContain(
     "Order-book replay needs decision snapshots with order-book payloads for every linked paper order.",
   );
+  expect(replay.calibration).toMatchObject({
+    status: "insufficient_evidence",
+    sampleSize: { paperOrders: 1, orderBookReplaySamples: 0 },
+  });
 });

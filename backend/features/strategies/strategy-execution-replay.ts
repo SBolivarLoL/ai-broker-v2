@@ -48,6 +48,75 @@ const average = (values: number[]) =>
   values.length
     ? values.reduce((sum, value) => sum + value, 0) / values.length
     : null;
+const DEFAULT_BACKTEST_SLIPPAGE_BPS = 5;
+const MIN_CALIBRATION_SAMPLE_SIZE = 20;
+
+function percentile(values: number[], target: number) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const position = (target / 100) * (sorted.length - 1);
+  const lower = Math.floor(position), upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower]!;
+  const weight = position - lower;
+  return sorted[lower]! * (1 - weight) + sorted[upper]! * weight;
+}
+
+function observedFeeBps(order: StrategyReplayOrder) {
+  const payload = order.payload ?? {}, broker = payload.broker ?? {};
+  const qty = positiveNumber(payload.qty ?? broker.filledQty ?? broker.qty);
+  const price = positiveNumber(broker.filledAvgPrice ?? payload.filledAvgPrice);
+  const fee = finiteNumber(
+    payload.fee ??
+      payload.commission ??
+      broker.fee ??
+      broker.fees ??
+      broker.commission,
+  );
+  const notional = positiveNumber(payload.notional) ?? (qty && price ? qty * price : null);
+  return fee !== null && notional ? Math.abs(fee / notional) * 10_000 : null;
+}
+
+function observedFillSlippageBps(order: StrategyReplayOrder) {
+  const payload = order.payload ?? {}, broker = payload.broker ?? {};
+  const status = String(broker.status ?? order.status).toLowerCase();
+  const side = String(payload.side ?? broker.side ?? "").toLowerCase();
+  const referencePrice = positiveNumber(payload.referencePrice);
+  const filledAvgPrice = positiveNumber(
+    broker.filledAvgPrice ?? payload.filledAvgPrice,
+  );
+  if (
+    status !== "filled" ||
+    !["buy", "sell"].includes(side) ||
+    !referencePrice ||
+    !filledAvgPrice
+  )
+    return null;
+  return side === "buy"
+    ? ((filledAvgPrice - referencePrice) / referencePrice) * 10_000
+    : ((referencePrice - filledAvgPrice) / referencePrice) * 10_000;
+}
+
+function metric(values: number[]) {
+  return {
+    count: values.length,
+    average: average(values),
+    p50: percentile(values, 50),
+    p95: percentile(values, 95),
+    max: values.length ? Math.max(...values) : null,
+  };
+}
+
+function ceilBasisPoints(value: number | null, fallback: number) {
+  return value === null || !Number.isFinite(value)
+    ? fallback
+    : Math.ceil(Math.max(0, value));
+}
+
+function ceilMilliseconds(value: number | null, fallback: number) {
+  return value === null || !Number.isFinite(value)
+    ? fallback
+    : Math.ceil(Math.max(0, value));
+}
 
 function replayAssumptions(input?: StrategyReplayAssumptions) {
   const maxSpreadBps = positiveNumber(input?.maxSpreadBps);
@@ -350,6 +419,46 @@ export function buildStrategyExecutionReplay(input: {
   const latencies = orders
     .map((order) => order.replayLatencyMs)
     .filter((value): value is number => value !== null);
+  const receiptSlippages = input.orders
+    .map(observedFillSlippageBps)
+    .filter((value): value is number => value !== null);
+  const receiptFees = input.orders
+    .map(observedFeeBps)
+    .filter((value): value is number => value !== null);
+  const replaySlippages = slippages.map((value) => Math.max(0, value));
+  const replayedCount = replayed.length;
+  const calibrationReady =
+    input.orders.length >= MIN_CALIBRATION_SAMPLE_SIZE &&
+    replayedCount >= MIN_CALIBRATION_SAMPLE_SIZE &&
+    !orders.some((order) => order.replay.status === "missing_order_book");
+  const replaySlippageP95 = percentile(replaySlippages, 95);
+  const receiptSlippageP95 = percentile(
+    receiptSlippages.map((value) => Math.max(0, value)),
+    95,
+  );
+  const spreadP95 = percentile(spreads, 95);
+  const latencyP95 = percentile(latencies, 95);
+  const feeP95 = percentile(receiptFees, 95);
+  const recommendedFeeBps = ceilBasisPoints(feeP95, 0);
+  const recommendedSlippageBps = Math.max(
+    DEFAULT_BACKTEST_SLIPPAGE_BPS,
+    ceilBasisPoints(
+      Math.max(replaySlippageP95 ?? 0, receiptSlippageP95 ?? 0),
+      DEFAULT_BACKTEST_SLIPPAGE_BPS,
+    ),
+  );
+  const spreadBufferBps = ceilBasisPoints(
+    spreadP95 === null ? null : spreadP95 * 1.25,
+    assumptions.maxSpreadBps,
+  );
+  const recommendedMaxSpreadBps = Math.min(
+    assumptions.maxSpreadBps,
+    spreadBufferBps,
+  );
+  const recommendedAssumedOrderLatencyMs = Math.max(
+    assumptions.assumedOrderLatencyMs,
+    ceilMilliseconds(latencyP95, assumptions.assumedOrderLatencyMs),
+  );
   const warnings = [
     input.orders.length
       ? null
@@ -363,6 +472,9 @@ export function buildStrategyExecutionReplay(input: {
     orders.some((order) => order.replay.status === "missed_fill")
       ? "At least one paper order is treated as missed under spread, latency or visible-depth assumptions."
       : null,
+    calibrationReady
+      ? null
+      : `Friction calibration needs at least ${MIN_CALIBRATION_SAMPLE_SIZE} orders with order-book replay evidence before it is considered stable.`,
   ].filter(Boolean) as string[];
   return {
     replayVersion: "strategy-execution-replay-v1",
@@ -392,6 +504,62 @@ export function buildStrategyExecutionReplay(input: {
       averageReplaySlippageBps: average(slippages),
       averageSpreadBps: average(spreads),
       averageReplayLatencyMs: average(latencies),
+    },
+    calibration: {
+      calibrationVersion: "strategy-friction-calibration-v1",
+      status: calibrationReady ? "available" : "insufficient_evidence",
+      method:
+        "paper_receipt_fill_quality_plus_decision_time_order_book_replay",
+      minimumSampleSize: MIN_CALIBRATION_SAMPLE_SIZE,
+      sampleSize: {
+        paperOrders: input.orders.length,
+        receiptFillSlippageSamples: receiptSlippages.length,
+        receiptFeeSamples: receiptFees.length,
+        orderBookReplaySamples: replayedCount,
+        spreadSamples: spreads.length,
+        latencySamples: latencies.length,
+      },
+      evidence: {
+        feeBps: metric(receiptFees),
+        receiptSlippageBps: metric(
+          receiptSlippages.map((value) => Math.max(0, value)),
+        ),
+        replaySlippageBps: metric(replaySlippages),
+        spreadBps: metric(spreads),
+        replayLatencyMs: metric(latencies),
+        partialFillRate: input.orders.length
+          ? orders.filter((order) => order.replay.status === "partial_fill")
+              .length / input.orders.length
+          : null,
+        missedFillRate: input.orders.length
+          ? orders.filter((order) => order.replay.status === "missed_fill")
+              .length / input.orders.length
+          : null,
+        missingOrderBookRate: input.orders.length
+          ? orders.filter((order) => order.replay.status === "missing_order_book")
+              .length / input.orders.length
+          : null,
+      },
+      recommendedAssumptions: {
+        feeBps: recommendedFeeBps,
+        slippageBps: recommendedSlippageBps,
+        maxSpreadBps: recommendedMaxSpreadBps,
+        assumedOrderLatencyMs: recommendedAssumedOrderLatencyMs,
+      },
+      overridePolicy: {
+        costModel:
+          "Use the larger of user-provided/default cost assumptions and calibrated p95 fee/slippage evidence.",
+        spreadGuardrail:
+          "Use the stricter of the user max-spread override and the calibrated p95 spread buffer.",
+        latency:
+          "Use the larger of the user latency assumption and observed p95 replay latency.",
+      },
+      notes: [
+        receiptFees.length
+          ? "Paper receipt fee samples were observed; live fees still require separate broker schedule review."
+          : "No explicit paper fee samples were observed; recommended fee remains zero until receipts expose fees or a user supplies a conservative override.",
+        "Paper fills and replayed visible depth are calibration evidence, not live-trading approval.",
+      ],
     },
     orders,
     warnings,
