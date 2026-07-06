@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { blockedOperationsPolicyResponse } from "../../backend/features/operations/policy-response";
+import { blockedOperationsPolicyResponse } from "../../backend/shared/policy-response";
 
 test("blocked operations responses keep policy evidence and route-specific context", async () => {
   const operationalPolicy = {

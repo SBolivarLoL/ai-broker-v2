@@ -16,7 +16,7 @@ import {
   DEFAULT_OPERATIONS_POLICY,
   parseOperationsPolicy,
   type OperationsPolicy,
-} from "../features/operations/operations-policy";
+} from "../shared/operations-policy";
 import {
   EncryptedSecret,
   SecretName,

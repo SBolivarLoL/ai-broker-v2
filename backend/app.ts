@@ -17,7 +17,7 @@ import {
 } from "./features/operations/routes";
 import { buildPortfolioSnapshot } from "./features/portfolio/portfolio-snapshot";
 import { handlePortfolioRequest } from "./features/portfolio/routes";
-import { riskSnapshot } from "./features/portfolio/risk";
+import { riskSnapshot } from "./shared/risk";
 import { handleResearchRequest } from "./features/research/routes";
 import {
   authContextFor,

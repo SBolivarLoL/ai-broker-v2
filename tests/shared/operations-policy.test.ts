@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DEFAULT_OPERATIONS_POLICY, evaluateOperationsPolicy, evaluatePortfolioPolicy, parseOperationsPolicy } from "../../backend/features/operations/operations-policy";
+import { DEFAULT_OPERATIONS_POLICY, evaluateOperationsPolicy, evaluatePortfolioPolicy, parseOperationsPolicy } from "../../backend/shared/operations-policy";
 
 test("blocks all order intents when the global kill switch is active", () => {
   const result = evaluateOperationsPolicy({

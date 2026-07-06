@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   riskSnapshot,
   simulateTrade,
-} from "../../backend/features/portfolio/risk";
+} from "../../backend/shared/risk";
 
 test("broker safety scenario corpus", () => {
   const base = riskSnapshot(10_000, 8_000, [

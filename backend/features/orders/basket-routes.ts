@@ -5,8 +5,8 @@ import { orderSessionGuidance } from "../markets/market-workspace";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
-} from "../operations/operations-policy";
-import { riskSnapshot, rollingTurnover } from "../portfolio/risk";
+} from "../../shared/operations-policy";
+import { riskSnapshot, rollingTurnover } from "../../shared/risk";
 import { liquidityPreview } from "./order-ticket";
 import {
   RebalanceBasket,

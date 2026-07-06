@@ -4,9 +4,9 @@ import type { createStore } from "../../persistence/store";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
-} from "../operations/operations-policy";
-import { blockedOperationsPolicyResponse } from "../operations/policy-response";
-import { rollingTurnover } from "../portfolio/risk";
+} from "../../shared/operations-policy";
+import { blockedOperationsPolicyResponse } from "../../shared/policy-response";
+import { rollingTurnover } from "../../shared/risk";
 import { managedOrderDto } from "./order-management";
 import {
   OptionOrderTicket,

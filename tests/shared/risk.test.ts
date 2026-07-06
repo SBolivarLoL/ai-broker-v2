@@ -5,7 +5,7 @@ import {
   riskSnapshot,
   rollingTurnover,
   simulateTrade,
-} from "../../backend/features/portfolio/risk";
+} from "../../backend/shared/risk";
 
 const positions = [
   { symbol: "AAPL", qty: "10", marketValue: "2000", unrealizedPl: "100" },

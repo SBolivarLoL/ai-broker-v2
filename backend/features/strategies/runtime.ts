@@ -4,10 +4,10 @@ import type { createStore } from "../../persistence/store";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
-} from "../operations/operations-policy";
+} from "../../shared/operations-policy";
 import { cryptoOrderMarketFromSnapshot } from "../orders/crypto-order-ticket";
 import { managedOrderDto } from "../orders/order-management";
-import { rollingTurnover } from "../portfolio/risk";
+import { rollingTurnover } from "../../shared/risk";
 import { buildStrategyAlerts } from "./strategy-alerts";
 import { buildStrategyOrderAttribution } from "./strategy-attribution";
 import {

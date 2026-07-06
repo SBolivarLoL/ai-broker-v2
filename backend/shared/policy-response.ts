@@ -1,4 +1,4 @@
-import { json } from "../../http/http";
+import { json } from "../http/http";
 import type { OperationsPolicyEvaluation } from "./operations-policy";
 
 /** Returns the common evidence payload for an order blocked by operations policy. */

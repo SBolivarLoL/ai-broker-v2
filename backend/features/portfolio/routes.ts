@@ -31,7 +31,7 @@ import {
   portfolioHistory,
   riskSnapshot,
   rollingTurnover,
-} from "./risk";
+} from "../../shared/risk";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;

@@ -16,7 +16,7 @@
     "smoke:finnhub": "bun --env-file=.env scripts/finnhub-smoke.ts",
     "smoke:openfigi": "bun --env-file=.env scripts/openfigi-smoke.ts",
     "smoke:comparables": "bun --env-file=.env scripts/comparable-smoke.ts",
-    "eval": "bun test tests/portfolio/risk.test.ts tests/orders/orders.test.ts tests/orders/order-management.test.ts tests/shared/security.test.ts tests/research/copilot.test.ts tests/portfolio/eval.test.ts tests/research/research.test.ts",
+    "eval": "bun test tests/shared/risk.test.ts tests/orders/orders.test.ts tests/orders/order-management.test.ts tests/shared/security.test.ts tests/research/copilot.test.ts tests/portfolio/eval.test.ts tests/research/research.test.ts",
     "eval:research": "bun --env-file=.env scripts/research-eval.ts"
   },
   "dependencies": {

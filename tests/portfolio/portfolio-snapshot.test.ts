@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildPortfolioSnapshot } from "../../backend/features/portfolio/portfolio-snapshot";
-import { riskSnapshot } from "../../backend/features/portfolio/risk";
+import { riskSnapshot } from "../../backend/shared/risk";
 import { createStore } from "../../backend/persistence/store";
 
 const positions = [

@@ -3,7 +3,7 @@
  * approved strategy paper orders.
  */
 import { z } from "zod";
-import type { PendingOrder, Position } from "../portfolio/risk";
+import type { PendingOrder, Position } from "./risk";
 
 export const DEFAULT_OPERATIONS_POLICY = {
   schemaVersion: "operations-policy-v1",

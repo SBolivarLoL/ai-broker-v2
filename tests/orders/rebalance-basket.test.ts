@@ -5,7 +5,7 @@ import {
   simulateRebalanceBasket,
   verifyRebalanceBasketPreview,
 } from "../../backend/features/orders/rebalance-basket";
-import { riskSnapshot } from "../../backend/features/portfolio/risk";
+import { riskSnapshot } from "../../backend/shared/risk";
 
 const positions = [
   { symbol: "AAPL", qty: 10, marketValue: 1_000 },

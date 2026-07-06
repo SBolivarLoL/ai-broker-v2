@@ -1,5 +1,5 @@
 /** Builds the durable broker snapshot used for reconciliation and evidence. */
-import type { RiskSnapshot } from "./risk";
+import type { RiskSnapshot } from "../../shared/risk";
 
 type AccountInput = {
   equity?: string | number;

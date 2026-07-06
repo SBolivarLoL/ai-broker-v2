@@ -7,7 +7,7 @@ import { getFinnhubCompanyEnrichment } from "../../integrations/finnhub";
 import { getGdeltCompanySignals } from "../../integrations/gdelt";
 import { getOfficialMacroContext } from "../../integrations/macro-context";
 import { getOpenFigiIdentity } from "../../integrations/openfigi";
-import { historicalRisk } from "../portfolio/risk";
+import { historicalRisk } from "../../shared/risk";
 import { SecEdgarClient, secUserAgentFromEnv, type SecFacts } from "../../integrations/sec-edgar";
 import { buildSecFinancialTrends } from "./sec-financial-trends";
 import { buildValuationScenarioMemo, ValuationScenarioInput } from "./valuation-scenario";

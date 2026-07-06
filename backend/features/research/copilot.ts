@@ -5,7 +5,7 @@
 import { Agent, run, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
-import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "../portfolio/risk";
+import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "../../shared/risk";
 import { openaiModel } from "./research";
 
 export const Intent = z.enum(["reduce_concentration", "balanced_growth", "preserve_capital"]);

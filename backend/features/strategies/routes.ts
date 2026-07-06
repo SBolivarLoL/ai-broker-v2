@@ -4,8 +4,8 @@ import type { createStore } from "../../persistence/store";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
-} from "../operations/operations-policy";
-import { blockedOperationsPolicyResponse } from "../operations/policy-response";
+} from "../../shared/operations-policy";
+import { blockedOperationsPolicyResponse } from "../../shared/policy-response";
 import {
   buildCryptoOrderPreview,
   cryptoOrderMarketFromSnapshot,
@@ -16,7 +16,7 @@ import {
 } from "../orders/crypto-order-ticket";
 import { managedOrderDto } from "../orders/order-management";
 import type { createOrderRuntime } from "../orders/runtime";
-import { rollingTurnover } from "../portfolio/risk";
+import { rollingTurnover } from "../../shared/risk";
 import { riskReservationStatusForBrokerStatus } from "../../shared/broker-status";
 import {
   parseStrategyParams,

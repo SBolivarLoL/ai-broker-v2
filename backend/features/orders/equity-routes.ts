@@ -5,13 +5,13 @@ import { orderSessionGuidance } from "../markets/market-workspace";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
-} from "../operations/operations-policy";
-import { blockedOperationsPolicyResponse } from "../operations/policy-response";
+} from "../../shared/operations-policy";
+import { blockedOperationsPolicyResponse } from "../../shared/policy-response";
 import {
   riskSnapshot,
   rollingTurnover,
   simulateTrade,
-} from "../portfolio/risk";
+} from "../../shared/risk";
 import {
   auctionSubmissionError,
   linkedOrderError,

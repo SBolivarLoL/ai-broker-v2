@@ -9,7 +9,7 @@ import {
   type PendingOrder,
   type Position,
   type RiskSnapshot,
-} from "../portfolio/risk";
+} from "../../shared/risk";
 
 const BasketLeg = z.object({
   symbol: z
