@@ -2,7 +2,7 @@
 
 These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 
-Review baseline: `main` at `42c4053` on 2026-07-06.
+Review baseline: `main` at `a3d5e65` on 2026-07-07.
 
 ## Delivery workflow
 

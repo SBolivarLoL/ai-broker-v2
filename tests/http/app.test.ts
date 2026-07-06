@@ -426,6 +426,119 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(app.cryptoBarRequests).toHaveLength(0);
 });
 
+test("strategy backtest API persists anchored walk-forward holdout and regimes", async () => {
+  const app = testApp({}, {
+    cryptoBars: (request) => {
+      const start = new Date(request.start).getTime();
+      return {
+        "BTC/USD": Array.from({ length: 7 }, (_, index) => {
+          const close = 100 + index * 10;
+          return {
+            t: new Date(start + index * 86_400_000).toISOString(),
+            o: close,
+            h: close + 2,
+            l: close - 2,
+            c: close,
+            v: 10 + index,
+          };
+        }),
+      };
+    },
+  });
+  const ingest = await app.fetch(new Request("http://local/api/strategy/datasets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      timeframe: "1Day",
+      start: "2025-01-01T00:00:00.000Z",
+      end: "2025-01-08T00:00:00.000Z",
+    }),
+  }));
+  expect(ingest.status).toBe(201);
+  const datasetId = String((await ingest.json() as any).dataset.id);
+
+  const response = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      datasetId,
+      strategyId: "buy-and-hold",
+      params: {},
+      walkForward: {
+        mode: "anchored",
+        trainSize: 3,
+        testSize: 1,
+        holdoutSize: 2,
+        regimes: [
+          {
+            id: "validation-boundary",
+            start: "2025-01-05T00:00:00.000Z",
+            end: "2025-01-06T00:00:00.000Z",
+          },
+          {
+            id: "final-holdout",
+            start: "2025-01-06T00:00:00.000Z",
+            end: "2025-01-08T00:00:00.000Z",
+          },
+        ],
+        candidates: [{}],
+      },
+    }),
+  }));
+  expect(response.status).toBe(201);
+  const backtest = await response.json() as any;
+  expect(backtest.walkForwardEvaluation).toMatchObject({
+    mode: "anchored",
+    holdoutSize: 2,
+    aggregate: { foldCount: 2, testBars: 2 },
+    finalHoldout: {
+      train: { bars: 5, end: "2025-01-05T00:00:00.000Z" },
+      test: { bars: 2, start: "2025-01-06T00:00:00.000Z" },
+      leakageChecks: { holdoutExcludedFromSelection: true },
+    },
+    regimeSlices: [
+      {
+        id: "validation-boundary",
+        validation: { status: "covered", bars: 1 },
+        holdout: { status: "no_data", bars: 0 },
+      },
+      {
+        id: "final-holdout",
+        validation: { status: "no_data", bars: 0 },
+        holdout: { status: "covered", bars: 2 },
+      },
+    ],
+    leakageChecks: {
+      allPassed: true,
+      holdoutExcludedFromAllCandidateScoring: true,
+      regimeSlicesDoNotAffectSelection: true,
+    },
+  });
+
+  const persisted = await app.fetch(new Request(
+    `http://local/api/strategy/backtests/${String(backtest.backtestId)}`,
+  ));
+  expect(persisted.status).toBe(200);
+  expect(await persisted.json()).toMatchObject({
+    result: {
+      walkForwardEvaluation: {
+        mode: "anchored",
+        finalHoldout: { test: { bars: 2 } },
+        regimeSlices: [{ id: "validation-boundary" }, { id: "final-holdout" }],
+      },
+    },
+    request: {
+      walkForward: {
+        mode: "anchored",
+        holdoutSize: 2,
+        regimes: [{ id: "validation-boundary" }, { id: "final-holdout" }],
+      },
+    },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(1);
+});
+
 test("strategy dataset API ingests chunked history and powers a stored-data backtest", async () => {
   const app = testApp({}, {
     cryptoBars: (request) => ({
