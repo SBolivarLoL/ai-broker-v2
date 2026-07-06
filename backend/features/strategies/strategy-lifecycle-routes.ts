@@ -23,6 +23,7 @@ import {
   parseStrategyReview,
   withStrategyReviewConfig,
 } from "./strategy-review";
+import { buildStrategyPromotionEvidence } from "./strategy-promotion-evidence";
 import {
   currentStrategyExperimentProtocol,
   parseStrategyExperimentProtocol,
@@ -746,6 +747,24 @@ export async function handleStrategyLifecycleRequest(
         error instanceof Error ? error.message : "Invalid strategy review",
         400,
       );
+    }
+    if (parsed.action === "promote") {
+      const promotionEvidence = buildStrategyPromotionEvidence({
+        run,
+        decisions: store.strategyDecisions(runId, 500),
+        orders: store.strategyOrders(runId),
+        reviewedAt: parsed.review.reviewedAt,
+      });
+      if (promotionEvidence.status !== "pass")
+        return json(
+          {
+            error: "Strategy promotion needs more paper evidence",
+            promotionEvidence,
+          },
+          409,
+        );
+      (parsed.review as Record<string, unknown>).promotionEvidence =
+        promotionEvidence;
     }
     let config = withStrategyReviewConfig(run.config, parsed.review);
     if (parsed.action === "retire") {

@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `bde172e`: 2026-07-07.
+Last reviewed against `main` commit `7da0609`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -181,6 +181,8 @@ Backtest artifacts are immutable and actor-scoped at retrieval. Run creation che
 Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.
 
 Pre-register a paper experiment with `POST /api/strategy/runs/{runId}/experiment-protocol` before paper approval. The payload must include a falsifiable `hypothesis`, the frozen run `parameters`, `startAt`/`stopAt`, `minimumObservations`, `maximumBudget`, one to ten `invalidationCriteria`, and `reviewCadenceDays`. Re-registering appends a new protocol version to `config.experimentProtocols`; it does not erase prior versions. Parameters must match the reviewed run parameters, so a real parameter change requires a new reviewed backtest/run rather than hidden mutation inside an active paper experiment.
+
+Promotion review is evidence-gated. A `promote` review returns `promotionEvidence.status:"needs_evidence"` and leaves the run in paper mode until the run has paper status, at least 30 paper days, enough recorded decisions, and at least 20 filled paper orders. Only `promotionEvidence.status:"pass"` can move a paper run to `completed`, and that evidence is stored in the review history.
 
 Each tick:
 
