@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { createApp } from "../../backend/app";
 import { createStore } from "../../backend/persistence/store";
+import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "../../backend/features/strategies/strategy-provenance";
 
 const codeIdentity = { gitCommit: "a".repeat(40), workingTreeDirty: false };
 const optionSymbols = ["AAPL260717C00100000", "AAPL260717C00101000"] as const;
@@ -794,6 +795,117 @@ test("strategy dataset API creates correction lineage without rewriting history"
     datasetHash: initialHash,
     bars: [{ close: 101 }, { close: 101 }, { close: 101 }],
   });
+});
+
+test("strategy backtest compare API warns on incompatible cohort evidence", async () => {
+  const app = testApp();
+  const baseRequest = {
+    symbols: ["BTC/USD"],
+    strategyId: "moving-average-trend",
+    params: { fast: 5, slow: 20, exposure: 1 },
+    timeframe: "1Hour",
+    days: 30,
+    initialCash: 10_000,
+    feeBps: 0,
+    slippageBps: 5,
+  };
+  const definitionHash = canonicalHash(baseRequest);
+  const provenance = {
+    gitCommit: codeIdentity.gitCommit,
+    workingTreeDirty: false,
+    pluginVersion: "strategy-plugin-v1",
+    featureSchemaVersion: STRATEGY_FEATURE_SCHEMA_VERSION,
+    policyVersion: "crypto-backtest-v1",
+    definitionHash,
+    provider: "Alpaca Market Data API",
+    feed: "us",
+    query: {
+      start: "2026-06-01T00:00:00.000Z",
+      end: "2026-07-01T00:00:00.000Z",
+      timeframe: "1Hour",
+      symbols: ["BTC/USD"],
+    },
+    datasetHash: `sha256:${"1".repeat(64)}`,
+  };
+  const result = {
+    result: {
+      totalReturnPercent: 1,
+      maxDrawdownPercent: 0.5,
+      exposureTimePercent: 50,
+      turnover: 1,
+      assumptions: { feeBps: 0, slippageBps: 5, execution: "close" },
+      tradeMetrics: { tradeCount: 1 },
+      uncertainty: { status: "insufficient_data" },
+    },
+    baselines: {
+      cash: { totalReturnPercent: 0, maxDrawdownPercent: 0 },
+      buyAndHold: { totalReturnPercent: 2, maxDrawdownPercent: 1 },
+    },
+    start: provenance.query.start,
+    end: provenance.query.end,
+    timeframe: "1Hour",
+    symbols: ["BTC/USD"],
+  };
+  for (const id of ["compare-1", "compare-2"]) {
+    const slippageBps = id === "compare-2" ? 25 : 5;
+    app.store.strategyBacktest({
+      id,
+      actor: "demo-advisor",
+      strategyId: baseRequest.strategyId,
+      definitionHash,
+      provenance: {
+        ...provenance,
+        datasetHash:
+          id === "compare-2" ? `sha256:${"2".repeat(64)}` : provenance.datasetHash,
+      },
+      request: { ...baseRequest, slippageBps },
+      result: {
+        ...result,
+        result: {
+          ...result.result,
+          assumptions: { feeBps: 0, slippageBps, execution: "close" },
+        },
+      },
+    });
+  }
+
+  const response = await app.fetch(new Request("http://local/api/strategy/backtests/compare", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ backtestIds: ["compare-1", "compare-2"] }),
+  }));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    comparisonVersion: "strategy-backtest-comparison-v1",
+    compatible: false,
+    backtestIds: ["compare-1", "compare-2"],
+    compatibility: {
+      allPassed: false,
+      checks: [
+        { name: "period", status: "pass" },
+        { name: "dataset", status: "warning" },
+        { name: "friction_model", status: "warning" },
+        { name: "baselines", status: "pass" },
+        { name: "code_and_provider", status: "pass" },
+      ],
+    },
+    rows: [
+      { backtestId: "compare-1", metrics: { totalReturnPercent: 1 } },
+      { backtestId: "compare-2", metrics: { totalReturnPercent: 1 } },
+    ],
+    warnings: [
+      expect.stringContaining("different dataset hashes"),
+      expect.stringContaining("different initial cash"),
+    ],
+  });
+
+  const invalid = await app.fetch(new Request("http://local/api/strategy/backtests/compare", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ backtestIds: ["compare-1", "compare-1"] }),
+  }));
+  expect(invalid.status).toBe(400);
+  expect(await invalid.json()).toEqual({ error: "Compare requires 2 to 20 unique backtestIds" });
 });
 
 async function approvedPaperRun(app: ReturnType<typeof testApp>) {

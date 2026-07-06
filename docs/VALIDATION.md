@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `54b76c2`: 2026-07-07.
+Last reviewed against `main` commit `fb5f53e`: 2026-07-07.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-07                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 315 tests, 0 failures, 1,422 assertions across 76 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 318 tests, 0 failures, 1,432 assertions across 77 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 97.92% functions, 96.85% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.95% functions, 96.81% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                        |
-| TypeScript    | 87 production modules and 75 files under `tests/` plus one coverage-gate test                                      |
+| TypeScript    | 88 production modules and 76 files under `tests/` plus one coverage-gate test                                      |
 | Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across seven assets |
 | Persistence   | 14 migrations; 23 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `54b76c2`; no open pull request at change start                |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `fb5f53e`; no open pull request at change start                |
 
 ## Test-layer policy
 
@@ -40,7 +40,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | --------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Risk and portfolio math     | High at module level                               | Unit, regression, and portfolio system tests                                                                                                                                                                            | No independent production reconciliation over a long account history                                    |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                      | Credentialed real broker drills remain opt-in                                                           |
-| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet |
+| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0014, legacy upgrade fixture, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests   | No production-sized restore timing or closed-beta operations drill                                      |
 | Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, plus deliberate live Alpaca/SEC reads                                                                                                                  | Live provider contracts are not run in CI and point-in-time fundamentals are not persisted              |
 | Data governance             | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, and fail-closed live-use decisions                                                                      | Internal classifications are not legal approval; no automatic retention enforcement exists              |
@@ -54,7 +54,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `54b76c2` plus fresh command output.
+language against `fb5f53e` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -78,7 +78,7 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 87 production TypeScript modules, 75 files under
+- Fresh inventory checks found 88 production TypeScript modules, 76 files under
   `tests/`, one coverage-gate test under `scripts/`, 14 ordered migrations, 23
   SQLite tables, 16 governance sources, and 12 stored-output categories. Every
   table is assigned exactly once.
@@ -167,6 +167,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Backtests emit deterministic `tradeMetrics` covering material simulated order count, position episodes, closed round trips, average holding time, gross/net returns, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings; the direct API contract persists the shape.
 - Backtests and walk-forward out-of-sample aggregates emit deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown, fail visibly as `insufficient_data` below 20 scored returns, and mark the range `not_rankable`; unit and direct API contracts cover the shape.
 - Strategy execution replay emits deterministic friction calibration from paper receipt fill quality and order-book replay evidence, including fee/slippage/spread/latency evidence, partial/missed/missing-book rates, conservative recommended assumptions, user-override policy, and `insufficient_evidence` status below 20 replayed paper orders; unit and direct API contracts cover the shape.
+- Backtest cohort comparison reports metric rows only with explicit compatibility checks for period, symbols, timeframe, dataset hash, friction model, baseline set, code/provider identity, and feed; pure unit and direct API contracts cover compatible and incompatible cohorts.
 - BTC/ETH relative strength derives the opposite peer from the ordered symbol pair; an ambiguous `peerSymbol` override is rejected at both the schema and direct API boundaries.
 - Comparable strategy records require an immutable matching backtest and record exact Git/dirty state, plugin/feature/policy versions, query window, provider/feed, and normalized input hashes. Legacy or dirty records cannot be ticked or approved.
 - Missing or stale strategy data cannot pass by absence.

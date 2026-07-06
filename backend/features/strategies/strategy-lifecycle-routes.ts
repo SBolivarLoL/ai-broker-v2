@@ -29,6 +29,7 @@ import {
   STRATEGY_BACKTEST_POLICY_VERSION,
   STRATEGY_FEATURE_SCHEMA_VERSION,
 } from "./strategy-provenance";
+import { buildStrategyBacktestComparison } from "./strategy-compare";
 import type { StrategyRouteContext } from "./strategy-route-context";
 
 /** Owns backtest creation and strategy-run lifecycle, scheduler, and admin mutations. */
@@ -292,6 +293,39 @@ export async function handleStrategyLifecycleRequest(
       walkForwardFolds: walkForwardEvaluation?.aggregate.foldCount ?? 0,
     });
     return json({ backtestId, provenance, ...output }, 201);
+  }
+  if (
+    url.pathname === "/api/strategy/backtests/compare" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:strategy-backtest-compare`, 20))
+      return json(
+        { error: "Strategy backtest compare rate limit exceeded" },
+        429,
+      );
+    const input = await requestJson(request);
+    const ids: string[] = Array.isArray(input.backtestIds)
+      ? input.backtestIds.map((id: unknown) => String(id).trim())
+      : [];
+    const uniqueIds = [...new Set(ids)];
+    if (
+      uniqueIds.length !== ids.length ||
+      uniqueIds.length < 2 ||
+      uniqueIds.length > 20 ||
+      uniqueIds.some((id) => !id)
+    )
+      throw new ClientError(
+        "Compare requires 2 to 20 unique backtestIds",
+        400,
+      );
+    const backtests = uniqueIds.map((id) => store.getStrategyBacktest(id));
+    if (backtests.some((backtest) => !backtest || backtest.actor !== actor))
+      throw new ClientError("Strategy backtest not found", 404);
+    return json(
+      buildStrategyBacktestComparison({
+        backtests: backtests as NonNullable<(typeof backtests)[number]>[],
+      }),
+    );
   }
   const strategyBacktestMatch =
     request.method === "GET" &&

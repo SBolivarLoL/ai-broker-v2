@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `54b76c2` on 2026-07-07.
+Code baseline reviewed: `main` at `fb5f53e` on 2026-07-07.
 
 ## Quick start
 
@@ -49,7 +49,7 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 - Portfolio performance, FIFO ledger, risk, exposure, scenarios, optimizer proposals, and constrained rebalance planning.
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
-- Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, bounded approved paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, and reports.
+- Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, bounded approved paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, and reports.
 - SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, and a source/output governance registry.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
