@@ -108,7 +108,6 @@ const STRATEGY_PARAMETER_SCHEMAS = {
     lookback: boundedInteger(1, 10_000, 20),
     minRelativeStrengthPercent: z.number().finite().min(-1_000).max(1_000).default(0),
     exposure,
-    peerSymbol: z.enum(["BTC/USD", "ETH/USD"]).optional(),
   }).strict(),
   "order-book-liquidity-scout": z.object({
     exposure,
@@ -265,7 +264,7 @@ export function volatilityFilterStrategy(params: { lookback?: number; minVolatil
   return strategyFunctionFromPlugin(volatilityFilterPlugin(parseStrategyParams("volatility-filter", params)));
 }
 
-export function btcEthRelativeStrengthStrategy(params: { lookback?: number; minRelativeStrengthPercent?: number; exposure?: number; peerSymbol?: string } = {}, market?: StrategyMarketContext, symbol = "BTC/USD"): BacktestStrategy {
+export function btcEthRelativeStrengthStrategy(params: { lookback?: number; minRelativeStrengthPercent?: number; exposure?: number } = {}, market?: StrategyMarketContext, symbol = "BTC/USD"): BacktestStrategy {
   return strategyFunctionFromPlugin(btcEthRelativeStrengthPlugin(parseStrategyParams("btc-eth-relative-strength", params)), market, symbol);
 }
 
@@ -482,8 +481,7 @@ export function volatilityFilterPlugin(params: { lookback?: number; minVolatilit
   };
 }
 
-function peerSymbolFor(symbol: string | undefined, configured?: string) {
-  if (configured === "BTC/USD" || configured === "ETH/USD") return configured;
+function peerSymbolFor(symbol: string | undefined) {
   return symbol === "ETH/USD" ? "BTC/USD" : "ETH/USD";
 }
 
@@ -493,7 +491,7 @@ function returnPercent(history: BacktestBar[] | undefined, index: number, lookba
   return Number.isFinite(current) && Number.isFinite(prior) && current > 0 && prior > 0 ? (current / prior - 1) * 100 : null;
 }
 
-export function btcEthRelativeStrengthPlugin(params: { lookback?: number; minRelativeStrengthPercent?: number; exposure?: number; peerSymbol?: string } = {}): StrategyPlugin<{ primaryReturnPercent: number | null; peerReturnPercent: number | null; relativeStrengthPercent: number | null; peerSymbol: string }> {
+export function btcEthRelativeStrengthPlugin(params: { lookback?: number; minRelativeStrengthPercent?: number; exposure?: number } = {}): StrategyPlugin<{ primaryReturnPercent: number | null; peerReturnPercent: number | null; relativeStrengthPercent: number | null; peerSymbol: string }> {
   const lookback = Math.max(1, Math.floor(params.lookback ?? 20));
   const minRelativeStrengthPercent = Number.isFinite(params.minRelativeStrengthPercent) ? Number(params.minRelativeStrengthPercent) : 0;
   const exposure = clamp(params.exposure ?? 1);
@@ -501,7 +499,7 @@ export function btcEthRelativeStrengthPlugin(params: { lookback?: number; minRel
     id: "btc-eth-relative-strength",
     version: "strategy-plugin-v1",
     prepare: ({ history, index, symbol, market }) => {
-      const peerSymbol = peerSymbolFor(symbol, params.peerSymbol);
+      const peerSymbol = peerSymbolFor(symbol);
       const primaryReturnPercent = returnPercent(history, index, lookback);
       const peerReturnPercent = returnPercent(market?.histories?.[peerSymbol], index, lookback);
       const relativeStrengthPercent = primaryReturnPercent !== null && peerReturnPercent !== null ? primaryReturnPercent - peerReturnPercent : null;

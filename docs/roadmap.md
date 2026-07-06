@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
+Last reviewed against `main` commit `f147459`: 2026-07-06.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -207,7 +207,7 @@ Every future item must answer:
 - [Alpaca developer overview](https://docs.alpaca.markets/docs)
 - [Alpaca paper trading](https://docs.alpaca.markets/us/docs/paper-trading)
 - [Alpaca orders](https://docs.alpaca.markets/us/docs/orders-at-alpaca)
-- [Alpaca historical market data](https://docs.alpaca.markets/v1.3/docs/historical-api)
+- [Alpaca historical market data](https://docs.alpaca.markets/us/docs/historical-api)
 - [Alpaca options trading](https://docs.alpaca.markets/docs/options-trading)
 - [Alpaca crypto data](https://docs.alpaca.markets/docs/real-time-crypto-pricing-data)
 - [Alpaca terms and conditions](https://files.alpaca.markets/disclosures/alpaca_terms_and_conditions.pdf)

@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
+Last reviewed against `main` commit `f147459`: 2026-07-06.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-06                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 295 tests, 0 failures, 1,300 assertions across 74 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 295 tests, 0 failures, 1,308 assertions across 74 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 97.18% functions, 96.25% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -21,10 +21,10 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                        |
 | TypeScript    | 84 production modules and 73 files under `tests/` plus one coverage-gate test                                      |
-| Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 890 lines; browser behavior split across seven assets |
+| Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 905 lines; browser behavior split across seven assets |
 | Persistence   | 13 migrations; 21 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `origin/main` at `7cf3e3d`; `origin/dev` at `ace67cc` after the restructure merge                               |
+| Git baseline  | `main`, `origin/main`, and `origin/dev` at `f147459`; no open pull request at audit start                         |
 
 ## Test-layer policy
 
@@ -47,8 +47,43 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                 | Live model/tool orchestration paths have lower coverage and require credentials                         |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                           | Stream callbacks and secondary provider mutation paths remain incomplete                                |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                 | Most provider behavior requires credentials and is not executed in CI                                   |
-| Browser UI                  | Targeted interaction confidence                    | The 2026-07-05 interaction check verified Strategy Lab creation flows; the 2026-07-06 navigation smoke rendered all seven workspaces with correct selection/hash state, honest unavailable-provider fallbacks, and a clean console | No maintained automated accessibility/responsive regression suite                                       |
+| Browser UI                  | Targeted interaction confidence                    | The 2026-07-05 interaction check verified Strategy Lab creation flows; the 2026-07-06 isolated smoke rendered all seven workspaces at 1280×720 and 390×844 with correct selection/hash state, no mobile horizontal overflow, honest unavailable-provider fallbacks, and a clean console | No maintained automated accessibility/responsive regression suite                                       |
 | Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                   | No production-sized or closed-beta restore drill, deployment, real participants, or external approval   |
+
+## Full documentation and repository audit
+
+The 2026-07-06 audit inspected every tracked Markdown file and checked its
+commands, paths, configuration names, counts, capability statements, and status
+language against `f147459` plus fresh command output.
+
+| File | Audit disposition |
+| ---- | ----------------- |
+| `AGENTS.md` | Workflow, ownership, validation, roadmap, and safety rules match the repository; review baseline refreshed |
+| `README.md` | Setup, layout, commands, runtime, paper-only boundary, and production configuration match source; command-specific symbol overrides added |
+| `docs/FEATURES.md` | Capability, safety, persistence, governance, and limitation claims match source and tests; relative-strength peer derivation made explicit |
+| `docs/STRATEGY_LAB.md` | Strategy catalog, defaults, lifecycle, endpoints, limits, and execution assumptions match source; API/UI timeframe scope clarified |
+| `docs/VALIDATION.md` | Counts, line inventory, Git state, provider checks, browser evidence, and confidence gaps refreshed from this audit |
+| `docs/roadmap.md` | Completed/open status remains consistent with code and external gates; one obsolete Alpaca reference corrected |
+| `docs/architecture/README.md` | Every named module exists and the documented composition, feature, integration, persistence, and safety dependency direction matches imports |
+
+Additional mechanical checks:
+
+- All 10 relative Markdown links resolve to tracked files or directories.
+- Twenty-three unique external Markdown links were requested. Twenty-two
+  resolved as written; the only failure was the obsolete Alpaca historical API
+  path, which this audit replaced with the current official URL.
+- All 14 `package.json` scripts are represented accurately by the command
+  reference or documented as internal composition (`start`, `coverage`, and
+  the checks they invoke included).
+- `.env.example` covers every runtime/server setting. The remaining source-read
+  variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
+  `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
+- Fresh inventory checks found 84 production TypeScript modules, 73 files under
+  `tests/`, one coverage-gate test under `scripts/`, 13 ordered migrations, 21
+  SQLite tables, 16 governance sources, and 12 stored-output categories. Every
+  table is assigned exactly once.
+- Strategy API examples were checked against route methods, paths, status
+  codes, parsing, and the direct in-memory API contracts.
 
 ## Reproducible local gates
 
@@ -78,7 +113,27 @@ bun run smoke:comparables
 bun run eval:research
 ```
 
-The full credentialed smoke suite was not rerun during this 2026-07-06 review. The browser navigation smoke used invalid placeholder broker credentials to verify unavailable-provider behavior and makes no live-provider claim.
+This checkout had no Alpaca, SEC, OpenAI, FRED, BEA, Finnhub, or OpenFIGI key
+configured. The complete credentialed suite therefore was not run and no
+credentialed availability claim is made.
+
+The read-only checks that do not require private credentials were run:
+
+- `bun run smoke:macro` passed with live Treasury and BLS observations while
+  preserving explicit `missing_key` states for FRED and BEA.
+- `bun run smoke:openfigi` passed anonymously and mapped AAPL to canonical FIGI
+  `BBG000B9XRY4`.
+- `bun run smoke:finnhub` passed its missing-key contract without making a
+  provider request.
+- `bun run smoke:gdelt` passed its explicit rate-limit fallback: zero articles
+  were returned with `rate_limited`, and the result warned that absence of
+  events must not be inferred.
+
+The isolated server/browser smoke used invalid placeholder broker credentials
+and a separate temporary SQLite database. It verified `200 /health`, fail-closed
+`503 /ready`, all seven static assets, provider-unavailable UI states, desktop
+and mobile workspace navigation, and a clean browser console. It makes no live
+Alpaca claim and did not touch the checkout's existing `data/app.db`.
 
 The paper-order smoke test mutates only the Alpaca paper account and requires explicit opt-in:
 
@@ -101,6 +156,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Basket submissions reserve every leg before placement, persist complete or partial receipts, preserve HTTP 207 on replay, and do not expose raw broker failure text.
 - Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
 - Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
+- BTC/ETH relative strength derives the opposite peer from the ordered symbol pair; an ambiguous `peerSymbol` override is rejected at both the schema and direct API boundaries.
 - Comparable strategy records require an immutable matching backtest and record exact Git/dirty state, plugin/feature/policy versions, query window, provider/feed, and normalized input hashes. Legacy or dirty records cannot be ticked or approved.
 - Missing or stale strategy data cannot pass by absence.
 - Decision and strategy audit verification fails when a stored hash chain is inconsistent.

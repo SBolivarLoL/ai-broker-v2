@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `7cf3e3d` on 2026-07-06.
+Code baseline reviewed: `main` at `f147459` on 2026-07-06.
 
 ## Quick start
 
@@ -94,6 +94,10 @@ bun run smoke:finnhub     # missing-key or configured Finnhub check
 bun run smoke:openfigi    # live OpenFIGI identity/fallback check
 bun run smoke:comparables # live Alpaca plus SEC valuation check
 ```
+
+`SEC_SYMBOL` overrides the default `AAPL` SEC smoke symbol.
+`RESEARCH_EVAL_SYMBOLS` overrides the default `AAPL,MSFT,NVDA` live research
+evaluation set.
 
 The mutating smoke test is opt-in and paper-only. It creates an unreachable limit order and cancels the exact returned order ID:
 
