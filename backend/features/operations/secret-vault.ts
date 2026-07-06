@@ -1,3 +1,7 @@
+/**
+ * Encrypts configured provider secrets into versioned AES-GCM envelopes while
+ * exposing metadata that never includes plaintext or ciphertext.
+ */
 import {
   createCipheriv,
   createDecipheriv,

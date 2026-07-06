@@ -1,3 +1,9 @@
+/**
+ * SQLite-backed application store.
+ *
+ * Transactions in this module protect idempotency and risk capacity; audit
+ * records are hash-chained so later verification can detect mutation.
+ */
 import { Database } from "bun:sqlite";
 import { hashAuditEntry, hashBytes } from "./audit";
 import { mkdirSync } from "node:fs";
@@ -94,6 +100,7 @@ function mapDecisionAuditRow(row: any) {
 export function createStore(filename = "data/app.db") {
   if (filename !== ":memory:") mkdirSync("data", { recursive: true });
   const db = new Database(filename, { create: true, strict: true });
+  // WAL allows readers to continue while a short reservation/audit write runs.
   db.run("PRAGMA journal_mode = WAL");
   try {
     migrateDatabase(db);
@@ -119,6 +126,8 @@ export function createStore(filename = "data/app.db") {
       validate: (active: RiskReservation[]) => ReservationValidation<T>,
       ttlMs: number,
     ) => {
+      // Expiration, duplicate detection, validation against active capacity,
+      // and insertion must be one immediate transaction to prevent overspend.
       if (
         !key ||
         !candidate.symbol ||
@@ -168,6 +177,8 @@ export function createStore(filename = "data/app.db") {
       validate: (active: RiskReservation[]) => ReservationValidation<T>,
       ttlMs: number,
     ) => {
+      // Basket legs reserve together: either every leg consumes capacity or
+      // none of them do.
       if (
         !key ||
         candidates.length < 2 ||
@@ -316,6 +327,8 @@ export function createStore(filename = "data/app.db") {
       retentionUntil,
       createdAt,
     };
+    // The previous hash lets verification detect mutation or reordering within
+    // the retained chain. Retention policy separately governs record deletion.
     const entryHash = hashAuditEntry(hashInput);
     db.query(
       `INSERT INTO decision_audit_log (subject_id, kind, actor, payload, previous_hash, entry_hash, retention_until, created_at)
@@ -544,7 +557,9 @@ export function createStore(filename = "data/app.db") {
       ).map((row) => ({ id: row.id, ...JSON.parse(row.payload) }));
     },
     reconcileOrder(orderId: string, status: string) {
-      // ponytail: O(n) is fine for one paper account; add an indexed order_id column before multi-account use.
+      // Receipts currently store broker ids inside JSON, so reconciliation
+      // scans the bounded paper-account history. Promote order_id to an indexed
+      // column before supporting large or multi-account histories.
       const rows = db.query("SELECT id, payload FROM receipts").all() as {
         id: string;
         payload: string;

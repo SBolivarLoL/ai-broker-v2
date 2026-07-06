@@ -1,3 +1,7 @@
+/**
+ * Builds a comparable-company table from directly reported SEC facts and
+ * current Alpaca IEX prices, preserving the period behind every input.
+ */
 import {
   canonicalEvidence,
   dedupeEvidence,
@@ -131,6 +135,8 @@ export function buildComparableValuationRow(
     throw new Error("Comparable valuation requires a positive market price");
   const asOf = new Date(retrievedAt).toISOString();
   const trends = buildSecFinancialTrends(company, facts, 3, 3);
+  // Income multiples use annual facts while balance-sheet/share metrics use
+  // latest instant facts. Their separate periods keep that mismatch visible.
   const revenueMetric = metric(trends, "revenue");
   const revenue = latestAnnual(revenueMetric);
   const previousRevenue = revenueMetric?.annual.at(-2) ?? null;

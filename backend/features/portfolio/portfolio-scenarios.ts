@@ -1,3 +1,7 @@
+/**
+ * Deterministic portfolio stress scenarios with SIC-aware shocks and optional
+ * user-supplied asset-class/sector overrides.
+ */
 import { z } from "zod";
 
 export type PortfolioScenarioPosition = {

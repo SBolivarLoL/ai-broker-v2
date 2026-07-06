@@ -1,3 +1,4 @@
+/** Maps broker lifecycle states onto the smaller local risk-reservation model. */
 export type RiskReservationTerminalStatus = "filled" | "rejected" | "canceled";
 
 export const workingBrokerOrderStatuses = new Set([

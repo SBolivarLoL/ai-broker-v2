@@ -1,3 +1,7 @@
+/**
+ * Cancel/replace preview validation plus the in-memory projection of broker
+ * orders maintained by stream events and periodic recovery.
+ */
 import type { trading } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
 import { signToken, verifyToken } from "./orders";
@@ -175,6 +179,8 @@ export class OrderTracker {
           streamed?.updatedAt ?? streamed?.submittedAt ?? 0,
         ),
         recoveredAt = Number(order.updatedAt ?? order.submittedAt ?? 0);
+      // Recovery must not overwrite a newer event already received from the
+      // stream with an older REST snapshot.
       if (!streamed || recoveredAt >= streamedAt)
         this.orders.set(order.id, order);
     }

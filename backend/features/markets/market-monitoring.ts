@@ -1,3 +1,7 @@
+/**
+ * Converts news, corporate actions, and SEC alerts into portfolio/watchlist
+ * monitoring records with explicit relevance and holding impact.
+ */
 import type { Sec8KAlertEvidence } from "../../integrations/sec-edgar";
 
 export type MonitoringPosition = { symbol: string; qty: string | number };
@@ -64,6 +68,8 @@ function scopeFor(
   held: Set<string>,
   watchlists: MonitoringWatchlist[],
 ) {
+  // Relevance is computed once and retained so the UI can explain why an item
+  // appears instead of presenting an opaque global news feed.
   const portfolio = symbols.some((symbol) => held.has(symbol));
   const lists = watchlists
     .filter((list) =>

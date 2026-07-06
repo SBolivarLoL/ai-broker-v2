@@ -1,3 +1,4 @@
+/** Small normalization helpers used at provider and calculation boundaries. */
 export type PriceBarInput = {
   timestamp?: Date | string | number;
   t?: Date | string | number;
@@ -17,6 +18,8 @@ export function validDate(value: unknown) {
 }
 
 export function normalizePriceBars(bars: PriceBarInput[] = []) {
+  // Provider rows are untrusted: discard non-finite or non-positive prices
+  // before chronological calculations consume them.
   return bars
     .map((bar) => {
       const timestamp = validDate(bar.timestamp ?? bar.t);

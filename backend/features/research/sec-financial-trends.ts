@@ -1,3 +1,7 @@
+/**
+ * Selects comparable annual and quarterly observations from SEC Company Facts,
+ * retaining filing, accession, concept, unit, and period provenance.
+ */
 import type { SecCompany, SecFacts } from "../../integrations/sec-edgar";
 
 export type SecFinancialCadence = "annual" | "quarterly";
@@ -215,6 +219,8 @@ function observations(
     records.push(entry);
     byPeriod.set(entry.end, records);
   }
+  // Company Facts can repeat a period after amendments or later filings.
+  // Retain the latest-filed record for each period end.
   return [...byPeriod.values()]
     .map(
       (records) =>

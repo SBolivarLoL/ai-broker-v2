@@ -1,3 +1,7 @@
+/**
+ * Historical portfolio risk estimates: VaR, expected shortfall, correlations,
+ * contribution to risk, benchmark sensitivity, and position liquidity.
+ */
 type Series = { symbol: string; weight: number; closes: number[] };
 const returns = (values: number[]) =>
   values.slice(1).map((value, index) => value / values[index]! - 1);
@@ -28,6 +32,8 @@ export function advancedPortfolioRisk(
   const usable = series
     .map((item) => ({ ...item, returns: returns(item.closes) }))
     .filter((item) => item.returns.length >= 2);
+  // Use the shared trailing window so every covariance term compares the same
+  // number of observations.
   const length = Math.min(...usable.map((item) => item.returns.length));
   const aligned = usable.map((item) => ({
     ...item,
@@ -45,6 +51,8 @@ export function advancedPortfolioRisk(
     cutoffIndex = Math.max(0, Math.floor(sorted.length * 0.05) - 1),
     cutoff = sorted[cutoffIndex] ?? 0,
     tail = sorted.filter((value) => value <= cutoff);
+  // Historical VaR is the loss at the fifth percentile; expected shortfall is
+  // the average loss across that tail.
   const average = mean(portfolioReturns),
     variance = covariance(portfolioReturns, portfolioReturns),
     deviation = Math.sqrt(Math.max(0, variance));

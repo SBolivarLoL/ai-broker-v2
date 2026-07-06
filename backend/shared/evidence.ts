@@ -1,3 +1,9 @@
+/**
+ * Canonical evidence model shared by research and external-data adapters.
+ *
+ * Normalized URLs and stable JSON make hashes reproducible across providers,
+ * retrieval order, and JavaScript object insertion order.
+ */
 import { createHash } from "node:crypto";
 
 export type EvidenceCategory =
@@ -89,6 +95,8 @@ function jsonValue(value: unknown): unknown {
   if (Array.isArray(value))
     return value.map((item) => (item === undefined ? null : jsonValue(item)));
   if (value && typeof value === "object") {
+    // Sorting recursively is what makes content hashes independent of object
+    // construction order.
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([, item]) => item !== undefined)
@@ -188,6 +196,8 @@ export type EvidenceRevision = {
 };
 
 function preferred<T extends CanonicalEvidence>(a: T, b: T) {
+  // Prefer authority first, freshness second, and id last as a deterministic
+  // tie-breaker. This keeps deduplication stable regardless of input order.
   const authority = authorityRank[a.authority] - authorityRank[b.authority];
   if (authority !== 0) return authority > 0 ? a : b;
   const retrieval = a.retrievedAt.localeCompare(b.retrievedAt);
@@ -205,6 +215,8 @@ function identityKey(record: CanonicalEvidence) {
 }
 
 export function dedupeEvidence<T extends CanonicalEvidence>(records: T[]) {
+  // A changed hash under one provider/source identity is also a revision. URL
+  // matches require exact content; content-only matches require one entity.
   const kept: T[] = [];
   const duplicates: EvidenceDuplicate[] = [];
   const revisions: EvidenceRevision[] = [];

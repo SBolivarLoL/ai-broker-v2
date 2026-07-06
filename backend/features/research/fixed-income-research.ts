@@ -1,3 +1,9 @@
+/**
+ * Explicit capability gate for fixed-income research.
+ *
+ * The current personal paper Trading API entitlement cannot provide the
+ * instrument, pricing, settlement, or trading evidence this feature requires.
+ */
 export type FixedIncomeResearchStatus = {
   generatedAt: string;
   status: "unavailable";

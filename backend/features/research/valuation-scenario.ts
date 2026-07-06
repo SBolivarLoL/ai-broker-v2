@@ -1,3 +1,7 @@
+/**
+ * Applies ordered user assumptions to disclosed SEC inputs and emits a
+ * formula-backed valuation memo; it does not generate forecasts.
+ */
 import { z } from "zod";
 import type { ComparableValuationEvidence, ComparableValuationRow } from "./comparable-valuation";
 import { canonicalEvidence, dedupeEvidence, type CanonicalEvidence } from "../../shared/evidence";
@@ -43,6 +47,8 @@ export function buildValuationScenarioMemo(
     const projectedNetIncome = projectedRevenue !== null ? round(projectedRevenue * input.netMarginPercent / 100) : null;
     const impliedMarketCap = projectedNetIncome !== null && projectedNetIncome > 0 ? round(projectedNetIncome * input.priceToEarnings) : null;
     const impliedPrice = impliedMarketCap !== null && row.sharesOutstanding !== null && row.sharesOutstanding > 0 ? round(impliedMarketCap / row.sharesOutstanding) : null;
+    // Negative projected earnings intentionally produce no P/E-derived value;
+    // applying a positive multiple would create a misleading negative price.
     const returnPercent = impliedPrice !== null ? round((impliedPrice / row.price - 1) * 100) : null;
     const assumptionText = `${label(scenario)} assumes ${input.revenueGrowthPercent}% revenue growth, ${input.netMarginPercent}% net margin and a ${input.priceToEarnings}x P/E after 12 months.`;
     const memo = impliedPrice === null

@@ -1,3 +1,7 @@
+/**
+ * Simulates multi-leg rebalance baskets as one risk decision while preserving
+ * the broker reality that accepted legs submit and fill independently.
+ */
 import { z } from "zod";
 import { signToken, verifyToken } from "./orders";
 import {
@@ -67,6 +71,8 @@ export function simulateRebalanceBasket(input: {
     qty: leg.qty,
     price: leg.price,
   }));
+  // Each leg is evaluated with every sibling leg treated as pending so no leg
+  // receives risk capacity that the rest of the basket already consumes.
   const simulations = legs.map((leg, index) => ({
     ...leg,
     simulation: simulateTrade({

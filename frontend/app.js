@@ -1,3 +1,9 @@
+/**
+ * Browser startup and refresh schedule.
+ *
+ * Cards load independently; expensive view-specific calls are deferred until
+ * their workspace is opened directly.
+ */
 Promise.allSettled([
   location.hash === "#options"
     ? safeLoad(

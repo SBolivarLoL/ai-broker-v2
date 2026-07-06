@@ -1,3 +1,7 @@
+/**
+ * Reconstructs paper-order execution from stored traces using explicit latency,
+ * fee, slippage, and market-impact assumptions.
+ */
 import type { StrategyRunStatus } from "../../persistence/store";
 import { finiteNumber, validDate } from "../../shared/values";
 

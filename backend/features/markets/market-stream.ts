@@ -1,3 +1,4 @@
+/** Validation and browser DTOs for live equity quote/bar stream messages. */
 const symbolPattern = /^[A-Z.]{1,10}$/;
 
 export function parseStreamSymbols(value: string, maximum = 20) {

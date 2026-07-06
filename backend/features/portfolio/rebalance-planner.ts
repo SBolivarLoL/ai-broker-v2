@@ -1,3 +1,7 @@
+/**
+ * Converts target weights into a constrained, reviewable basket draft using
+ * turnover, FIFO tax, cash-buffer, fee, and quantity-rounding limits.
+ */
 import { z } from "zod";
 import type { FifoLot } from "./ledger";
 
@@ -190,6 +194,8 @@ export function buildConstrainedRebalancePlan(input: {
   const turnoverScale = rawTurnoverNotional ? Math.min(1, remainingTurnoverNotional / rawTurnoverNotional) : 1;
   const turnoverDeltas = new Map([...rawDeltas].map(([symbol, delta]) => [symbol, delta * turnoverScale]));
 
+  // Apply constraints in dependency order: turnover bounds all legs, the tax
+  // cap may reduce sales, then available cash independently scales purchases.
   const soldAt = new Date(input.asOf ?? new Date().toISOString());
   const taxInput = { soldAt, shortTermRate: request.shortTermTaxRatePercent / 100, longTermRate: request.longTermTaxRatePercent / 100, lots: input.openLots ?? [] };
   const taxCoverageGloballyComplete = input.taxLotsComplete ?? true;
@@ -200,6 +206,8 @@ export function buildConstrainedRebalancePlan(input: {
   let taxEvidenceStatus: "complete" | "incomplete" | "not_needed" = hasSellLegs ? "complete" : "not_needed";
   if (hasSellLegs && (!taxCoverageGloballyComplete || !unrestrictedTax.complete)) taxEvidenceStatus = "incomplete";
   if (request.maxEstimatedTax !== null && taxEvidenceStatus === "complete" && unrestrictedTax.estimatedTax > request.maxEstimatedTax) {
+    // FIFO tax is monotonic as every planned sale is scaled together, allowing
+    // a bounded search for the largest scale under the requested cap.
     let low = 0, high = 1;
     for (let index = 0; index < 40; index++) {
       const middle = (low + high) / 2;

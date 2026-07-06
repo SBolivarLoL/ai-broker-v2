@@ -1,3 +1,7 @@
+/**
+ * Strategy plugin definitions and a deterministic, fee-aware backtest engine
+ * that evaluates each bar using only information available at that index.
+ */
 import { z } from "zod";
 
 export type BacktestBar = { timestamp: Date | string | number; open?: number | null; high?: number | null; low?: number | null; close: number; volume?: number | null; vwap?: number | null; tradeCount?: number | null };

@@ -1,3 +1,7 @@
+/**
+ * Canonical strategy hashes and provenance needed to reproduce and compare a
+ * backtest, reviewed run, or persisted market-data snapshot.
+ */
 import { createHash } from "node:crypto";
 
 export const STRATEGY_FEATURE_SCHEMA_VERSION = "strategy-features-v1";

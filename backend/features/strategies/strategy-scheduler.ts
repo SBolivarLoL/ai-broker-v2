@@ -1,3 +1,4 @@
+/** Pure schedule parsing and due-time calculations for eligible strategy runs. */
 type ScheduledRun = { status: string; config: unknown };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

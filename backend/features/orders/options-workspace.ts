@@ -1,3 +1,9 @@
+/**
+ * Option-chain analytics for display and pre-trade review.
+ *
+ * Greeks are estimates from Black-Scholes and never replace broker quotes or
+ * the explicit maximum-loss calculations in option-order.ts.
+ */
 import { z } from "zod";
 
 export const OptionChainQuery = z.object({
@@ -41,6 +47,8 @@ export function blackScholesGreeks(
   volatility: number,
   riskFreeRate = 0.04,
 ) {
+  // Invalid or zero inputs have no meaningful finite Greeks; callers display
+  // them as unavailable rather than fabricating a value.
   if (
     ![spot, strike, years, volatility].every(
       (value) => Number.isFinite(value) && value > 0,

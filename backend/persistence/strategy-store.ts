@@ -1,3 +1,9 @@
+/**
+ * Persistence boundary for strategy runs and their reproducibility evidence.
+ *
+ * A run can only reference a clean, comparable backtest with matching code,
+ * data, feature schema, plugin, and policy provenance.
+ */
 import type { Database } from "bun:sqlite";
 import { hashAuditEntry } from "./audit";
 import {
@@ -280,6 +286,8 @@ export function createStrategyStore(db: Database) {
         provenance.policyVersion !== input.policyVersion
       )
         throw new Error("Strategy run does not match its reviewed backtest");
+      // The provenance gate above prevents a reviewed result from being reused
+      // after its strategy definition, dataset, code, or policy has changed.
       db.query(
         `INSERT INTO strategy_runs (id, backtest_id, strategy_id, strategy_version, status, config_hash, policy_version, symbols, budget, config, provenance, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -456,6 +464,8 @@ export function createStrategyStore(db: Database) {
         params.push(filter.strategyVersion);
       }
       const rawLimit = filter.blockReason || filter.orderOutcome ? 500 : limit;
+      // blockReason and orderOutcome live in JSON-derived DTO fields, so fetch
+      // a bounded superset before applying those two filters in memory.
       const rows = db
         .query(
           `SELECT sd.id, sd.trace_id AS traceId, sd.run_id AS runId, sd.symbol, sd.decision, sd.features, sd.weights, sd.thresholds, sd.risk_checks AS riskChecks, sd.data_snapshot_ids AS dataSnapshotIds, sd.provenance,
@@ -647,6 +657,8 @@ export function createStrategyStore(db: Database) {
         retentionUntil,
         createdAt,
       };
+      // Strategy chains are scoped per run so one damaged run does not prevent
+      // independent verification of every other strategy.
       const entryHash = hashAuditEntry(hashInput);
       db.query(
         `INSERT INTO strategy_audit_log (run_id, kind, actor, subject, strategy_id, strategy_version, policy_version, config_hash, before_payload, after_payload, metadata, previous_hash, entry_hash, retention_until, created_at)

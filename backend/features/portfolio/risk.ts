@@ -61,7 +61,8 @@ const finite = (value: string | number) => {
 
 export function rollingTurnover(orders: FilledOrder[], now = Date.now()) {
   const since = now - 24 * 60 * 60 * 1_000;
-  // ponytail: rolling 24h is conservative around market-day boundaries; use Alpaca calendar sessions for multi-market accounts.
+  // A rolling 24-hour window is deliberately conservative around session
+  // boundaries. Use exchange calendars before adding multi-market accounts.
   return orders.reduce((sum, order) => {
     const filledAt = order.filledAt ? new Date(order.filledAt).getTime() : 0;
     if (!Number.isFinite(filledAt) || filledAt < since || filledAt > now || order.filledQty === undefined || order.filledAvgPrice == null) return sum;

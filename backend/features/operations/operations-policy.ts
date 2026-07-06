@@ -1,3 +1,7 @@
+/**
+ * Global operational guardrails shared by manual, basket, option, crypto, and
+ * approved strategy paper orders.
+ */
 import { z } from "zod";
 import type { PendingOrder, Position } from "../portfolio/risk";
 
@@ -155,6 +159,8 @@ export function evaluateOperationsPolicy(input: {
   const signedCurrent = current + pending;
   const resultingSigned = signedCurrent + (input.order.side === "buy" ? orderNotional ?? 0 : -(orderNotional ?? 0));
   const resultingExposure = Math.abs(resultingSigned);
+  // Exposure-reducing orders may cross entry caps so an operator can unwind a
+  // breach. The global kill switch and missing account data still fail closed.
   const reducesExposure = orderNotional !== null && Math.abs(resultingSigned) < Math.abs(signedCurrent);
   const turnover = Math.max(0, input.dailyTurnover ?? 0) + pendingTurnover(pendingOrders) + (orderNotional ?? 0);
   const reasons: string[] = [];

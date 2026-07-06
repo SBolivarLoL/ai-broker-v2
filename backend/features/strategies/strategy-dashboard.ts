@@ -1,3 +1,4 @@
+/** Aggregates persisted runs, decisions, orders, metrics, and alerts for UI use. */
 import type { StrategyDecisionKind, StrategyRunStatus } from "../../persistence/store";
 import type { StrategyProvenance } from "./strategy-provenance";
 import { strategyPaperState } from "./strategy-paper";

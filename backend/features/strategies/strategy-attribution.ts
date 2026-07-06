@@ -1,3 +1,4 @@
+/** Attributes filled strategy orders to signal, timing, and post-fill movement. */
 import type { StrategyRunStatus } from "../../persistence/store";
 import {
   finiteNumber,

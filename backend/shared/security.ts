@@ -1,3 +1,9 @@
+/**
+ * Authentication and request-boundary helpers.
+ *
+ * Production trusts only headers authenticated by the configured reverse
+ * proxy. Local development receives an explicit all-role demo identity.
+ */
 import { timingSafeEqual } from "node:crypto";
 
 type Env = Record<string, string | undefined>;
@@ -31,6 +37,8 @@ function parseRoles(value: string | null | undefined): AuthRole[] {
 }
 
 function expandedRoles(roles: AuthRole[]) {
+  // Every authenticated user can view. Admin is the only role that expands to
+  // the complete hierarchy; the other roles remain independently assignable.
   const roleSet = new Set<AuthRole>(["viewer", ...roles]);
   if (roleSet.has("admin")) return [...roleOrder];
   return roleOrder.filter((role) => roleSet.has(role));
@@ -40,6 +48,7 @@ export function authContextFor(
   request: Request,
   env: Env = process.env,
 ): AuthContext {
+  // This bypass is intentionally limited to non-production environments.
   if (env.NODE_ENV !== "production")
     return {
       actor: "demo-advisor",
@@ -104,6 +113,8 @@ export function securityReady(env: Env = process.env) {
 }
 
 export function rateLimiter(windowMs = 60_000, maximumKeys = 10_000) {
+  // Entries expire lazily on new windows, bounding memory without a cleanup
+  // timer. If the map is still full, new identities fail closed.
   const hits = new Map<string, { count: number; reset: number }>();
   return (key: string, maximum: number, now = Date.now()) => {
     const current = hits.get(key);

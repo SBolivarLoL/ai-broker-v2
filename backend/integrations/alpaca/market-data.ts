@@ -1,3 +1,7 @@
+/**
+ * Retrieves stock bars with entitlement-aware provenance: real-time SIP,
+ * real-time IEX, then delayed SIP as the final fallback.
+ */
 import { TimeFrame } from "@alpacahq/alpaca-ts-alpha";
 
 export type StockBarSource = {
@@ -45,6 +49,8 @@ export async function getStockBarsWithFallback(
   const base = { ...rest, timeframe, start, ...(end ? { end } : {}) };
   async function fetch(feed: "sip" | "iex", delayed: boolean) {
     const adjustedEnd = delayed
+      // Alpaca delayed SIP requires the request window to end outside the
+      // real-time entitlement boundary.
       ? new Date(Math.min((end ?? now).getTime(), now.getTime() - minutes(16)))
       : end;
     const options = {

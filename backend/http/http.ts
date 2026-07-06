@@ -1,3 +1,4 @@
+/** Shared HTTP response, validation, and client-error primitives. */
 export const securityHeaders = {
   "content-security-policy":
     "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
@@ -25,6 +26,8 @@ export class ClientError extends Error {
 const MAX_JSON_BYTES = 16_384;
 
 export async function requestJson(request: Request) {
+  // Check both the declared and actual encoded size: content-length can be
+  // absent or untrusted at the public HTTP boundary.
   const declared = Number(request.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_JSON_BYTES) {
     throw new ClientError("Request body is too large", 413);

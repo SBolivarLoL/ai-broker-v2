@@ -1,3 +1,4 @@
+/** Normalizes crypto bars and snapshots into reproducible strategy datasets. */
 const CRYPTO_SYMBOLS = new Set(["BTC/USD", "ETH/USD", "SOL/USD"]);
 const TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"]);
 export const CRYPTO_LOOKBACK_DAYS = { minimum: 1, maximum: 90, defaultValue: 7 } as const;

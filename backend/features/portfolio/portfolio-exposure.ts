@@ -1,3 +1,7 @@
+/**
+ * Builds asset-class, SEC SIC, and return-derived factor exposure reports with
+ * explicit source coverage and methodology warnings.
+ */
 export type ExposureBar = { date: string; close: number };
 export type ExposureClassification = { sic: string; industry: string | null; sourceUrl: string };
 export type ExposurePosition = {
@@ -57,6 +61,8 @@ function datedReturns(bars: ExposureBar[]) {
 function factorValues(rawBars: ExposureBar[] | undefined, rawBenchmark: ExposureBar[]) {
   const bars = normalizedBars(rawBars), benchmark = normalizedBars(rawBenchmark);
   const returns = datedReturns(bars), benchmarkReturns = datedReturns(benchmark);
+  // Match by session date rather than array position; missing market days must
+  // not shift a position return against the wrong benchmark return.
   const dates = [...returns.keys()].filter(date => benchmarkReturns.has(date));
   const marketBeta = dates.length >= 20 ? (() => {
     const left = dates.map(date => returns.get(date)!), right = dates.map(date => benchmarkReturns.get(date)!);

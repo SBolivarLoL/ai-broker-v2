@@ -1,3 +1,7 @@
+/**
+ * Generates constrained long-only allocation proposals from current holdings.
+ * Results are planning inputs, never executable orders.
+ */
 import { z } from "zod";
 
 export const PortfolioOptimizerRequest = z.object({
@@ -124,6 +128,8 @@ export function buildPortfolioOptimizerReport(input: {
   const aligned = usable.map(position => ({ ...position, returns: position.returns.slice(-length) }));
   const rawMeans = new Map(aligned.map(position => [position.symbol, mean(position.returns)]));
   const crossMean = mean([...rawMeans.values()]);
+  // Shrink noisy per-symbol means toward the cross-sectional mean and
+  // off-diagonal covariance toward zero to reduce small-sample instability.
   const means = new Map([...rawMeans].map(([symbol, value]) => [symbol, value * 0.5 + crossMean * 0.5]));
   const covarianceMatrix = new Map<string, Map<string, number>>();
   for (const left of aligned) {

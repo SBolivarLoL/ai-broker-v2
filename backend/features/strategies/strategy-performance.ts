@@ -1,3 +1,4 @@
+/** Reconstructs marked strategy P&L and benchmark-relative active performance. */
 import type { StrategyRunStatus } from "../../persistence/store";
 import {
   finiteNumber,

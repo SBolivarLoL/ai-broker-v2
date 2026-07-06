@@ -1,3 +1,4 @@
+/** Pure validation and presentation helpers for market-discovery endpoints. */
 const symbolPattern = /^[A-Z.]{1,10}$/;
 
 export function parseWatchlistInput(input: unknown) {
@@ -112,6 +113,8 @@ export function calendarDto(response: any, clock: any) {
       const durationMinutes = Math.round(
         (coreEnd.getTime() - coreStart.getTime()) / 60_000,
       );
+      // A regular US equity session is 390 minutes; shorter sessions are
+      // surfaced as early closes rather than inferred from a date list.
       return {
         date: new Date(day.date).toISOString().slice(0, 10),
         coreStart: coreStart.toISOString(),

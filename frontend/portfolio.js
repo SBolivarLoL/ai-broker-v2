@@ -1,3 +1,7 @@
+/**
+ * Portfolio risk, exposure, scenarios, optimization, rebalance, ledger, order,
+ * advisor-plan, and trade-journal UI.
+ */
 $("#stress").insertAdjacentHTML(
   "afterend",
   '<div class="metrics" id="advanced-risk"></div><div id="risk-contribution"></div>',

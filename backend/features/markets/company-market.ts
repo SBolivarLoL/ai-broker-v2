@@ -69,6 +69,8 @@ const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
 function normalizeCompanyBars(bars: CompanyBarInput[]) {
+  // Reject malformed provider rows before any extrema or return calculations;
+  // a single NaN would otherwise poison the entire browser snapshot.
   return bars
     .map((bar) => ({
       timestamp: new Date(bar.timestamp).toISOString(),
@@ -136,6 +138,8 @@ export function companyMarketSnapshot(
   const exchangeClock =
     clock.clocks?.find((item) => item.market?.acronym === asset.exchange) ??
     clock.clocks?.find((item) => item.market?.acronym === "IEX");
+  // Quote age is measured against the exchange clock when available so test
+  // fixtures and delayed market clocks remain deterministic.
   const marketPhase = exchangeClock?.phase ?? "unknown";
   const quoteAt = quote.t ? new Date(quote.t).toISOString() : null;
   const clockAt = exchangeClock?.timestamp

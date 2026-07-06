@@ -1,3 +1,4 @@
+/** Encodes lifecycle transitions and evidence requirements for strategy review. */
 import type { StrategyRunStatus } from "../../persistence/store";
 
 export type StrategyReviewAction =

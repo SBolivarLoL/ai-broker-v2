@@ -16,6 +16,8 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
   let started = false;
 
   function reconcile(order: any) {
+    // Broker order ids are canonical after acceptance. During the brief
+    // pre-acceptance window, the client id still identifies the reservation.
     if (order.id && order.status) {
       store.reconcileOrder(order.id, order.status);
       store.reconcileStrategyOrder(order.id, order.status, {
@@ -54,6 +56,8 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
     orders: any[],
     candidatePrices: Map<string, number>,
   ) {
+    // Risk checks value only the unfilled remainder. Limit/stop prices are
+    // authoritative; market orders fall back to a fresh broker price.
     const working = orders.filter((order) =>
       workingBrokerOrderStatuses.has(String(order.status)),
     );
@@ -94,6 +98,8 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
   }
 
   function placePreviewedOrder(preview: Preview, clientOrderId: string) {
+    // The signed preview has already validated legal field combinations. This
+    // branch only translates that trusted shape to Alpaca's typed endpoints.
     const common = {
       symbol: preview.symbol,
       side: preview.side,
@@ -229,6 +235,8 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
         });
       });
       updates.connect();
+      // Streaming updates are fastest, while polling repairs missed events
+      // after disconnects or process restarts.
       setInterval(() => {
         void recover().catch((error) =>
           console.error(

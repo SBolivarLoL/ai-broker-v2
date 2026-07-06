@@ -1,3 +1,7 @@
+/**
+ * OpenFIGI identity mapping with conservative company-name disambiguation,
+ * anonymous request pacing, coalescing, retries, and provenance.
+ */
 import { canonicalEvidence, type CanonicalEvidence } from "../shared/evidence";
 
 type FetchLike = (
@@ -175,6 +179,8 @@ function selectedCandidate(
       selected: composite[0]!,
       matchQuality: "company_name_confirmed" as const,
     };
+  // Never choose the first ticker match when multiple distinct instrument
+  // identities remain plausible.
   return { selected: null, matchQuality: null };
 }
 

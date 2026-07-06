@@ -1,3 +1,4 @@
+/** Builds the durable broker snapshot used for reconciliation and evidence. */
 import type { RiskSnapshot } from "./risk";
 
 type AccountInput = {

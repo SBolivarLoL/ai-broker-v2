@@ -1,9 +1,12 @@
+/** Process entry point: construct runtime dependencies, listen, then start jobs. */
 import { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { createApp } from "./app";
 import { createStore } from "./persistence/store";
 import { resolveCodeIdentity } from "./features/strategies/strategy-provenance";
 
 process.on("uncaughtException", (error) => {
+  // The Alpaca SDK can surface a known connect-time WebSocket race. Other
+  // uncaught exceptions remain fatal and are rethrown.
   if (
     error instanceof Error &&
     error.message.startsWith("WebSocket is not open")

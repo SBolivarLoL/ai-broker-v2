@@ -1,3 +1,7 @@
+/**
+ * Strategy Lab UI for backtests, reviewed runs, decisions, audit evidence,
+ * attribution, performance, alerts, and standalone crypto order previews.
+ */
 let strategyRuns = [],
   activeStrategyRunId = null,
   activeTraceId = null,
@@ -51,6 +55,8 @@ const strategyDefaultParams = {
   },
 };
 function strategyParams() {
+  // Keep the free-form editor flexible, but reject non-object JSON before it
+  // reaches the stricter plugin schemas on the server.
   try {
     const value = JSON.parse($("#strategy-params").value || "{}");
     if (!value || Array.isArray(value) || typeof value !== "object")

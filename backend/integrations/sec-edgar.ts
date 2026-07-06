@@ -1,3 +1,7 @@
+/**
+ * SEC EDGAR client for company identity, facts, filings, extracted sections,
+ * and 8-K alerts with regulator-compliant identity, caching, and retries.
+ */
 import { createHash } from "node:crypto";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -175,6 +179,8 @@ const SEC_8K_ITEMS: Sec8KItemDefinition[] = [
 ];
 
 export function validateSecUserAgent(value: string) {
+  // The SEC asks automated clients to identify an application and reachable
+  // contact; placeholder identities are rejected before any network request.
   const userAgent = value.trim();
   const email = userAgent.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase();
   if (userAgent.length < 12 || !email || email.endsWith("@example.com")) {

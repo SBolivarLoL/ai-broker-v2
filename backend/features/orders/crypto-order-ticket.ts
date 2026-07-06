@@ -1,3 +1,7 @@
+/**
+ * Validates standalone crypto order tickets and creates short-lived signed
+ * previews from current quote, cash, position, and spread evidence.
+ */
 import { z } from "zod";
 import { signToken, verifyToken } from "./orders";
 
@@ -158,6 +162,8 @@ export function cryptoOrderMarketFromSnapshot(payload: any): CryptoOrderMarket {
   const barClose = finitePositive(
     payload?.bar?.close ?? payload?.latestBar?.c ?? payload?.minuteBar?.c,
   );
+  // A two-sided quote is best for risk pricing. Trade and bar values are
+  // fallbacks for non-market tickets, but cannot satisfy the spread guardrail.
   return {
     bid: bestBid,
     ask: bestAsk,

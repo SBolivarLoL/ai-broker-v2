@@ -1,3 +1,7 @@
+/**
+ * Validates advisor trade-journal entries and derives completeness states from
+ * linked order, thesis, risk, review, and outcome evidence.
+ */
 import { z } from "zod";
 
 export const TradeThesisStatus = z.enum(["unreviewed", "intact", "drifting", "invalidated", "closed"]);

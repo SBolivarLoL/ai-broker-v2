@@ -1,3 +1,7 @@
+/**
+ * Converts target exposure into bounded paper orders and enforces the approval,
+ * budget, loss, drawdown, turnover, spread, and cooldown policy.
+ */
 import { validDate } from "../../shared/values";
 
 export type StrategyPaperApproval = {

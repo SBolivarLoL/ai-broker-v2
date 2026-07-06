@@ -1,3 +1,4 @@
+/** Evidence-linked research, SEC trends, macro, comparables, and scenarios UI. */
 const score = (value) => `${Math.round(Number(value) * 100)}%`;
 function researchCitations(ids, sourceMap) {
   return `<span class="citations">${ids

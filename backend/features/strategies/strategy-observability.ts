@@ -1,3 +1,4 @@
+/** Builds stable metric rows and OpenTelemetry-shaped strategy span payloads. */
 import type {
   StrategyDecisionKind,
   StrategyMetricInput,

@@ -1,3 +1,7 @@
+/**
+ * Optional Finnhub profile, earnings, and news enrichment with per-endpoint
+ * coverage, bounded retries, request coalescing, and short failure caching.
+ */
 import { createHash } from "node:crypto";
 import {
   canonicalEvidence,

@@ -1,3 +1,7 @@
+/**
+ * Portfolio performance calculations over broker history, cash flows, and a
+ * date-bounded benchmark series.
+ */
 export type PerformancePoint = {
   timestamp: number;
   equity: number;
@@ -37,6 +41,9 @@ export function performancePoints(history: {
     firstFunded >= 0 &&
     history.equity.slice(0, firstFunded).every((equity) => Number(equity) <= 0)
   ) {
+    // Alpaca can report initial funding one bucket after equity first appears.
+    // Move that matching flow back to avoid treating the deposit as investment
+    // performance.
     const delayedFunding = externalCashFlows.findIndex(
       (flow, index) =>
         index >= firstFunded &&
@@ -98,6 +105,8 @@ export function moneyWeightedReturn(points: PerformancePoint[]) {
     lowValue * highValue > 0
   )
     return null;
+  // Once opposite signs are bracketed, bisection avoids Newton-method
+  // derivative failures. Irregular cash flows can still have multiple roots.
   for (let index = 0; index < 120; index++) {
     const middle = (low + high) / 2,
       value = npv(middle);

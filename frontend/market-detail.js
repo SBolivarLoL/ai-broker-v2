@@ -1,3 +1,4 @@
+/** Company-market, identity/provider enrichment, and option-workspace UI. */
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -94,6 +95,8 @@ function startCompanyStream(symbol) {
     } else if (update.kind === "bar") {
       const date = update.timestamp.slice(0, 10),
         last = companyChartBars.at(-1);
+      // Minute stream bars update the current daily candle; a new session
+      // appends a candle instead of duplicating the same date.
       if (last?.timestamp.startsWith(date))
         companyChartBars[companyChartBars.length - 1] = {
           ...last,

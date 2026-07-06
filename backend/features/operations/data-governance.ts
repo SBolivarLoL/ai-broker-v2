@@ -1,3 +1,7 @@
+/**
+ * Executable inventory of data entitlements, retention, redistribution, and
+ * live-use constraints for every external source and stored output.
+ */
 export type DataGovernanceSource = {
   id: string;
   category: "broker_records" | "market_data" | "news" | "fundamentals" | "macro" | "identity" | "model_service" | "derived_analytics";

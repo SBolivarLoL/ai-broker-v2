@@ -1,3 +1,7 @@
+/**
+ * Derives operator-facing alerts from strategy decisions, order outcomes,
+ * observability metrics, and active-run performance.
+ */
 import type {
   StrategyDecisionKind,
   StrategyRunStatus,

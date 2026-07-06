@@ -1,3 +1,8 @@
+/**
+ * Shared browser primitives, navigation, operations controls, market discovery,
+ * and cross-view loading helpers. Feature-specific rendering lives beside its
+ * corresponding workspace.
+ */
 const $ = (s) => document.querySelector(s),
   money = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -97,6 +102,8 @@ const cardError = (
 ) =>
   `<div class="empty error-state"><strong>${esc(title)}</strong><div>${esc(error?.message || error || "The request failed.")}</div><span class="muted">${esc(detail)}</span></div>`;
 async function safeLoad(name, fn, target, detail) {
+  // Independent dashboard cards should fail locally; one unavailable provider
+  // must not prevent the rest of the workspace from rendering.
   try {
     return await fn();
   } catch (error) {

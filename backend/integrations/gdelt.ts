@@ -1,3 +1,7 @@
+/**
+ * GDELT media-signal adapter with canonical article evidence, bounded retries,
+ * cache/coalescing, and explicit rate-limit/unavailable states.
+ */
 import { createHash } from "node:crypto";
 import {
   canonicalEvidence,

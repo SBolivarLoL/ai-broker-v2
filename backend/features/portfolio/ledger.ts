@@ -1,3 +1,4 @@
+/** Normalizes broker account activities into ledger and FIFO tax-lot records. */
 export type LedgerCategory = "trade" | "dividend" | "interest" | "fee" | "transfer" | "corporate_action" | "option" | "other";
 
 export type BrokerActivity = {

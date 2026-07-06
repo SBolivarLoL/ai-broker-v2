@@ -1,3 +1,7 @@
+/**
+ * Aggregates official macro observations from BLS, BEA, Treasury, Fiscal Data,
+ * and optional FRED into a source- and coverage-aware regime summary.
+ */
 import {
   canonicalEvidence,
   dedupeEvidence,

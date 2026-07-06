@@ -1,3 +1,7 @@
+/**
+ * Read-only portfolio agents plus deterministic validation that binds every
+ * claim and proposed trade to observed evidence and an expiring simulation.
+ */
 import { Agent, run, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
@@ -84,6 +88,8 @@ export function validCopilotOutput(
 ) {
   const parsed = CopilotOutput.safeParse(output);
   if (!parsed.success || forbiddenClaims.test(JSON.stringify(parsed.data))) return false;
+  // Model output is advisory only. Actionable quantities must exactly match a
+  // still-valid simulation produced by application code.
   return parsed.data.ideas.every(idea => {
     if (!idea.evidence.every(id => evidenceIds.has(id))) return false;
     if (idea.action === "hold" || idea.action === "watch") {
@@ -132,6 +138,8 @@ export function applyCounterThesisReview(proposal: unknown, review: unknown, rev
     const proposedAction = idea.action;
     const proposedTrade = proposedAction === "buy" || proposedAction === "reduce";
     const actionable = proposedTrade && riskReview.verdict === "approve";
+    // A rejected trade becomes a non-actionable watch item; the original
+    // proposal remains attached for auditability.
     return {
       ...idea,
       ...(proposedTrade && !actionable ? { action: "watch" as const, suggestedQty: 0, simulationId: null } : {}),

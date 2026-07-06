@@ -86,6 +86,8 @@ export function createStrategyRuntime(
   }
 
   function withoutAsOf<T extends { asOf: string }>(value: T): Omit<T, "asOf"> {
+    // Retrieval time is operational metadata, not dataset content. Excluding it
+    // lets identical market observations produce the same provenance hash.
     const { asOf: _, ...content } = value;
     return content;
   }
@@ -501,6 +503,8 @@ export function createStrategyRuntime(
         alpaca.marketData.crypto
           .cryptoLatestOrderbooks({ loc: "us", symbols: requestedSymbols })
           .then((result) => result.orderbooks ?? {})
+          // Order-book depth is optional enrichment; its failure does not abort
+          // evaluation with the bars and snapshot data that are still present.
           .catch(() => ({})),
       ]);
     recordStrategySpan(actor, {
@@ -718,6 +722,8 @@ export function createStrategyRuntime(
         : decisionOutput.targetExposure > 0.01
           ? "enter"
           : "hold";
+    // Reasons are ordered by authority: data and approval gates precede the
+    // strategy-specific paper policy, account availability, and global policy.
     const blockReasons = hasStaleData
       ? ["stale_data"]
       : run.status === "paper" && !paperApproval
@@ -1263,6 +1269,8 @@ export function createStrategyRuntime(
 
   let strategySchedulerBusy = false;
   async function pollStrategyScheduler() {
+    // Skip overlapping intervals; one slow broker tick must not evaluate the
+    // same due run concurrently.
     if (strategySchedulerBusy) return;
     strategySchedulerBusy = true;
     try {

@@ -1,3 +1,7 @@
+/**
+ * Produces release-readiness evidence for compliance, security, reliability,
+ * and operational ownership without claiming automated legal approval.
+ */
 export type ComplianceReviewDomain = {
   id: string;
   name: string;

@@ -1,3 +1,4 @@
+/** Produces the decision-centric report for one persisted strategy run. */
 import type { StrategyDecisionKind, StrategyRunStatus } from "../../persistence/store";
 import type { StrategyProvenance } from "./strategy-provenance";
 

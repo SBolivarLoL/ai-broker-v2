@@ -1,3 +1,9 @@
+/**
+ * Append-only SQLite schema history.
+ *
+ * Applied ids and checksums are verified before new migrations run, preventing
+ * a changed or missing historical migration from silently altering a database.
+ */
 import type { Database } from "bun:sqlite";
 
 export type SchemaMigration = {
@@ -344,6 +350,7 @@ export function migrateDatabase(
   db: Database,
   migrations: readonly SchemaMigration[] = SCHEMA_MIGRATIONS,
 ) {
+  // Lexicographic ids encode execution order and make gaps easy to detect.
   for (let index = 1; index < migrations.length; index += 1) {
     if (migrations[index - 1]!.id >= migrations[index]!.id)
       throw new Error("Database migrations must be strictly ordered");

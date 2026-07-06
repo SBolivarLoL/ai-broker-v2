@@ -1,3 +1,9 @@
+/**
+ * Application composition root.
+ *
+ * Feature modules own their routes and business rules; this file wires them to
+ * shared broker, persistence, authentication, and lifecycle dependencies.
+ */
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { normalizeActivity } from "./features/portfolio/ledger";
 import { createPortfolioExposureService } from "./features/portfolio/exposure-service";
@@ -93,6 +99,7 @@ export function createApp({
   async function syncAccountActivities() {
     if (activitySync && activitySync.expiresAt > Date.now())
       return activitySync;
+    // Share one broker pagination request across concurrent ledger callers.
     activitySyncRequest ??= (async () => {
       const activities = [];
       const maximum = 1_000;
@@ -117,6 +124,8 @@ export function createApp({
   }
 
   async function capturePortfolioSnapshot() {
+    // Snapshot endpoints and the timer may overlap; persist a single coherent
+    // account/position read instead of racing multiple broker requests.
     portfolioCaptureRequest ??= (async () => {
       const [account, positions] = await Promise.all([
         alpaca.trading.account.getAccount(),
@@ -242,6 +251,8 @@ export function createApp({
           orders: orders.map(managedOrderDto),
         });
       }
+      // Handlers return null when a route is outside their feature boundary;
+      // the first matching feature owns the response.
       const operationsResponse = await handleOperationsRequest(request, url, {
         store,
         actor,
@@ -301,6 +312,8 @@ export function createApp({
   function startRuntime() {
     if (started) return;
     started = true;
+    // Network streams and timers start explicitly so importing createApp stays
+    // side-effect free in tests and command-line tooling.
     market.start();
     void orderRuntime
       .start()

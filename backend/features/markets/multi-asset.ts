@@ -1,3 +1,4 @@
+/** Normalizes entitled index, FX, and crypto snapshots for one dashboard DTO. */
 const finite = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;

@@ -1,3 +1,7 @@
+/**
+ * Defines the supported option-order authority: long single legs and defined-
+ * risk debit verticals, each bound to a signed expiring preview.
+ */
 import { z } from "zod";
 import { signToken, verifyToken } from "./orders";
 
@@ -145,6 +149,8 @@ export function optionOrderRisk(
     throw new Error("Debit vertical strike orientation is invalid");
   const width = Math.abs(bought.strike - sold.strike),
     debit = ticket.limitPrice!;
+  // For a debit vertical, strike width caps total value; paying the width or
+  // more would guarantee a non-positive best-case payoff.
   if (debit >= width)
     throw new Error("Vertical debit must be less than the strike width");
   return {
