@@ -1,0 +1,532 @@
+import { ClientError, json, requestJson } from "../../http/http";
+import {
+  parseStrategyParams,
+  runBacktest,
+  strategyFunctionFromPlugin,
+  strategyPluginFromId,
+  walkForwardWindows,
+} from "./strategy-backtest";
+import {
+  cryptoBarsDto,
+  parseCryptoLookbackDays,
+  parseCryptoTimeframe,
+} from "./crypto-strategy-data";
+import {
+  parseStrategyPaperApproval,
+  type StrategyPaperApproval,
+} from "./strategy-paper";
+import {
+  parseStrategyReview,
+  withStrategyReviewConfig,
+} from "./strategy-review";
+import { parseStrategyIntervalMinutes } from "./strategy-scheduler";
+import {
+  canonicalHash,
+  STRATEGY_BACKTEST_POLICY_VERSION,
+  STRATEGY_FEATURE_SCHEMA_VERSION,
+} from "./strategy-provenance";
+import type { StrategyRouteContext } from "./strategy-route-context";
+
+/** Owns backtest creation and strategy-run lifecycle, scheduler, and admin mutations. */
+export async function handleStrategyLifecycleRequest(
+  request: Request,
+  url: URL,
+  context: StrategyRouteContext,
+): Promise<Response | null> {
+  const { alpaca, store, runtime, actor, allow } = context;
+  if (url.pathname === "/api/strategy/backtests" && request.method === "POST") {
+    if (!allow(`${actor}:strategy-backtest`, 20))
+      return json({ error: "Strategy backtest rate limit exceeded" }, 429);
+    const input = await requestJson(request);
+    const strategyId = String(input.strategyId ?? "buy-and-hold");
+    let symbols: string[],
+      params: Record<string, unknown>,
+      timeframe: string,
+      days: number,
+      strategyPlugin;
+    try {
+      symbols = runtime.normalizeSymbols(strategyId, input.symbols);
+      params = parseStrategyParams(strategyId, input.params ?? {});
+      strategyPlugin = strategyPluginFromId(strategyId, params);
+      timeframe = parseCryptoTimeframe(input.timeframe);
+      days = parseCryptoLookbackDays(input.days);
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error ? error.message : "Invalid backtest input",
+        400,
+      );
+    }
+    const initialCash = Number(input.initialCash ?? 10_000),
+      feeBps = Number(input.feeBps ?? 0),
+      slippageBps = Number(input.slippageBps ?? 5);
+    const end = new Date(),
+      start = new Date(end.getTime() - days * 86_400_000);
+    const symbol = symbols[0]!;
+    const providerBars = await alpaca.marketData.getCryptoBars({
+      loc: "us",
+      symbols,
+      timeframe,
+      start,
+      end,
+      limit: 10_000,
+    } as any);
+    const dataset = cryptoBarsDto({
+      symbols,
+      timeframe,
+      start,
+      end,
+      bars: providerBars,
+    });
+    const barsBySymbol = dataset.bars;
+    const bars = barsBySymbol[symbol] ?? [];
+    const strategy = strategyFunctionFromPlugin(
+      strategyPlugin,
+      { histories: barsBySymbol },
+      symbol,
+    );
+    const result = runBacktest({
+      strategyId,
+      bars,
+      strategy,
+      initialCash,
+      feeBps,
+      slippageBps,
+    });
+    const baselines = {
+      cash: runBacktest({
+        strategyId: "cash",
+        bars,
+        strategy: strategyFunctionFromPlugin(
+          strategyPluginFromId("cash"),
+          { histories: barsBySymbol },
+          symbol,
+        ),
+        initialCash,
+        feeBps,
+        slippageBps,
+      }),
+      buyAndHold: runBacktest({
+        strategyId: "buy-and-hold",
+        bars,
+        strategy: strategyFunctionFromPlugin(
+          strategyPluginFromId("buy-and-hold"),
+          { histories: barsBySymbol },
+          symbol,
+        ),
+        initialCash,
+        feeBps,
+        slippageBps,
+      }),
+    };
+    const trainSize = Number(input.trainSize ?? 0),
+      testSize = Number(input.testSize ?? 0);
+    const walkForward =
+      trainSize && testSize
+        ? walkForwardWindows(bars, trainSize, testSize).map((window) => ({
+            trainStart: window.trainStart,
+            testStart: window.testStart,
+            trainBars: window.train.length,
+            testBars: window.test.length,
+          }))
+        : [];
+    const definition = runtime.definition(
+      symbols,
+      strategyId,
+      params,
+      timeframe,
+      days,
+    );
+    const definitionHash = canonicalHash(definition);
+    const provenance = runtime.provenance({
+      pluginVersion: strategyPlugin.version,
+      policyVersion: STRATEGY_BACKTEST_POLICY_VERSION,
+      definitionHash,
+      start,
+      end,
+      timeframe,
+      symbols,
+      datasetHash: canonicalHash(runtime.withoutAsOf(dataset)),
+    });
+    const backtestId = crypto.randomUUID();
+    const output = {
+      source: dataset.source,
+      feed: dataset.feed,
+      symbol,
+      symbols,
+      timeframe,
+      start: dataset.start,
+      end: dataset.end,
+      result,
+      baselines,
+      walkForward,
+      asOf: dataset.asOf,
+    };
+    store.strategyBacktest({
+      id: backtestId,
+      actor,
+      strategyId,
+      definitionHash,
+      provenance,
+      request: {
+        ...definition,
+        initialCash,
+        feeBps,
+        slippageBps,
+        trainSize,
+        testSize,
+      },
+      result: output,
+    });
+    store.event("strategy.backtest.completed", actor, {
+      backtestId,
+      strategyId,
+      symbol,
+      timeframe,
+      days,
+      datasetHash: provenance.datasetHash,
+      totalReturnPercent: result.totalReturnPercent,
+      bars: bars.length,
+    });
+    return json({ backtestId, provenance, ...output }, 201);
+  }
+  const strategyBacktestMatch =
+    request.method === "GET" &&
+    url.pathname.match(/^\/api\/strategy\/backtests\/([^/]+)$/);
+  if (strategyBacktestMatch) {
+    const backtest = store.getStrategyBacktest(
+      decodeURIComponent(strategyBacktestMatch[1]!),
+    );
+    return backtest && backtest.actor === actor
+      ? json(backtest)
+      : json({ error: "Strategy backtest not found" }, 404);
+  }
+  if (url.pathname === "/api/strategy/runs" && request.method === "GET")
+    return json({ runs: store.strategyRuns(), asOf: new Date().toISOString() });
+  if (url.pathname === "/api/strategy/runs" && request.method === "POST") {
+    if (!allow(`${actor}:strategy-runs`, 10))
+      return json({ error: "Strategy run rate limit exceeded" }, 429);
+    const input = await requestJson(request);
+    const strategyId = String(input.strategyId ?? "");
+    let symbols: string[],
+      params: Record<string, unknown>,
+      timeframe: string,
+      days: number,
+      strategyPlugin;
+    try {
+      symbols = runtime.normalizeSymbols(strategyId, input.symbols);
+      params = parseStrategyParams(strategyId, input.params ?? {});
+      strategyPlugin = strategyPluginFromId(strategyId, params);
+      timeframe = parseCryptoTimeframe(input.timeframe);
+      days = parseCryptoLookbackDays(input.days);
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error
+          ? error.message
+          : "Invalid strategy run configuration",
+        400,
+      );
+    }
+    let intervalMinutes: number | null;
+    try {
+      intervalMinutes = parseStrategyIntervalMinutes(
+        input.intervalMinutes ?? input.schedule?.intervalMinutes,
+      );
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error ? error.message : "Invalid strategy schedule",
+        400,
+      );
+    }
+    const backtestId = String(input.backtestId ?? "").trim();
+    if (!backtestId)
+      throw new ClientError("A reviewed backtestId is required", 400);
+    const backtest = store.getStrategyBacktest(backtestId);
+    if (!backtest || backtest.actor !== actor)
+      throw new ClientError("Strategy backtest not found", 404);
+    if (!backtest.comparable)
+      throw new ClientError(
+        "Backtests from a dirty working tree cannot seed a comparable strategy run",
+        409,
+      );
+    const definitionHash = canonicalHash(
+      runtime.definition(symbols, strategyId, params, timeframe, days),
+    );
+    if (
+      backtest.definitionHash !== definitionHash ||
+      backtest.provenance.pluginVersion !== strategyPlugin.version ||
+      backtest.provenance.gitCommit !== runtime.codeIdentity.gitCommit ||
+      backtest.provenance.featureSchemaVersion !==
+        STRATEGY_FEATURE_SCHEMA_VERSION
+    )
+      throw new ClientError(
+        "Strategy run code or configuration does not match the reviewed backtest",
+        409,
+      );
+    const runId = crypto.randomUUID();
+    const schedule = intervalMinutes
+      ? { enabled: true, intervalMinutes, nextRunAt: new Date().toISOString() }
+      : undefined;
+    const config = {
+      symbols,
+      strategyId,
+      params,
+      timeframe,
+      days,
+      mode: "shadow",
+      backtestId,
+      ...(schedule ? { schedule } : {}),
+    };
+    const configHash = await runtime.configHash(config);
+    const provenance = runtime.provenance({
+      pluginVersion: strategyPlugin.version,
+      policyVersion: "crypto-shadow-v1",
+      definitionHash,
+      start: new Date(backtest.provenance.query.start),
+      end: new Date(backtest.provenance.query.end),
+      timeframe,
+      symbols,
+      datasetHash: backtest.provenance.datasetHash,
+    });
+    store.createStrategyRun({
+      id: runId,
+      backtestId,
+      strategyId,
+      strategyVersion: strategyPlugin.version,
+      status: "shadow",
+      configHash,
+      policyVersion: "crypto-shadow-v1",
+      symbols,
+      budget: 0,
+      config,
+      provenance,
+      notes: String(input.notes ?? "") || null,
+    });
+    runtime.recordAudit(
+      actor,
+      "run_created",
+      "strategy_run",
+      null,
+      store.getStrategyRun(runId),
+      {
+        mode: "shadow",
+        intervalMinutes,
+        pluginVersion: strategyPlugin.version,
+        backtestId,
+        datasetHash: provenance.datasetHash,
+      },
+    );
+    store.event("strategy.run.created", actor, {
+      runId,
+      backtestId,
+      strategyId,
+      symbols,
+      mode: "shadow",
+      intervalMinutes,
+      datasetHash: provenance.datasetHash,
+    });
+    return json({ runId, ...store.getStrategyRun(runId) }, 201);
+  }
+  if (
+    url.pathname === "/api/strategy/scheduler/tick" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:strategy-scheduler`, 10))
+      return json({ error: "Strategy scheduler rate limit exceeded" }, 429);
+    return json(await runtime.evaluateDue(actor));
+  }
+  const strategyPaperApprovalMatch = url.pathname.match(
+    /^\/api\/strategy\/runs\/([^/]+)\/paper-approval$/,
+  );
+  if (strategyPaperApprovalMatch && request.method === "POST") {
+    if (!allow(`${actor}:strategy-paper-approval`, 5))
+      return json(
+        { error: "Strategy paper approval rate limit exceeded" },
+        429,
+      );
+    const runId = decodeURIComponent(strategyPaperApprovalMatch[1]!);
+    const run = store.getStrategyRun(runId);
+    if (!run) return json({ error: "Strategy run not found" }, 404);
+    if (!["shadow", "paused"].includes(run.status))
+      return json(
+        {
+          error:
+            "Only shadow or paused runs can be approved for paper automation",
+        },
+        409,
+      );
+    const input = await requestJson(request);
+    let approval: StrategyPaperApproval;
+    try {
+      approval = parseStrategyPaperApproval(input, actor);
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error ? error.message : "Invalid paper approval",
+        400,
+      );
+    }
+    const config = {
+      ...(run.config as Record<string, unknown>),
+      mode: "paper",
+      paperApproval: approval,
+    };
+    const configHash = await runtime.configHash(config);
+    if (
+      !store.approveStrategyRunPaper(runId, approval.budget, config, configHash)
+    )
+      return json({ error: "Strategy run could not be approved" }, 409);
+    runtime.recordAudit(
+      actor,
+      "paper_approved",
+      "paper_approval",
+      run,
+      store.getStrategyRun(runId),
+      {
+        expiresAt: approval.expiresAt,
+        budget: approval.budget,
+        riskPolicy: approval.riskPolicy,
+      },
+    );
+    store.strategyNote(
+      runId,
+      actor,
+      `Approved paper automation until ${approval.expiresAt} with budget ${approval.budget}.`,
+    );
+    store.event("strategy.paper.approved", actor, {
+      runId,
+      approval: { ...approval, approvedBy: actor },
+    });
+    return json({ runId, ...store.getStrategyRun(runId) });
+  }
+  const strategyPauseMatch = url.pathname.match(
+    /^\/api\/strategy\/runs\/([^/]+)\/pause$/,
+  );
+  if (strategyPauseMatch && request.method === "POST") {
+    const runId = decodeURIComponent(strategyPauseMatch[1]!);
+    const run = store.getStrategyRun(runId);
+    if (!run) return json({ error: "Strategy run not found" }, 404);
+    const input = await requestJson(request).catch(() => ({}));
+    const reason = String(input.reason ?? "Paused from Strategy Lab").slice(
+      0,
+      200,
+    );
+    store.updateStrategyRunStatus(runId, "paused", reason);
+    runtime.recordAudit(
+      actor,
+      "status_changed",
+      "strategy_status",
+      run,
+      store.getStrategyRun(runId),
+      { reason, status: "paused" },
+    );
+    store.strategyNote(runId, actor, reason);
+    store.event("strategy.run.paused", actor, { runId, reason });
+    return json({ runId, ...store.getStrategyRun(runId) });
+  }
+  const strategyKillMatch = url.pathname.match(
+    /^\/api\/strategy\/runs\/([^/]+)\/kill$/,
+  );
+  if (strategyKillMatch && request.method === "POST") {
+    const runId = decodeURIComponent(strategyKillMatch[1]!);
+    const run = store.getStrategyRun(runId);
+    if (!run) return json({ error: "Strategy run not found" }, 404);
+    const input = await requestJson(request).catch(() => ({}));
+    const reason = String(
+      input.reason ?? "Kill switch activated from Strategy Lab",
+    ).slice(0, 200);
+    const config = {
+      ...(run.config as Record<string, unknown>),
+      paperApproval: {
+        ...((run.config as { paperApproval?: Record<string, unknown> })
+          .paperApproval ?? {}),
+        killSwitch: { activatedAt: new Date().toISOString(), reason },
+      },
+    };
+    store.updateStrategyRunConfig(
+      runId,
+      config,
+      await runtime.configHash(config),
+    );
+    store.updateStrategyRunStatus(runId, "retired", reason);
+    runtime.recordAudit(
+      actor,
+      "kill_switch",
+      "strategy_config",
+      run,
+      store.getStrategyRun(runId),
+      { reason, status: "retired" },
+    );
+    store.strategyNote(runId, actor, reason);
+    store.event("strategy.run.kill_switch", actor, { runId, reason });
+    return json({ runId, ...store.getStrategyRun(runId) });
+  }
+  const strategyReviewMatch = url.pathname.match(
+    /^\/api\/strategy\/runs\/([^/]+)\/review$/,
+  );
+  if (strategyReviewMatch && request.method === "POST") {
+    if (!allow(`${actor}:strategy-review`, 10))
+      return json({ error: "Strategy review rate limit exceeded" }, 429);
+    const runId = decodeURIComponent(strategyReviewMatch[1]!);
+    const run = store.getStrategyRun(runId);
+    if (!run) return json({ error: "Strategy run not found" }, 404);
+    const input = await requestJson(request);
+    let parsed: ReturnType<typeof parseStrategyReview>;
+    try {
+      parsed = parseStrategyReview(input, actor, run.status);
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error ? error.message : "Invalid strategy review",
+        400,
+      );
+    }
+    let config = withStrategyReviewConfig(run.config, parsed.review);
+    if (parsed.action === "retire") {
+      const approval =
+        config.paperApproval &&
+        typeof config.paperApproval === "object" &&
+        !Array.isArray(config.paperApproval)
+          ? config.paperApproval
+          : {};
+      config = {
+        ...config,
+        paperApproval: {
+          ...approval,
+          killSwitch: {
+            activatedAt: parsed.review.reviewedAt,
+            reason: parsed.note,
+          },
+        },
+      };
+    }
+    store.updateStrategyRunConfig(
+      runId,
+      config,
+      await runtime.configHash(config),
+    );
+    store.updateStrategyRunStatus(
+      runId,
+      parsed.status,
+      `${parsed.action}: ${parsed.note}`,
+    );
+    runtime.recordAudit(
+      actor,
+      "reviewed",
+      "strategy_review",
+      run,
+      store.getStrategyRun(runId),
+      { action: parsed.action, status: parsed.status, note: parsed.note },
+    );
+    store.strategyNote(
+      runId,
+      actor,
+      `${parsed.action.toUpperCase()}: ${parsed.note}`,
+    );
+    store.event("strategy.run.reviewed", actor, {
+      runId,
+      action: parsed.action,
+      status: parsed.status,
+    });
+    return json({ runId, ...store.getStrategyRun(runId) });
+  }
+
+  return null;
+}
