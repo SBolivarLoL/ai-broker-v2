@@ -1037,6 +1037,101 @@ test("strategy paper approval requires a pre-registered experiment protocol", as
   });
 });
 
+test("strategy promotion requires 30-day paper evidence decisions and fills", async () => {
+  const app = testApp();
+  const run = await approvedPaperRun(app);
+  const earlyPromotion = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/review`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "promote", note: "Promote after initial paper observation." }),
+  }));
+  expect(earlyPromotion.status).toBe(409);
+  expect(await earlyPromotion.json()).toMatchObject({
+    error: "Strategy promotion needs more paper evidence",
+    promotionEvidence: {
+      status: "needs_evidence",
+      checks: [
+        { name: "paper_status", status: "pass" },
+        { name: "paper_window", status: "needs_evidence" },
+        { name: "decision_count", status: "needs_evidence" },
+        { name: "fill_count", status: "needs_evidence" },
+      ],
+    },
+  });
+  expect(app.store.getStrategyRun(run.runId)).toMatchObject({ status: "paper" });
+
+  const readyRun = app.store.getStrategyRun(run.runId)!;
+  app.store.updateStrategyRunConfig(run.runId, {
+    ...(readyRun.config as Record<string, unknown>),
+    paperApproval: {
+      ...(readyRun.config as any).paperApproval,
+      approvedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  const current = app.store.getStrategyRun(run.runId)!;
+  for (let index = 0; index < 30; index++) {
+    const decisionId = `promotion-decision-${index}`;
+    const paperOrderId = index < 20 ? `promotion-paper-${index}` : null;
+    app.store.strategyDecision({
+      id: decisionId,
+      traceId: `promotion-trace-${index}`,
+      runId: run.runId,
+      symbol: "BTC/USD",
+      decision: index < 20 ? "enter" : "hold",
+      features: {},
+      weights: {},
+      thresholds: {},
+      riskChecks: { reasons: [] },
+      dataSnapshotIds: [],
+      rawSignal: 0.5,
+      riskAdjustedSignal: 0.5,
+      targetPosition: 0.5,
+      reason: "Promotion evidence sample",
+      provenance: current.provenance,
+      draftOrder: paperOrderId ? { side: "buy", notional: 50 } : undefined,
+      paperOrderId,
+    });
+    if (paperOrderId)
+      app.store.strategyOrder({
+        id: `promotion-order-${index}`,
+        runId: run.runId,
+        decisionId,
+        paperOrderId,
+        status: "filled",
+        payload: {
+          symbol: "BTC/USD",
+          side: "buy",
+          notional: 50,
+          qty: 0.001,
+          referencePrice: 50_000,
+          broker: {
+            status: "filled",
+            filledQty: 0.001,
+            filledAvgPrice: 50_000,
+            filledAt: "2026-06-01T00:00:00.000Z",
+          },
+        },
+      });
+  }
+
+  const promotion = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/review`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "promote", note: "Promote after 30 days with enough decisions and fills." }),
+  }));
+  expect(promotion.status).toBe(200);
+  const promoted = await promotion.json() as any;
+  expect(promoted.status).toBe("completed");
+  expect(promoted.config.review).toMatchObject({
+    action: "promote",
+    promotionEvidence: { status: "pass" },
+  });
+  expect(promoted.config.reviewHistory.at(-1)).toMatchObject({
+    action: "promote",
+    promotionEvidence: { status: "pass" },
+  });
+});
+
 test("strategy API persists a reviewed backtest and exact run and decision provenance", async () => {
   const app = testApp();
   const definition = { symbols: ["BTC/USD"], strategyId: "moving-average-trend", timeframe: "1Hour", days: 30, params: { fast: 2, slow: 3, exposure: 1 } };

@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `bde172e`: 2026-07-07.
+Last reviewed against `main` commit `7da0609`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -79,7 +79,7 @@ The browser exposes seven workspaces:
 - Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable, and a changed commit or definition requires a new reviewed backtest.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls. Paper approval requires a pre-registered experiment protocol with hypothesis, frozen parameters, start/stop dates, minimum observations, maximum budget, invalidation criteria, and review cadence. New protocol registrations append versioned history instead of overwriting prior versions, and paper orders are blocked outside the approved protocol window.
-- Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, paper-friction calibration, deterministic alerts, and experiment review history.
+- Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, paper-friction calibration, deterministic alerts, experiment review history, and promotion evidence gates. Promotion requires `pass` evidence for paper status, a 30-day paper window, enough decisions, and at least 20 fills; otherwise review returns `needs_evidence` and leaves the run in paper mode.
 - SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, JSON experiment reports, and ordered transactional schema migrations.
 
 See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
