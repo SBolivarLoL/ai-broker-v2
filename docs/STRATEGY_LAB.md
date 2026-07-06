@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `fb5f53e`: 2026-07-07.
+Last reviewed against `main` commit `bde172e`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -180,6 +180,8 @@ Backtest artifacts are immutable and actor-scoped at retrieval. Run creation che
 
 Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.
 
+Pre-register a paper experiment with `POST /api/strategy/runs/{runId}/experiment-protocol` before paper approval. The payload must include a falsifiable `hypothesis`, the frozen run `parameters`, `startAt`/`stopAt`, `minimumObservations`, `maximumBudget`, one to ten `invalidationCriteria`, and `reviewCadenceDays`. Re-registering appends a new protocol version to `config.experimentProtocols`; it does not erase prior versions. Parameters must match the reviewed run parameters, so a real parameter change requires a new reviewed backtest/run rather than hidden mutation inside an active paper experiment.
+
 Each tick:
 
 1. Fetches recent crypto bars and the latest snapshot/order book.
@@ -276,7 +278,11 @@ curl -fsS http://localhost:3000/api/strategy/runs \
   -X POST -H 'content-type: application/json' \
   -d '{"backtestId":"BACKTEST_ID","symbols":["BTC/USD"],"strategyId":"moving-average-trend","timeframe":"1Hour","days":30,"params":{"fast":5,"slow":20,"exposure":1}}'
 
-# Tick and approve a run
+# Register a protocol, tick, and approve a run
+curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/experiment-protocol \
+  -X POST -H 'content-type: application/json' \
+  -d '{"hypothesis":"Moving-average trend will beat cash after costs over this paper window.","parameters":{"fast":5,"slow":20,"exposure":0.5},"startAt":"2026-07-01T00:00:00.000Z","stopAt":"2026-08-01T00:00:00.000Z","minimumObservations":30,"maximumBudget":250,"invalidationCriteria":["Stop if max drawdown exceeds the protocol limit."],"reviewCadenceDays":7}'
+
 curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/tick -X POST
 curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/paper-approval \
   -X POST -H 'content-type: application/json' \
@@ -311,13 +317,14 @@ Before continuing or increasing a paper experiment:
 1. Was the hypothesis written before results were seen?
 2. Did the strategy beat cash and buy-and-hold after the same costs and period?
 3. Is drawdown acceptable before considering return?
-4. Are there enough trades/decisions, or is the result one lucky move?
-5. Does performance survive slower/faster windows without selecting only the winner?
-6. Was any final period untouched during tuning?
-7. Are stale data, blocked decisions, missing fills, and provider gaps included?
-8. Does paper fill evidence support the assumed spread/slippage?
-9. Has the exact config remained unchanged during the review window?
-10. Is there a clear invalidation rule and written reason to continue?
+4. Is there a current pre-registered protocol with dates, budget, invalidation criteria, and review cadence?
+5. Are there enough trades/decisions, or is the result one lucky move?
+6. Does performance survive slower/faster windows without selecting only the winner?
+7. Was any final period untouched during tuning?
+8. Are stale data, blocked decisions, missing fills, and provider gaps included?
+9. Does paper fill evidence support the assumed spread/slippage?
+10. Has the exact config remained unchanged during the review window?
+11. Is there a clear invalidation rule and written reason to continue?
 
 ## Troubleshooting
 

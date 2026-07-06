@@ -924,6 +924,20 @@ async function approvedPaperRun(app: ReturnType<typeof testApp>) {
   }));
   expect(runResponse.status).toBe(201);
   const run = await runResponse.json() as any;
+  const protocolResponse = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/experiment-protocol`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      hypothesis: "Buy and hold paper automation should remain bounded during this protocol window.",
+      startAt: "2026-07-01T00:00:00.000Z",
+      stopAt: "2026-12-31T00:00:00.000Z",
+      minimumObservations: 10,
+      maximumBudget: 100,
+      invalidationCriteria: ["Stop if max drawdown breaches the paper limit."],
+      reviewCadenceDays: 7,
+    }),
+  }));
+  expect(protocolResponse.status).toBe(200);
   const approvalResponse = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/paper-approval`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -933,6 +947,95 @@ async function approvedPaperRun(app: ReturnType<typeof testApp>) {
   expect(await approvalResponse.json()).toMatchObject({ runId: run.runId, status: "paper", budget: 100 });
   return run;
 }
+
+test("strategy paper approval requires a pre-registered experiment protocol", async () => {
+  const app = testApp();
+  const definition = { symbols: ["BTC/USD"], strategyId: "buy-and-hold", timeframe: "1Hour", days: 30, params: {} };
+  const backtest = await (await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(definition),
+  }))).json() as any;
+  const run = await (await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...definition, backtestId: backtest.backtestId }),
+  }))).json() as any;
+
+  const prematureApproval = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/paper-approval`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ budget: 100, maxPositionNotional: 100, maxOrderNotional: 25, minOrderNotional: 5, maxSpreadBps: 200, expiresHours: 24 }),
+  }));
+  expect(prematureApproval.status).toBe(409);
+  expect(await prematureApproval.json()).toEqual({
+    error: "Strategy paper approval requires a pre-registered experiment protocol",
+  });
+
+  const protocol = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/experiment-protocol`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      hypothesis: "Paper buy-and-hold should stay inside its budget while collecting observations.",
+      parameters: {},
+      startDate: "2026-07-01T00:00:00.000Z",
+      stopDate: "2026-12-31T00:00:00.000Z",
+      minimumObservations: 30,
+      maximumBudget: 75,
+      invalidationCriteria: [
+        "Stop if drawdown breaches the protocol limit.",
+        "Stop if the review cadence is missed.",
+      ],
+      reviewCadence: 7,
+    }),
+  }));
+  expect(protocol.status).toBe(200);
+  expect(await protocol.json()).toMatchObject({
+    runId: run.runId,
+    config: {
+      experimentProtocol: {
+        protocolVersion: "strategy-paper-experiment-protocol-v1",
+        version: 1,
+        maximumBudget: 75,
+        minimumObservations: 30,
+        protocolHash: expect.stringMatching(/^sha256:/),
+      },
+      experimentProtocols: [{ version: 1 }],
+    },
+  });
+
+  const oversizedApproval = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/paper-approval`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ budget: 100, maxPositionNotional: 100, maxOrderNotional: 25, minOrderNotional: 5, maxSpreadBps: 200, expiresHours: 24 }),
+  }));
+  expect(oversizedApproval.status).toBe(400);
+  expect(await oversizedApproval.json()).toEqual({
+    error: "Paper approval budget exceeds the registered protocol maximum budget",
+  });
+
+  const revision = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/experiment-protocol`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      hypothesis: "Continue the same frozen strategy with a higher paper budget cap.",
+      parameters: {},
+      startAt: "2026-07-01T00:00:00.000Z",
+      stopAt: "2026-12-31T00:00:00.000Z",
+      minimumObservations: 30,
+      maximumBudget: 100,
+      invalidationCriteria: ["Stop if drawdown breaches the protocol limit."],
+      reviewCadenceDays: 7,
+    }),
+  }));
+  expect(revision.status).toBe(200);
+  expect(await revision.json()).toMatchObject({
+    config: {
+      experimentProtocol: { version: 2, maximumBudget: 100 },
+      experimentProtocols: [{ version: 1 }, { version: 2 }],
+    },
+  });
+});
 
 test("strategy API persists a reviewed backtest and exact run and decision provenance", async () => {
   const app = testApp();

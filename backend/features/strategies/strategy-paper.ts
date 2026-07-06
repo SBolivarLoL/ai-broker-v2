@@ -15,6 +15,15 @@ export type StrategyPaperApproval = {
   maxSpreadBps: number;
   timeInForce: "gtc" | "ioc";
   riskPolicy: StrategyPaperRiskPolicy;
+  experimentProtocol?: {
+    version: number;
+    protocolHash: string;
+    startAt: string;
+    stopAt: string;
+    minimumObservations: number;
+    maximumBudget: number;
+    reviewCadenceDays: number;
+  };
   killSwitch?: { activatedAt: string; reason: string };
 };
 export type StrategyPaperOrder = {
@@ -189,6 +198,19 @@ export function draftStrategyPaperOrder(input: {
   if (input.approval.killSwitch) reasons.push("kill_switch");
   if (new Date(input.approval.expiresAt).getTime() <= now.getTime())
     reasons.push("approval_expired");
+  const protocol = input.approval.experimentProtocol;
+  if (protocol) {
+    const start = new Date(protocol.startAt),
+      stop = new Date(protocol.stopAt);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(stop.getTime()))
+      reasons.push("protocol_window_invalid");
+    else if (now.getTime() < start.getTime())
+      reasons.push("protocol_not_started");
+    else if (now.getTime() > stop.getTime())
+      reasons.push("protocol_expired");
+    if (input.approval.budget > protocol.maximumBudget)
+      reasons.push("protocol_budget_limit");
+  }
   if (!Number.isFinite(input.referencePrice) || input.referencePrice <= 0)
     reasons.push("invalid_reference_price");
   if (input.spreadBps === null || !Number.isFinite(input.spreadBps))
