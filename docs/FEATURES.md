@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `54b76c2`: 2026-07-07.
+Last reviewed against `main` commit `fb5f53e`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -72,6 +72,7 @@ The browser exposes seven workspaces:
 - Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, exact normalized dataset hashes, and legacy train/test boundary segmentation.
 - Backtest results include deterministic trade metrics: material simulated order count, position episodes, closed round trips, average holding bars/days, gross and net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings for high turnover, high trade frequency, or high exposure.
 - Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
+- Backtest cohorts can be compared through a deterministic compatibility report. It requires 2-20 immutable backtests and flags mismatched period, symbols, timeframe, dataset hash, initial cash, fee/slippage/execution model, baseline set, code identity, provider, or feed before any operator treats the metrics as comparable.
 - Genuine rolling or anchored walk-forward evaluation over a caller-declared set of 1-20 canonical parameter candidates. Each fold ranks candidates only on its training bars, freezes the winner, warms indicators without scoring train execution, evaluates only the untouched test bars, and reports candidate scores, exact boundaries, out-of-sample results/aggregates, and leakage checks. Optional final holdouts are excluded from all fold selection and then scored once with parameters selected from pre-holdout history; optional caller-declared regime slices summarize validation and holdout observations separately. Work is bounded to 100 folds and 2,000,000 evaluated bars; multi-symbol histories must be timestamp-synchronized.
 - Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
 - Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
