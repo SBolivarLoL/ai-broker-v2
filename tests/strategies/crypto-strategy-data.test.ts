@@ -13,7 +13,8 @@ test("validates bounded crypto strategy data inputs", () => {
     "BTC/USD",
     "ETH/USD",
   ]);
-  expect(parseCryptoTimeframe("1Hour")).toBe("1Hour");
+  for (const timeframe of ["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"])
+    expect(parseCryptoTimeframe(timeframe)).toBe(timeframe);
   expect(parseCryptoLookbackDays(undefined)).toBe(
     CRYPTO_LOOKBACK_DAYS.defaultValue,
   );

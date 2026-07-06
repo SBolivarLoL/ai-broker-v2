@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
+Last reviewed against `main` commit `f147459`: 2026-07-06.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -58,7 +58,10 @@ Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one sym
 
 ### Timeframe and history
 
-Supported timeframes are `15Min`, `1Hour`, and `1Day`. The server and Strategy Lab input accept 1-90 lookback days from one tested constraint contract.
+The Strategy Lab UI offers `15Min`, `1Hour`, and `1Day`. The API validation
+boundary also accepts `1Min`, `5Min`, and `4Hour`; all six values are covered
+by the strategy-data input test. The server and Strategy Lab input accept 1-90
+lookback days from one tested constraint contract.
 
 Short windows are fast but fragile. A 90-day maximum is not enough to establish long-term robustness across market regimes.
 
@@ -121,7 +124,7 @@ Cash and buy-and-hold use `{}`.
 | `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                       |
 | `stopLossPercent`                                | Breakout exit relative to recorded entry price                     |
 | `minVolatilityPercent`, `maxVolatilityPercent`   | Allowed realized-volatility band                                   |
-| `minRelativeStrengthPercent`                     | Minimum primary-versus-peer return edge                            |
+| `minRelativeStrengthPercent`                     | Minimum primary-versus-peer return edge; the peer is derived from the ordered BTC/ETH pair |
 | `maxSpreadBps`                                   | Maximum order-book or paper-approval spread                        |
 | `minVisibleAskNotional`, `minVisibleBidNotional` | Required visible depth                                             |
 | `maxDepthLevels`                                 | Maximum order-book levels used                                     |

@@ -376,6 +376,14 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(backtest.status).toBe(400);
   expect(await backtest.json()).toEqual({ error: "Invalid moving-average-trend parameters: slow must be greater than fast" });
 
+  const ambiguousPeer = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbols: ["BTC/USD", "ETH/USD"], strategyId: "btc-eth-relative-strength", timeframe: "1Hour", days: 30, params: { peerSymbol: "BTC/USD" } }),
+  }));
+  expect(ambiguousPeer.status).toBe(400);
+  expect(await ambiguousPeer.json()).toEqual({ error: "Invalid btc-eth-relative-strength parameters: Unrecognized key: \"peerSymbol\"" });
+
   const run = await app.fetch(new Request("http://local/api/strategy/runs", {
     method: "POST",
     headers: { "content-type": "application/json" },

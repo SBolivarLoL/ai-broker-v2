@@ -198,6 +198,7 @@ test("strategy configuration rejects malformed and contradictory parameters", ()
   expect(() => parseStrategyParams("mean-reversion", { entryZScore: 0, exitZScore: -1 })).toThrow("entryZScore must be less than exitZScore");
   expect(() => parseStrategyParams("volatility-filter", { minVolatilityPercent: 10, maxVolatilityPercent: 5 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
   expect(() => parseStrategyParams("breakout-momentum", { volumeMultiple: Number.NaN })).toThrow("expected number");
+  expect(() => parseStrategyParams("btc-eth-relative-strength", { peerSymbol: "BTC/USD" })).toThrow("Unrecognized key");
   expect(() => parseStrategyParams("order-book-liquidity-scout", { exposure: 1.1 })).toThrow("Too big");
   expect(() => parseStrategyParams("order-book-liquidity-scout", { maxDepthLevels: 101 })).toThrow("Too big");
   expect(() => parseStrategyParams("unknown", {})).toThrow("Unknown strategyId");
