@@ -73,6 +73,35 @@ test("walk-forward windows split ordered samples without overlap inside a fold",
   ]);
 });
 
+test("backtest evaluation warmup exposes history without scoring train bars", () => {
+  const history = [100, 101, 102, 103, 104].map((close, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+    close,
+  }));
+  const result = runBacktest({
+    strategyId: "moving-average-trend",
+    bars: history,
+    strategy: movingAverageTrendStrategy({ fast: 2, slow: 3 }),
+    initialCash: 1_000,
+    feeBps: 0,
+    slippageBps: 0,
+    evaluationStartIndex: 3,
+  });
+  expect(result.points).toHaveLength(2);
+  expect(result.points[0]).toMatchObject({
+    timestamp: "2026-01-04T00:00:00.000Z",
+    features: { fastAverage: 102.5, slowAverage: 102 },
+  });
+  expect(() =>
+    runBacktest({
+      strategyId: "cash",
+      bars: history,
+      strategy: cashStrategy,
+      evaluationStartIndex: 5,
+    }),
+  ).toThrow("evaluation start");
+});
+
 test("time-sliced accumulation ramps exposure deterministically", () => {
   const result = runBacktest({ strategyId: "time-sliced-accumulation", bars, strategy: timeSlicedAccumulationStrategy({ slices: 4 }), initialCash: 1000, slippageBps: 0 });
   expect(result.points.map(point => point.targetExposure)).toEqual([0.25, 0.5, 0.75, 1]);

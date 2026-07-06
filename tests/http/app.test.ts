@@ -403,6 +403,27 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   }));
   expect(run.status).toBe(400);
   expect(await run.json()).toEqual({ error: "Invalid cash parameters: Unrecognized key: \"exposure\"" });
+
+  const walkForward = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      strategyId: "time-sliced-accumulation",
+      timeframe: "1Hour",
+      days: 30,
+      walkForward: {
+        trainSize: 10,
+        testSize: 2,
+        candidates: [{}, { slices: 10, maxExposure: 1 }],
+      },
+    }),
+  }));
+  expect(walkForward.status).toBe(400);
+  expect(await walkForward.json()).toEqual({
+    error: "walkForward candidates must be unique after defaults are applied",
+  });
+  expect(app.cryptoBarRequests).toHaveLength(0);
 });
 
 test("strategy dataset API ingests chunked history and powers a stored-data backtest", async () => {
@@ -477,6 +498,52 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
     provenance: { datasetHash },
   });
   expect(app.cryptoBarRequests).toHaveLength(6);
+
+  const walkForwardResponse = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      datasetId,
+      strategyId: "time-sliced-accumulation",
+      params: {},
+      walkForward: {
+        trainSize: 2,
+        testSize: 1,
+        candidates: [{ slices: 1 }, { slices: 3 }],
+      },
+    }),
+  }));
+  expect(walkForwardResponse.status).toBe(201);
+  const walkForwardBacktest = await walkForwardResponse.json() as any;
+  const walkForwardBacktestId = String(walkForwardBacktest.backtestId);
+  expect(walkForwardBacktest).toMatchObject({
+    datasetId,
+    walkForwardEvaluation: {
+      candidateCount: 2,
+      aggregate: { foldCount: 1, testBars: 1 },
+      leakageChecks: { allPassed: true },
+      folds: [{
+        train: { bars: 2 },
+        test: { bars: 1 },
+        selectedParams: { slices: expect.any(Number), maxExposure: 1 },
+        testResult: { points: [{ timestamp: expect.any(String) }] },
+      }],
+    },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(6);
+  const persistedWalkForward = await app.fetch(new Request(
+    `http://local/api/strategy/backtests/${walkForwardBacktestId}`,
+  ));
+  expect(persistedWalkForward.status).toBe(200);
+  expect(await persistedWalkForward.json()).toMatchObject({
+    id: walkForwardBacktestId,
+    result: {
+      walkForwardEvaluation: {
+        aggregate: { foldCount: 1 },
+        leakageChecks: { allPassed: true },
+      },
+    },
+  });
 
   const runResponse = await app.fetch(new Request("http://local/api/strategy/runs", {
     method: "POST",

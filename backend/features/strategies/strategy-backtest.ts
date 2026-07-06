@@ -185,17 +185,21 @@ function maxDrawdown(equity: number[]) {
   return drawdown * 100;
 }
 
-export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; strategy: BacktestStrategy; initialCash?: number; feeBps?: number; slippageBps?: number }): BacktestResult {
+export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; strategy: BacktestStrategy; initialCash?: number; feeBps?: number; slippageBps?: number; evaluationStartIndex?: number }): BacktestResult {
   const bars = normalizeBars(input.bars);
   const initialCash = input.initialCash ?? 10_000, feeBps = input.feeBps ?? 0, slippageBps = input.slippageBps ?? 5;
+  const evaluationStartIndex = input.evaluationStartIndex ?? 0;
   if (bars.length < 2) throw new Error("At least two valid bars are required");
   if (!Number.isFinite(initialCash) || initialCash <= 0 || !Number.isFinite(feeBps) || feeBps < 0 || !Number.isFinite(slippageBps) || slippageBps < 0) throw new Error("Invalid backtest assumptions");
+  if (!Number.isInteger(evaluationStartIndex) || evaluationStartIndex < 0 || evaluationStartIndex >= bars.length)
+    throw new Error("Invalid backtest evaluation start");
   let cash = initialCash, units = 0, turnover = 0, totalCost = 0, exposed = 0;
   const points: BacktestPoint[] = [];
   for (let index = 0; index < bars.length; index++) {
     const bar = bars[index]!;
     const equityBefore = cash + units * bar.close;
     const decision = input.strategy(bars, index);
+    if (index < evaluationStartIndex) continue;
     const targetExposure = clamp(Number(decision.targetExposure));
     const targetNotional = equityBefore * targetExposure;
     const currentNotional = units * bar.close;
