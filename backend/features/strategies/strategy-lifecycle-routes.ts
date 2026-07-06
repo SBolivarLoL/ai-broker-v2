@@ -39,17 +39,46 @@ export async function handleStrategyLifecycleRequest(
       return json({ error: "Strategy backtest rate limit exceeded" }, 429);
     const input = await requestJson(request);
     const strategyId = String(input.strategyId ?? "buy-and-hold");
+    const datasetId = String(input.datasetId ?? "").trim() || null;
+    const storedDataset = datasetId
+      ? store.getStrategyBarDataset(datasetId)
+      : null;
+    if (datasetId && (!storedDataset || storedDataset.actor !== actor))
+      throw new ClientError("Strategy dataset not found", 404);
     let symbols: string[],
       params: Record<string, unknown>,
       timeframe: string,
       days: number,
       strategyPlugin;
     try {
-      symbols = runtime.normalizeSymbols(strategyId, input.symbols);
+      symbols = runtime.normalizeSymbols(
+        strategyId,
+        input.symbols ?? storedDataset?.symbols,
+      );
       params = parseStrategyParams(strategyId, input.params ?? {});
       strategyPlugin = strategyPluginFromId(strategyId, params);
-      timeframe = parseCryptoTimeframe(input.timeframe);
-      days = parseCryptoLookbackDays(input.days);
+      timeframe = parseCryptoTimeframe(
+        input.timeframe ?? storedDataset?.timeframe,
+      );
+      if (
+        storedDataset &&
+        (JSON.stringify(symbols) !== JSON.stringify(storedDataset.symbols) ||
+          timeframe !== storedDataset.timeframe)
+      )
+        throw new Error("Backtest symbols and timeframe must match the stored dataset");
+      days = storedDataset
+        ? Math.min(
+            90,
+            Math.max(
+              1,
+              Math.ceil(
+                (new Date(storedDataset.end).getTime() -
+                  new Date(storedDataset.start).getTime()) /
+                  86_400_000,
+              ),
+            ),
+          )
+        : parseCryptoLookbackDays(input.days);
     } catch (error) {
       throw new ClientError(
         error instanceof Error ? error.message : "Invalid backtest input",
@@ -59,24 +88,40 @@ export async function handleStrategyLifecycleRequest(
     const initialCash = Number(input.initialCash ?? 10_000),
       feeBps = Number(input.feeBps ?? 0),
       slippageBps = Number(input.slippageBps ?? 5);
-    const end = new Date(),
-      start = new Date(end.getTime() - days * 86_400_000);
+    const end = storedDataset ? new Date(storedDataset.end) : new Date(),
+      start = storedDataset
+        ? new Date(storedDataset.start)
+        : new Date(end.getTime() - days * 86_400_000);
     const symbol = symbols[0]!;
-    const providerBars = await alpaca.marketData.getCryptoBars({
-      loc: "us",
-      symbols,
-      timeframe,
-      start,
-      end,
-      limit: 10_000,
-    } as any);
-    const dataset = cryptoBarsDto({
-      symbols,
-      timeframe,
-      start,
-      end,
-      bars: providerBars,
-    });
+    const providerBars = storedDataset
+      ? Object.fromEntries(
+          symbols.map((storedSymbol) => [
+            storedSymbol,
+            storedDataset.bars.filter(
+              (bar: { symbol: string }) => bar.symbol === storedSymbol,
+            ),
+          ]),
+        )
+      : await alpaca.marketData.getCryptoBars({
+          loc: "us",
+          symbols,
+          timeframe,
+          start,
+          end,
+          limit: 10_000,
+        } as any);
+    const dataset = storedDataset
+      ? {
+          source: "Alpaca crypto historical bars",
+          feed: storedDataset.feed,
+          timeframe,
+          start: storedDataset.start,
+          end: storedDataset.end,
+          symbols,
+          bars: providerBars,
+          asOf: storedDataset.createdAt,
+        }
+      : cryptoBarsDto({ symbols, timeframe, start, end, bars: providerBars });
     const barsBySymbol = dataset.bars;
     const bars = barsBySymbol[symbol] ?? [];
     const strategy = strategyFunctionFromPlugin(
@@ -135,6 +180,7 @@ export async function handleStrategyLifecycleRequest(
       params,
       timeframe,
       days,
+      datasetId,
     );
     const definitionHash = canonicalHash(definition);
     const provenance = runtime.provenance({
@@ -145,7 +191,9 @@ export async function handleStrategyLifecycleRequest(
       end,
       timeframe,
       symbols,
-      datasetHash: canonicalHash(runtime.withoutAsOf(dataset)),
+      datasetHash:
+        storedDataset?.datasetHash ??
+        canonicalHash(runtime.withoutAsOf(dataset)),
     });
     const backtestId = crypto.randomUUID();
     const output = {
@@ -159,6 +207,7 @@ export async function handleStrategyLifecycleRequest(
       result,
       baselines,
       walkForward,
+      datasetId,
       asOf: dataset.asOf,
     };
     store.strategyBacktest({
@@ -174,6 +223,7 @@ export async function handleStrategyLifecycleRequest(
         slippageBps,
         trainSize,
         testSize,
+        datasetId,
       },
       result: output,
     });
@@ -186,6 +236,7 @@ export async function handleStrategyLifecycleRequest(
       datasetHash: provenance.datasetHash,
       totalReturnPercent: result.totalReturnPercent,
       bars: bars.length,
+      datasetId,
     });
     return json({ backtestId, provenance, ...output }, 201);
   }
@@ -207,17 +258,34 @@ export async function handleStrategyLifecycleRequest(
       return json({ error: "Strategy run rate limit exceeded" }, 429);
     const input = await requestJson(request);
     const strategyId = String(input.strategyId ?? "");
+    const datasetId = String(input.datasetId ?? "").trim() || null;
+    const storedDataset = datasetId
+      ? store.getStrategyBarDataset(datasetId)
+      : null;
+    if (datasetId && (!storedDataset || storedDataset.actor !== actor))
+      throw new ClientError("Strategy dataset not found", 404);
     let symbols: string[],
       params: Record<string, unknown>,
       timeframe: string,
       days: number,
       strategyPlugin;
     try {
-      symbols = runtime.normalizeSymbols(strategyId, input.symbols);
+      symbols = runtime.normalizeSymbols(
+        strategyId,
+        input.symbols ?? storedDataset?.symbols,
+      );
       params = parseStrategyParams(strategyId, input.params ?? {});
       strategyPlugin = strategyPluginFromId(strategyId, params);
-      timeframe = parseCryptoTimeframe(input.timeframe);
-      days = parseCryptoLookbackDays(input.days);
+      timeframe = parseCryptoTimeframe(
+        input.timeframe ?? storedDataset?.timeframe,
+      );
+      if (
+        storedDataset &&
+        (JSON.stringify(symbols) !== JSON.stringify(storedDataset.symbols) ||
+          timeframe !== storedDataset.timeframe)
+      )
+        throw new Error("Run symbols and timeframe must match the stored dataset");
+      days = storedDataset ? 90 : parseCryptoLookbackDays(input.days);
     } catch (error) {
       throw new ClientError(
         error instanceof Error
@@ -249,7 +317,14 @@ export async function handleStrategyLifecycleRequest(
         409,
       );
     const definitionHash = canonicalHash(
-      runtime.definition(symbols, strategyId, params, timeframe, days),
+      runtime.definition(
+        symbols,
+        strategyId,
+        params,
+        timeframe,
+        days,
+        datasetId,
+      ),
     );
     if (
       backtest.definitionHash !== definitionHash ||
@@ -274,6 +349,7 @@ export async function handleStrategyLifecycleRequest(
       days,
       mode: "shadow",
       backtestId,
+      ...(datasetId ? { datasetId } : {}),
       ...(schedule ? { schedule } : {}),
     };
     const configHash = await runtime.configHash(config);

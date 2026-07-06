@@ -36,8 +36,11 @@ export function strategyDefinition(
   params: Record<string, unknown>,
   timeframe: string,
   days: number,
+  datasetId?: string | null,
 ) {
-  return { symbols, strategyId, params, timeframe, days };
+  return datasetId
+    ? { symbols, strategyId, params, timeframe, datasetId }
+    : { symbols, strategyId, params, timeframe, days };
 }
 
 export function withoutAsOf<T extends { asOf: string }>(

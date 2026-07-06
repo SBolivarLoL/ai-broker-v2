@@ -20,6 +20,49 @@ export type NormalizedCryptoBar = {
   tradeCount: number | null;
 };
 
+export function normalizeCryptoBar(
+  symbol: string,
+  raw: Record<string, unknown>,
+): NormalizedCryptoBar | null {
+  const timestamp = new Date(String(raw.timestamp ?? raw.t ?? ""));
+  const open = finite(raw.open ?? raw.o);
+  const high = finite(raw.high ?? raw.h);
+  const low = finite(raw.low ?? raw.l);
+  const close = finite(raw.close ?? raw.c);
+  const volume = finite(raw.volume ?? raw.v);
+  const vwap = finite(raw.vwap ?? raw.vw);
+  const tradeCount = finite(raw.tradeCount ?? raw.n);
+  if (
+    !Number.isFinite(timestamp.getTime()) ||
+    open === null ||
+    high === null ||
+    low === null ||
+    close === null ||
+    volume === null ||
+    open <= 0 ||
+    high <= 0 ||
+    low <= 0 ||
+    close <= 0 ||
+    volume < 0 ||
+    high < Math.max(open, close) ||
+    low > Math.min(open, close) ||
+    (vwap !== null && vwap <= 0) ||
+    (tradeCount !== null && (tradeCount < 0 || !Number.isInteger(tradeCount)))
+  )
+    return null;
+  return {
+    symbol,
+    timestamp: timestamp.toISOString(),
+    open,
+    high,
+    low,
+    close,
+    volume,
+    vwap,
+    tradeCount,
+  };
+}
+
 export function parseCryptoSymbols(value: unknown, maximum = 3) {
   const raw = String(value ?? "BTC/USD,ETH/USD,SOL/USD").split(",").map(symbol => symbol.trim().toUpperCase()).filter(Boolean);
   const symbols = [...new Set(raw)];
@@ -47,17 +90,9 @@ export function cryptoBarsDto(input: { symbols: string[]; timeframe: string; sta
     start: input.start.toISOString(),
     end: input.end.toISOString(),
     symbols: input.symbols,
-    bars: Object.fromEntries(input.symbols.map(symbol => [symbol, (input.bars[symbol] ?? []).map(bar => ({
-      symbol,
-      timestamp: new Date(bar.timestamp ?? bar.t).toISOString(),
-      open: finite(bar.open ?? bar.o),
-      high: finite(bar.high ?? bar.h),
-      low: finite(bar.low ?? bar.l),
-      close: finite(bar.close ?? bar.c),
-      volume: finite(bar.volume ?? bar.v),
-      vwap: finite(bar.vwap ?? bar.vw),
-      tradeCount: finite(bar.tradeCount ?? bar.n),
-    })).filter((bar): bar is NormalizedCryptoBar => [bar.open, bar.high, bar.low, bar.close, bar.volume].every(value => value !== null))])),
+    bars: Object.fromEntries(input.symbols.map(symbol => [symbol, (input.bars[symbol] ?? [])
+      .map(bar => normalizeCryptoBar(symbol, bar))
+      .filter((bar): bar is NormalizedCryptoBar => bar !== null)])),
     asOf: new Date().toISOString(),
   };
 }

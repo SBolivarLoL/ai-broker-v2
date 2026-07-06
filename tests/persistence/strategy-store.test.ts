@@ -2,8 +2,21 @@ import { expect, test } from "bun:test";
 import { encryptSecretValue } from "../../backend/features/operations/secret-vault";
 import { createStore } from "../../backend/persistence/store";
 import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "../../backend/features/strategies/strategy-provenance";
+import {
+  buildVersionedCryptoDataset,
+  parseCryptoDatasetRequest,
+} from "../../backend/features/strategies/strategy-datasets";
 
 const gitCommit = "a".repeat(40);
+
+const datasetBar = (timestamp: string, close: number) => ({
+  t: timestamp,
+  o: close,
+  h: close + 1,
+  l: close - 1,
+  c: close,
+  v: 10,
+});
 
 function experimentFields(store: ReturnType<typeof createStore>, runId: string, strategyId: string, strategyVersion: string, policyVersion: string, symbols = ["BTC/USD"]) {
   const backtestId = `${runId}-backtest`;
@@ -89,6 +102,118 @@ test("persists strategy runs, snapshots, decisions and trace reconstruction", ()
     snapshots: [{ id: "snap-1", stale: false, payload: { bid: 100, ask: 101 } }],
   });
   expect(store.strategyMetrics("run-1")).toMatchObject([{ name: "stale_data_rate", value: 0, unit: "ratio" }]);
+  store.close();
+});
+
+test("persists immutable versioned crypto bars and correction lineage", () => {
+  const store = createStore(":memory:");
+  const request = parseCryptoDatasetRequest(
+    {
+      symbols: ["BTC/USD"],
+      timeframe: "1Hour",
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-01T03:00:00.000Z",
+    },
+    new Date("2026-01-02T00:00:00.000Z"),
+  );
+  const first = buildVersionedCryptoDataset({
+    request,
+    rawBars: {
+      "BTC/USD": [
+        datasetBar("2026-01-01T00:00:00.000Z", 100),
+        datasetBar("2026-01-01T01:00:00.000Z", 101),
+      ],
+    },
+  });
+  store.strategyBarDataset({
+    id: "dataset-1",
+    actor: "tester",
+    provider: first.provider,
+    feed: first.feed,
+    timezone: first.timezone,
+    timeframe: first.timeframe,
+    symbols: first.symbols,
+    start: first.start,
+    end: first.end,
+    datasetHash: first.datasetHash,
+    previousDatasetId: null,
+    stats: first.stats,
+    bars: first.bars,
+  });
+  expect(store.getStrategyBarDataset("dataset-1")).toMatchObject({
+    actor: "tester",
+    datasetHash: first.datasetHash,
+    bars: [
+      { timestamp: "2026-01-01T00:00:00.000Z", contentHash: expect.stringMatching(/^sha256:/) },
+      { timestamp: "2026-01-01T01:00:00.000Z", contentHash: expect.stringMatching(/^sha256:/) },
+    ],
+  });
+  expect(() =>
+    store.strategyBarDataset({
+      id: "dataset-duplicate",
+      actor: "tester",
+      provider: first.provider,
+      feed: first.feed,
+      timezone: first.timezone,
+      timeframe: first.timeframe,
+      symbols: first.symbols,
+      start: first.start,
+      end: first.end,
+      datasetHash: first.datasetHash,
+      previousDatasetId: null,
+      stats: first.stats,
+      bars: first.bars,
+    }),
+  ).toThrow();
+
+  const second = buildVersionedCryptoDataset({
+    request,
+    previous: { id: "dataset-1", bars: first.bars },
+    rawBars: {
+      "BTC/USD": [
+        datasetBar("2026-01-01T00:00:00.000Z", 100),
+        datasetBar("2026-01-01T01:00:00.000Z", 105),
+      ],
+    },
+  });
+  expect(() =>
+    store.strategyBarDataset({
+      id: "dataset-cross-actor",
+      actor: "other-actor",
+      provider: second.provider,
+      feed: second.feed,
+      timezone: second.timezone,
+      timeframe: second.timeframe,
+      symbols: second.symbols,
+      start: second.start,
+      end: second.end,
+      datasetHash: second.datasetHash,
+      previousDatasetId: second.previousDatasetId,
+      stats: second.stats,
+      bars: second.bars,
+    }),
+  ).toThrow("Previous strategy bar dataset not found");
+  store.strategyBarDataset({
+    id: "dataset-2",
+    actor: "tester",
+    provider: second.provider,
+    feed: second.feed,
+    timezone: second.timezone,
+    timeframe: second.timeframe,
+    symbols: second.symbols,
+    start: second.start,
+    end: second.end,
+    datasetHash: second.datasetHash,
+    previousDatasetId: second.previousDatasetId,
+    stats: second.stats,
+    bars: second.bars,
+  });
+  expect(store.latestStrategyBarDataset("tester", second.symbols, second.timeframe, second.start, second.end)).toMatchObject({
+    id: "dataset-2",
+    previousDatasetId: "dataset-1",
+    stats: { correctedBars: 1 },
+  });
+  expect(store.strategyBarDatasets("tester")).toHaveLength(2);
   store.close();
 });
 

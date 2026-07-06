@@ -1,4 +1,5 @@
 import { handleStrategyExecutionRequest } from "./strategy-execution-routes";
+import { handleStrategyDatasetRequest } from "./strategy-dataset-routes";
 import { handleStrategyLifecycleRequest } from "./strategy-lifecycle-routes";
 import { handleStrategyReportingRequest } from "./strategy-reporting-routes";
 import type { StrategyRouteContext } from "./strategy-route-context";
@@ -18,6 +19,12 @@ export async function handleStrategyRequest(
     context,
   );
   if (executionResponse) return executionResponse;
+  const datasetResponse = await handleStrategyDatasetRequest(
+    request,
+    url,
+    context,
+  );
+  if (datasetResponse) return datasetResponse;
   const lifecycleResponse = await handleStrategyLifecycleRequest(
     request,
     url,

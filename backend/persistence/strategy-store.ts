@@ -7,9 +7,18 @@
 import type { Database } from "bun:sqlite";
 import { hashAuditEntry } from "./audit";
 import {
+  canonicalHash,
   parseStrategyProvenance,
   type StrategyProvenance,
 } from "../features/strategies/strategy-provenance";
+import {
+  cryptoDatasetHash,
+  type CryptoDatasetStats,
+} from "../features/strategies/strategy-datasets";
+import {
+  normalizeCryptoBar,
+  type NormalizedCryptoBar,
+} from "../features/strategies/crypto-strategy-data";
 
 export type StrategyRunStatus =
   | "backtest"
@@ -43,6 +52,21 @@ export type StrategyBacktestInput = {
   provenance: StrategyProvenance;
   request: unknown;
   result: unknown;
+};
+export type StrategyBarDatasetInput = {
+  id: string;
+  actor: string;
+  provider: "Alpaca Market Data API";
+  feed: "us";
+  timezone: "UTC";
+  timeframe: string;
+  symbols: string[];
+  start: string;
+  end: string;
+  datasetHash: string;
+  previousDatasetId: string | null;
+  stats: CryptoDatasetStats;
+  bars: NormalizedCryptoBar[];
 };
 export type StrategyDataSnapshotInput = {
   id: string;
@@ -143,6 +167,33 @@ function mapStrategyBacktestRow(row: any) {
   };
 }
 
+function mapStrategyBarRow(row: any): NormalizedCryptoBar & {
+  contentHash: string;
+} {
+  return {
+    symbol: row.symbol,
+    timestamp: row.timestamp,
+    open: row.open,
+    high: row.high,
+    low: row.low,
+    close: row.close,
+    volume: row.volume,
+    vwap: row.vwap,
+    tradeCount: row.tradeCount,
+    contentHash: row.contentHash,
+  };
+}
+
+function mapStrategyBarDatasetRow(row: any, bars: ReturnType<typeof mapStrategyBarRow>[] = []) {
+  if (!row) return null;
+  return {
+    ...row,
+    symbols: JSON.parse(row.symbols),
+    stats: JSON.parse(row.stats),
+    bars,
+  };
+}
+
 function mapStrategyDecisionRow(row: any) {
   const draftOrder = row.draftOrder ? JSON.parse(row.draftOrder) : null;
   const provenance = row.provenance ? JSON.parse(row.provenance) : null;
@@ -217,6 +268,161 @@ export function createStrategyStore(db: Database) {
     policy_version AS policyVersion, config_hash AS configHash, before_payload AS beforePayload, after_payload AS afterPayload,
     metadata, previous_hash AS previousHash, entry_hash AS entryHash, retention_until AS retentionUntil, created_at AS createdAt FROM strategy_audit_log`;
   return {
+    strategyBarDataset(input: StrategyBarDatasetInput) {
+      const start = new Date(input.start),
+        end = new Date(input.end);
+      if (
+        !input.id ||
+        !input.actor ||
+        input.provider !== "Alpaca Market Data API" ||
+        input.feed !== "us" ||
+        input.timezone !== "UTC" ||
+        !input.timeframe ||
+        !input.symbols.length ||
+        input.symbols.some((symbol) => !/^[A-Z0-9/.-]{2,20}$/.test(symbol)) ||
+        !Number.isFinite(start.getTime()) ||
+        !Number.isFinite(end.getTime()) ||
+        start >= end ||
+        !/^sha256:[a-f0-9]{64}$/.test(input.datasetHash) ||
+        !input.bars.length ||
+        input.bars.some(
+          (bar) => {
+            const timestamp = new Date(bar.timestamp);
+            const normalized = normalizeCryptoBar(bar.symbol, bar);
+            return (
+              !normalized ||
+              canonicalHash(normalized) !== canonicalHash(bar) ||
+              !input.symbols.includes(bar.symbol) ||
+              !Number.isFinite(timestamp.getTime()) ||
+              timestamp < start ||
+              timestamp > end
+            );
+          },
+        ) ||
+        cryptoDatasetHash(input) !== input.datasetHash
+      )
+        throw new Error("Invalid strategy bar dataset");
+      if (
+        input.previousDatasetId &&
+        !db
+          .query(
+            `SELECT id FROM strategy_bar_datasets
+            WHERE id = ? AND actor = ? AND symbols = ? AND timeframe = ?
+            AND query_start = ? AND query_end = ?`,
+          )
+          .get(
+            input.previousDatasetId,
+            input.actor,
+            JSON.stringify(input.symbols),
+            input.timeframe,
+            input.start,
+            input.end,
+          )
+      )
+        throw new Error("Previous strategy bar dataset not found");
+      const insertDataset = db.query(
+        `INSERT INTO strategy_bar_datasets
+        (id, actor, provider, feed, timezone, timeframe, symbols, query_start, query_end, dataset_hash, previous_dataset_id, stats)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertBar = db.query(
+        `INSERT INTO strategy_bars
+        (dataset_id, symbol, observed_at, open, high, low, close, volume, vwap, trade_count, content_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      db.transaction(() => {
+        insertDataset.run(
+          input.id,
+          input.actor,
+          input.provider,
+          input.feed,
+          input.timezone,
+          input.timeframe,
+          JSON.stringify(input.symbols),
+          input.start,
+          input.end,
+          input.datasetHash,
+          input.previousDatasetId,
+          JSON.stringify(input.stats),
+        );
+        for (const bar of input.bars)
+          insertBar.run(
+            input.id,
+            bar.symbol,
+            bar.timestamp,
+            bar.open,
+            bar.high,
+            bar.low,
+            bar.close,
+            bar.volume,
+            bar.vwap,
+            bar.tradeCount,
+            canonicalHash(bar),
+          );
+      }).immediate();
+      return this.getStrategyBarDataset(input.id);
+    },
+    getStrategyBarDataset(id: string) {
+      const row = db
+        .query(
+          `SELECT id, actor, provider, feed, timezone, timeframe, symbols,
+          query_start AS start, query_end AS end, dataset_hash AS datasetHash,
+          previous_dataset_id AS previousDatasetId, stats, created_at AS createdAt
+          FROM strategy_bar_datasets WHERE id = ?`,
+        )
+        .get(id) as any;
+      if (!row) return null;
+      const bars = (
+        db
+          .query(
+            `SELECT symbol, observed_at AS timestamp, open, high, low, close, volume, vwap,
+            trade_count AS tradeCount, content_hash AS contentHash
+            FROM strategy_bars WHERE dataset_id = ? ORDER BY symbol, observed_at`,
+          )
+          .all(id) as any[]
+      ).map(mapStrategyBarRow);
+      return mapStrategyBarDatasetRow(row, bars);
+    },
+    strategyBarDatasetByHash(actor: string, datasetHash: string) {
+      const row = db
+        .query(
+          "SELECT id FROM strategy_bar_datasets WHERE actor = ? AND dataset_hash = ?",
+        )
+        .get(actor, datasetHash) as { id: string } | null;
+      return row ? this.getStrategyBarDataset(row.id) : null;
+    },
+    latestStrategyBarDataset(
+      actor: string,
+      symbols: string[],
+      timeframe: string,
+      start: string,
+      end: string,
+    ) {
+      const row = db
+        .query(
+          `SELECT id FROM strategy_bar_datasets
+          WHERE actor = ? AND symbols = ? AND timeframe = ? AND query_start = ? AND query_end = ?
+          ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+        )
+        .get(actor, JSON.stringify(symbols), timeframe, start, end) as
+        | { id: string }
+        | null;
+      return row ? this.getStrategyBarDataset(row.id) : null;
+    },
+    strategyBarDatasets(actor: string, limit = 20) {
+      if (!actor || !Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new Error("Strategy bar dataset query is out of range");
+      return (
+        db
+          .query(
+            `SELECT id, actor, provider, feed, timezone, timeframe, symbols,
+            query_start AS start, query_end AS end, dataset_hash AS datasetHash,
+            previous_dataset_id AS previousDatasetId, stats, created_at AS createdAt
+            FROM strategy_bar_datasets WHERE actor = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+          )
+          .all(actor, limit) as any[]
+      ).map((row) => mapStrategyBarDatasetRow(row));
+    },
     strategyBacktest(input: StrategyBacktestInput) {
       const provenance = parseStrategyProvenance(input.provenance);
       if (
