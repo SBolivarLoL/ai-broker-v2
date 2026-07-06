@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `7da0609` on 2026-07-07.
+Code baseline reviewed: `main` at `4ee0978` on 2026-07-07.
 
 ## Quick start
 
@@ -50,7 +50,7 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
 - Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered bounded paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, promotion evidence gates, and reports.
-- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, and a source/output governance registry.
+- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, a source/output governance registry, and local provider/dataset quality reporting.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
 
@@ -71,6 +71,7 @@ Feature routes are independently owned, persistence uses ordered migrations, and
 | Automated checks      | The standard and focused safety suites pass; strict TypeScript covers `backend/`, `tests/`, and `scripts/`                                                          |
 | Instrumented coverage | The reviewed deterministic-module mean passes the 95% function and 96% line floors                                                                                  |
 | API composition       | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional |
+| Data quality          | Provider health and strategy dataset quality are reported from local events and immutable dataset stats; external entitlement review remains separate               |
 | Browser               | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite                                                        |
 | Persistence           | Transactional migrations through 0014 and a serialized fixture restore pass, including versioned strategy datasets                                                  |
 | Production            | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open                                                                   |

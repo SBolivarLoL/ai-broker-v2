@@ -6,7 +6,8 @@ import {
 } from "../../http/http";
 import { secUserAgentFromEnv } from "../../integrations/sec-edgar";
 import type { createStore } from "../../persistence/store";
-import { buildDataGovernanceReport } from "./data-governance";
+import { buildDataGovernanceReport, DATA_GOVERNANCE_SOURCES } from "./data-governance";
+import { buildDataQualityReport } from "./data-quality";
 import {
   buildClosedBetaEvidenceReport,
   buildProductionGovernanceReport,
@@ -258,6 +259,19 @@ export async function handleOperationsRequest(
     request.method === "GET"
   ) {
     return json(buildDataGovernanceReport());
+  }
+
+  if (
+    url.pathname === "/api/operations/data-quality" &&
+    request.method === "GET"
+  ) {
+    return json(
+      buildDataQualityReport({
+        sources: DATA_GOVERNANCE_SOURCES,
+        events: store.events(1_000),
+        datasets: store.strategyBarDatasets(actor, 100).filter(Boolean),
+      }),
+    );
   }
 
   if (

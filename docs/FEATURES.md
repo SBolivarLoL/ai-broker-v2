@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `7da0609`: 2026-07-07.
+Last reviewed against `main` commit `4ee0978`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -91,6 +91,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, and the strategy scheduler. Runtime jobs are idempotent where implemented but not durable across restarts.
 - The schema has 14 ordered migrations and 23 application tables including migration history. Serialized backup export includes a SHA-256 digest; fixture restore, versioned dataset recovery, and both audit chains are tested.
 - The source/output governance registry has 16 sources and 12 stored-output categories. It records policy decisions but does not enforce retention deletion or constitute external terms approval.
+- `GET /api/operations/data-quality` reports provider health from local success, failure, stale-data, and throttling events, plus actor-scoped strategy dataset quality from immutable dataset stats: freshness, completeness, gaps, schema failures, duplicate rate, revisions, and last-success timestamps. It is operational evidence, not live provider probing or external entitlement approval.
 
 ## Safety and authorization
 
@@ -105,6 +106,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - Mutation bodies are bounded, mutation origins are checked, broker DTOs are allow-listed, output is escaped, and sensitive routes are rate limited.
 - The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
 - `/api/operations/data-governance` inventories 16 provider/derived sources and all 23 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
+- `/api/operations/data-quality` surfaces provider and stored-dataset quality evidence from local observations so degraded, throttled, stale, unobserved, warning, and failed states are visible before relying on new decisions.
 
 ## Data flow
 
@@ -141,6 +143,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
+- Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
