@@ -10,13 +10,41 @@ const bars = [
 
 test("backtests cash and buy-and-hold baselines with costs", () => {
   const cash = runBacktest({ strategyId: "cash", bars, strategy: cashStrategy, initialCash: 1000 });
-  expect(cash).toMatchObject({ finalEquity: 1000, totalReturnPercent: 0, turnover: 0, exposureTimePercent: 0 });
+  expect(cash).toMatchObject({
+    finalEquity: 1000,
+    totalReturnPercent: 0,
+    turnover: 0,
+    exposureTimePercent: 0,
+    tradeMetrics: {
+      tradeCount: 0,
+      positionEpisodeCount: 0,
+      roundTripCount: 0,
+      grossReturnPercent: 0,
+      netReturnPercent: 0,
+      hitRatePercent: null,
+    },
+  });
 
   const hold = runBacktest({ strategyId: "buy-and-hold", bars, strategy: buyAndHoldStrategy, initialCash: 1000, feeBps: 10, slippageBps: 0 });
   expect(hold.finalEquity).toBeCloseTo(1198.907947);
   expect(hold.totalCost).toBeCloseTo(1);
   expect(hold.turnoverPercent).toBeCloseTo(100.1001);
   expect(hold.maxDrawdownPercent).toBeGreaterThan(0);
+  expect(hold.tradeMetrics).toMatchObject({
+    tradeCount: 2,
+    positionEpisodeCount: 1,
+    roundTripCount: 0,
+    hitRatePercent: null,
+    netReturnPercent: hold.totalReturnPercent,
+    turnoverPercent: hold.turnoverPercent,
+    exposureTimePercent: 100,
+    capacityWarnings: ["high_exposure_capacity_risk"],
+  });
+  expect(hold.tradeMetrics.grossReturnPercent).toBeGreaterThan(
+    hold.tradeMetrics.netReturnPercent,
+  );
+  expect(hold.tradeMetrics.averageHoldingBars).toBe(4);
+  expect(hold.tradeMetrics.averageHoldingDays).toBe(3);
 });
 
 test("backtest strategy records decisions, features and bounded exposure", () => {
@@ -100,6 +128,44 @@ test("backtest evaluation warmup exposes history without scoring train bars", ()
       evaluationStartIndex: 5,
     }),
   ).toThrow("evaluation start");
+});
+
+test("backtest trade metrics summarize episodes, downside risk and capacity warnings", () => {
+  const choppyBars = [100, 110, 90, 90, 100, 95].map((close, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+    close,
+  }));
+  const result = runBacktest({
+    strategyId: "episode-metrics",
+    bars: choppyBars,
+    initialCash: 1_000,
+    feeBps: 0,
+    slippageBps: 0,
+    strategy(_history, index) {
+      return {
+        targetExposure: [1, 1, 0, 1, 1, 0][index]!,
+        reason: "test exposure schedule",
+      };
+    },
+  });
+
+  expect(result.tradeMetrics).toMatchObject({
+    tradeCount: 4,
+    positionEpisodeCount: 2,
+    roundTripCount: 2,
+    hitRatePercent: 50,
+    averageHoldingBars: 3,
+    averageHoldingDays: 2,
+    turnoverPercent: result.turnoverPercent,
+    exposureTimePercent: result.exposureTimePercent,
+    capacityWarnings: ["high_turnover_capacity_risk", "high_trade_frequency_capacity_risk"],
+  });
+  expect(result.tradeMetrics.averageWinPercent).toBeCloseTo(5.555555);
+  expect(result.tradeMetrics.averageLossPercent).toBeCloseTo(-10);
+  expect(result.tradeMetrics.profitFactor).toBeCloseTo(0.555555);
+  expect(result.tradeMetrics.downsideDeviationPercent).toBeGreaterThan(0);
+  expect(result.tradeMetrics.sortinoRatio).toBeLessThan(1);
+  expect(result.tradeMetrics.calmarRatio).not.toBeNull();
 });
 
 test("time-sliced accumulation ramps exposure deterministically", () => {
