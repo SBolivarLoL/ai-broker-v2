@@ -617,6 +617,12 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
         exposureTimePercent: expect.any(Number),
         capacityWarnings: expect.any(Array),
       },
+      uncertainty: {
+        status: "insufficient_data",
+        method: "moving_block_bootstrap",
+        sampleSize: 3,
+        rankingUse: "not_rankable",
+      },
     },
     provenance: { datasetHash },
   });
@@ -643,7 +649,15 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
     datasetId,
     walkForwardEvaluation: {
       candidateCount: 2,
-      aggregate: { foldCount: 1, testBars: 1 },
+      aggregate: {
+        foldCount: 1,
+        testBars: 1,
+        uncertainty: {
+          status: "insufficient_data",
+          method: "moving_block_bootstrap",
+          rankingUse: "not_rankable",
+        },
+      },
       leakageChecks: { allPassed: true },
       folds: [{
         train: { bars: 2 },
@@ -651,6 +665,7 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
         selectedParams: { slices: expect.any(Number), maxExposure: 1 },
         testResult: {
           tradeMetrics: { tradeCount: expect.any(Number) },
+          uncertainty: { status: "insufficient_data" },
           points: [{ timestamp: expect.any(String) }],
         },
       }],
@@ -665,7 +680,10 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
     id: walkForwardBacktestId,
     result: {
       walkForwardEvaluation: {
-        aggregate: { foldCount: 1 },
+        aggregate: {
+          foldCount: 1,
+          uncertainty: { status: "insufficient_data" },
+        },
         leakageChecks: { allPassed: true },
       },
     },

@@ -1,4 +1,5 @@
 import {
+  buildReturnUncertainty,
   parseStrategyParams,
   runBacktest,
   strategyFunctionFromPlugin,
@@ -526,6 +527,9 @@ export function runWalkForwardEvaluation(input: {
             sum + fold.testResult.exposureTimePercent * fold.test.bars,
           0,
         ) / testBars,
+      uncertainty: buildReturnUncertainty(
+        validationObservations.map((observation) => observation.return),
+      ),
     },
     leakageChecks: {
       allPassed:

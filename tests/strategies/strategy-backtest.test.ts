@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -23,6 +23,15 @@ test("backtests cash and buy-and-hold baselines with costs", () => {
       netReturnPercent: 0,
       hitRatePercent: null,
     },
+    uncertainty: {
+      status: "insufficient_data",
+      method: "moving_block_bootstrap",
+      sampleSize: 4,
+      minimumSampleSize: 20,
+      totalReturnPercent: null,
+      maxDrawdownPercent: null,
+      rankingUse: "not_rankable",
+    },
   });
 
   const hold = runBacktest({ strategyId: "buy-and-hold", bars, strategy: buyAndHoldStrategy, initialCash: 1000, feeBps: 10, slippageBps: 0 });
@@ -45,6 +54,54 @@ test("backtests cash and buy-and-hold baselines with costs", () => {
   );
   expect(hold.tradeMetrics.averageHoldingBars).toBe(4);
   expect(hold.tradeMetrics.averageHoldingDays).toBe(3);
+});
+
+test("backtest uncertainty ranges use deterministic moving-block bootstrap", () => {
+  const trend = Array.from({ length: 30 }, (_, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+    close: 100 + index + (index % 5 === 0 ? -3 : 2),
+  }));
+  const result = runBacktest({
+    strategyId: "buy-and-hold",
+    bars: trend,
+    strategy: buyAndHoldStrategy,
+    initialCash: 1_000,
+    feeBps: 0,
+    slippageBps: 0,
+  });
+
+  expect(result.uncertainty).toMatchObject({
+    status: "available",
+    method: "moving_block_bootstrap",
+    confidenceLevel: 0.9,
+    lowerPercentile: 5,
+    upperPercentile: 95,
+    sampleSize: 30,
+    minimumSampleSize: 20,
+    resamples: 500,
+    blockLength: 6,
+    rankingUse: "not_rankable",
+  });
+  expect(result.uncertainty.totalReturnPercent?.pointEstimate).toBeCloseTo(
+    result.totalReturnPercent,
+  );
+  expect(result.uncertainty.totalReturnPercent!.lowerPercentile).toBeLessThanOrEqual(
+    result.uncertainty.totalReturnPercent!.median,
+  );
+  expect(result.uncertainty.totalReturnPercent!.median).toBeLessThanOrEqual(
+    result.uncertainty.totalReturnPercent!.upperPercentile,
+  );
+  expect(result.uncertainty.maxDrawdownPercent?.pointEstimate).toBeCloseTo(
+    result.maxDrawdownPercent,
+  );
+
+  expect(buildReturnUncertainty([0.01, -0.02])).toMatchObject({
+    status: "insufficient_data",
+    sampleSize: 2,
+    blockLength: null,
+    totalReturnPercent: null,
+    maxDrawdownPercent: null,
+  });
 });
 
 test("backtest strategy records decisions, features and bounded exposure", () => {

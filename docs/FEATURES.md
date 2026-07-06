@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `4c77ba8`: 2026-07-07.
+Last reviewed against `main` commit `3b44428`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -71,6 +71,7 @@ The browser exposes seven workspaces:
 - Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence. Relative strength derives the opposite BTC/ETH peer from the ordered symbol pair rather than accepting a second peer override.
 - Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, exact normalized dataset hashes, and legacy train/test boundary segmentation.
 - Backtest results include deterministic trade metrics: material simulated order count, position episodes, closed round trips, average holding bars/days, gross and net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings for high turnover, high trade frequency, or high exposure.
+- Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
 - Genuine rolling or anchored walk-forward evaluation over a caller-declared set of 1-20 canonical parameter candidates. Each fold ranks candidates only on its training bars, freezes the winner, warms indicators without scoring train execution, evaluates only the untouched test bars, and reports candidate scores, exact boundaries, out-of-sample results/aggregates, and leakage checks. Optional final holdouts are excluded from all fold selection and then scored once with parameters selected from pre-holdout history; optional caller-declared regime slices summarize validation and holdout observations separately. Work is bounded to 100 folds and 2,000,000 evaluated bars; multi-symbol histories must be timestamp-synchronized.
 - Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
 - Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
@@ -137,7 +138,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 ## Current limitations
 
 - Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
-- Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives, uncertainty ranges, and protection against a human choosing candidates after inspecting the period remain open.
+- Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.

@@ -138,6 +138,12 @@ test("selects on train bars only and freezes parameters across untouched test ba
     },
     testResult: { points: [{ timestamp: "2026-01-05T00:00:00.000Z" }, { timestamp: "2026-01-06T00:00:00.000Z" }] },
   });
+  expect(fallingTest.aggregate.uncertainty).toMatchObject({
+    status: "insufficient_data",
+    method: "moving_block_bootstrap",
+    sampleSize: 2,
+    rankingUse: "not_rankable",
+  });
   expect(risingTest.folds[0]?.selectedCandidateHash).toBe(
     fallingTest.folds[0]?.selectedCandidateHash,
   );
@@ -261,6 +267,10 @@ test("keeps final holdout out of selection and reports regime slices separately"
     allPassed: true,
     holdoutExcludedFromAllCandidateScoring: true,
     regimeSlicesDoNotAffectSelection: true,
+  });
+  expect(fallingHoldout.aggregate.uncertainty).toMatchObject({
+    status: "insufficient_data",
+    sampleSize: 2,
   });
 });
 
