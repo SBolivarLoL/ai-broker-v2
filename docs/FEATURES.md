@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `f147459`: 2026-07-06.
+Last reviewed against `main` commit `356cc96`: 2026-07-06.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -70,6 +70,8 @@ The browser exposes seven workspaces:
 
 - Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence. Relative strength derives the opposite BTC/ETH peer from the ordered symbol pair rather than accepting a second peer override.
 - Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, optional walk-forward window segmentation, and exact normalized dataset hashes.
+- Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
+- Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
 - Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable, and a changed commit or definition requires a new reviewed backtest.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls.
@@ -83,7 +85,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - `GET /health` reports process liveness. `GET /ready` additionally requires preview signing, production security configuration when applicable, a valid SEC identity, and a reachable Alpaca paper account.
 - Startup resolves an exact 40-character Git commit and working-tree state. Packaged deployments without `.git` metadata must provide `APP_GIT_COMMIT`; `APP_GIT_DIRTY=1` keeps results auditable but non-comparable.
 - One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, and the strategy scheduler. Runtime jobs are idempotent where implemented but not durable across restarts.
-- The schema has 13 ordered migrations and 21 application tables including migration history. Serialized backup export includes a SHA-256 digest; fixture restore and both audit chains are tested.
+- The schema has 14 ordered migrations and 23 application tables including migration history. Serialized backup export includes a SHA-256 digest; fixture restore, versioned dataset recovery, and both audit chains are tested.
 - The source/output governance registry has 16 sources and 12 stored-output categories. It records policy decisions but does not enforce retention deletion or constitute external terms approval.
 
 ## Safety and authorization
@@ -98,7 +100,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - Production authorization trusts only verified proxy headers and roles: `viewer`, `researcher`, `trader`, `operator`, and `admin`.
 - Mutation bodies are bounded, mutation origins are checked, broker DTOs are allow-listed, output is escaped, and sensitive routes are rate limited.
 - The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
-- `/api/operations/data-governance` inventories 16 provider/derived sources and all 21 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
+- `/api/operations/data-governance` inventories 16 provider/derived sources and all 23 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
 
 ## Data flow
 
@@ -132,9 +134,9 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 ## Current limitations
 
-- Backtest history is currently bounded to 90 days by both the server and Strategy Lab input, which is too short to establish robustness across long market regimes.
+- Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
 - “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
-- Backtests remain bounded to a single provider request and are not yet backed by a versioned long-history dataset; a stored hash proves exact input identity, not completeness or point-in-time correctness.
+- Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.

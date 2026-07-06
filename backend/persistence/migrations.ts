@@ -344,6 +344,47 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
       ]);
     },
   },
+  {
+    id: "0014",
+    name: "versioned crypto bar datasets",
+    checksum: "sha256:versioned-crypto-bar-datasets-v1",
+    up(db) {
+      run(db, [
+        `CREATE TABLE strategy_bar_datasets (
+          id TEXT PRIMARY KEY,
+          actor TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          feed TEXT NOT NULL,
+          timezone TEXT NOT NULL CHECK(timezone = 'UTC'),
+          timeframe TEXT NOT NULL,
+          symbols TEXT NOT NULL,
+          query_start TEXT NOT NULL,
+          query_end TEXT NOT NULL,
+          dataset_hash TEXT NOT NULL,
+          previous_dataset_id TEXT REFERENCES strategy_bar_datasets(id),
+          stats TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(actor, dataset_hash)
+        )`,
+        "CREATE INDEX strategy_bar_datasets_query ON strategy_bar_datasets(actor, timeframe, query_start, query_end, created_at DESC)",
+        `CREATE TABLE strategy_bars (
+          dataset_id TEXT NOT NULL REFERENCES strategy_bar_datasets(id) ON DELETE CASCADE,
+          symbol TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          open REAL NOT NULL,
+          high REAL NOT NULL,
+          low REAL NOT NULL,
+          close REAL NOT NULL,
+          volume REAL NOT NULL,
+          vwap REAL,
+          trade_count INTEGER,
+          content_hash TEXT NOT NULL,
+          PRIMARY KEY (dataset_id, symbol, observed_at)
+        )`,
+        "CREATE INDEX strategy_bars_symbol_time ON strategy_bars(symbol, observed_at)",
+      ]);
+    },
+  },
 ];
 
 export function migrateDatabase(

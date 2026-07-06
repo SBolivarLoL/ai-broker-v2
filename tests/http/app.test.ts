@@ -23,6 +23,8 @@ type FakeAlpacaOptions = {
   placementStatus?: string;
   accountEquity?: number;
   optionActionError?: Error;
+  cryptoBarsError?: Error;
+  cryptoBars?: (request: any) => Record<string, any[]>;
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
@@ -32,6 +34,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   const cancellationAttempts: string[] = [];
   const replacementAttempts: any[] = [];
   const optionActionAttempts: { action: string; symbol: string }[] = [];
+  const cryptoBarRequests: any[] = [];
   const acceptedOrders = new Map<string, any>();
   const orderStreamCallbacks: Record<string, (...args: any[]) => void> = {};
   const orderStream = {
@@ -95,12 +98,16 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
           [optionSymbols[1]]: { latestQuote: { bp: 0.1, ap: 0.2 } },
         } }),
       },
-      getCryptoBars: async () => ({
-        "BTC/USD": [
-          { t: "2026-01-01T00:00:00.000Z", o: 100, h: 102, l: 99, c: 101, v: 10 },
-          { t: "2026-01-01T01:00:00.000Z", o: 101, h: 103, l: 100, c: 102, v: 12 },
-        ],
-      }),
+      getCryptoBars: async (request: any) => {
+        cryptoBarRequests.push(request);
+        if (options.cryptoBarsError) throw options.cryptoBarsError;
+        return options.cryptoBars?.(request) ?? {
+          "BTC/USD": [
+            { t: "2026-01-01T00:00:00.000Z", o: 100, h: 102, l: 99, c: 101, v: 10 },
+            { t: "2026-01-01T01:00:00.000Z", o: 101, h: 103, l: 100, c: 102, v: 12 },
+          ],
+        };
+      },
       crypto: {
         cryptoSnapshots: async () => {
           const timestamp = new Date().toISOString();
@@ -215,6 +222,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     cancellationAttempts,
     replacementAttempts,
     optionActionAttempts,
+    cryptoBarRequests,
     emitOrderStreamState: (state: string) => orderStreamCallbacks.state?.(state),
     emitTradeUpdate: (clientOrderId: string, status: string) => {
       const order = acceptedOrders.get(clientOrderId);
@@ -233,7 +241,7 @@ function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpa
   // Relaxed auth is opt-in; default test apps to the development/test path so
   // demo-identity contracts hold unless a test supplies its own NODE_ENV.
   const resolvedEnv = { NODE_ENV: "test", ...env };
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -246,10 +254,14 @@ const productionEnv = {
   SEC_USER_AGENT: "ai-broker-v2 ops@example.com",
 };
 
-function productionHeaders(role: string, mutation = false) {
+function productionHeaders(
+  role: string,
+  mutation = false,
+  email = "advisor@example.com",
+) {
   return {
     "x-auth-proxy-secret": productionEnv.AUTH_PROXY_SECRET,
-    "x-auth-request-email": "advisor@example.com",
+    "x-auth-request-email": email,
     "x-auth-request-roles": role,
     ...(mutation ? { origin: productionEnv.APP_ORIGIN, "content-type": "application/json" } : {}),
   };
@@ -391,6 +403,186 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   }));
   expect(run.status).toBe(400);
   expect(await run.json()).toEqual({ error: "Invalid cash parameters: Unrecognized key: \"exposure\"" });
+});
+
+test("strategy dataset API ingests chunked history and powers a stored-data backtest", async () => {
+  const app = testApp({}, {
+    cryptoBars: (request) => ({
+      "BTC/USD": [
+        {
+          t: new Date(request.start).toISOString(),
+          o: 100,
+          h: 102,
+          l: 99,
+          c: 101,
+          v: 10,
+        },
+      ],
+    }),
+  });
+  const datasetRequest = {
+    symbols: ["BTC/USD"],
+    timeframe: "1Day",
+    start: "2025-01-01T00:00:00.000Z",
+    end: "2025-07-20T00:00:00.000Z",
+  };
+  const ingest = await app.fetch(new Request("http://local/api/strategy/datasets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(datasetRequest),
+  }));
+  expect(ingest.status).toBe(201);
+  const ingested = await ingest.json() as any;
+  const datasetId = String(ingested.dataset.id);
+  const datasetHash = String(ingested.dataset.datasetHash);
+  expect(ingested).toMatchObject({
+    reused: false,
+    chunks: 3,
+    dataset: {
+      id: expect.any(String),
+      timezone: "UTC",
+      stats: { acceptedBars: 3 },
+      datasetHash: expect.stringMatching(/^sha256:/),
+    },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(3);
+
+  const repeated = await app.fetch(new Request("http://local/api/strategy/datasets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(datasetRequest),
+  }));
+  expect(repeated.status).toBe(200);
+  expect(await repeated.json()).toMatchObject({
+    reused: true,
+    dataset: { id: datasetId, datasetHash },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(6);
+
+  const detail = await app.fetch(new Request(`http://local/api/strategy/datasets/${datasetId}?includeBars=1`));
+  expect(detail.status).toBe(200);
+  expect(await detail.json()).toMatchObject({ id: datasetId, bars: [{ symbol: "BTC/USD" }, { symbol: "BTC/USD" }, { symbol: "BTC/USD" }] });
+
+  const backtestResponse = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ datasetId, strategyId: "buy-and-hold", params: {} }),
+  }));
+  expect(backtestResponse.status).toBe(201);
+  const backtest = await backtestResponse.json() as any;
+  expect(backtest.result.points).toHaveLength(3);
+  expect(backtest).toMatchObject({
+    datasetId,
+    result: { strategyId: "buy-and-hold" },
+    provenance: { datasetHash },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(6);
+
+  const runResponse = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      datasetId,
+      backtestId: backtest.backtestId,
+      strategyId: "buy-and-hold",
+      params: {},
+    }),
+  }));
+  expect(runResponse.status).toBe(201);
+  expect(await runResponse.json()).toMatchObject({
+    backtestId: backtest.backtestId,
+    config: { datasetId, days: 90 },
+    provenance: { datasetHash },
+  });
+});
+
+test("strategy dataset provider failures remain sanitized", async () => {
+  const app = testApp({}, { cryptoBarsError: new Error("private dataset provider failure") });
+  const response = await app.fetch(new Request("http://local/api/strategy/datasets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      timeframe: "1Day",
+      start: "2025-01-01T00:00:00.000Z",
+      end: "2025-07-20T00:00:00.000Z",
+    }),
+  }));
+  expect(response.status).toBe(502);
+  expect(await response.json()).toEqual({ error: "The broker service could not complete the request" });
+});
+
+test("strategy dataset API keeps versions actor-scoped", async () => {
+  const app = testApp(productionEnv);
+  const ingest = await app.fetch(new Request("https://broker.example.com/api/strategy/datasets", {
+    method: "POST",
+    headers: productionHeaders("operator", true),
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      timeframe: "1Day",
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-03T00:00:00.000Z",
+    }),
+  }));
+  expect(ingest.status).toBe(201);
+  const datasetId = String((await ingest.json() as any).dataset.id);
+  const otherActor = await app.fetch(new Request(
+    `https://broker.example.com/api/strategy/datasets/${datasetId}?includeBars=1`,
+    { headers: productionHeaders("operator", false, "other@example.com") },
+  ));
+  expect(otherActor.status).toBe(404);
+  expect(await otherActor.json()).toEqual({ error: "Strategy dataset not found" });
+});
+
+test("strategy dataset API creates correction lineage without rewriting history", async () => {
+  let revision = 0;
+  const app = testApp({}, {
+    cryptoBars: (request) => ({
+      "BTC/USD": [{
+        t: new Date(request.start).toISOString(),
+        o: 100 + revision,
+        h: 102 + revision,
+        l: 99 + revision,
+        c: 101 + revision,
+        v: 10,
+      }],
+    }),
+  });
+  const ingest = () => app.fetch(new Request("http://local/api/strategy/datasets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      timeframe: "1Day",
+      start: "2025-01-01T00:00:00.000Z",
+      end: "2025-07-20T00:00:00.000Z",
+    }),
+  }));
+  const initialResponse = await ingest();
+  expect(initialResponse.status).toBe(201);
+  const initial = await initialResponse.json() as any;
+  const initialId = String(initial.dataset.id);
+  const initialHash = String(initial.dataset.datasetHash);
+
+  revision = 1;
+  const correctedResponse = await ingest();
+  expect(correctedResponse.status).toBe(201);
+  const corrected = await correctedResponse.json() as any;
+  expect(corrected.dataset).toMatchObject({
+    previousDatasetId: initialId,
+    stats: { addedBars: 0, correctedBars: 3, removedBars: 0 },
+  });
+  expect(corrected.dataset.datasetHash).not.toBe(initialHash);
+
+  const originalResponse = await app.fetch(new Request(
+    `http://local/api/strategy/datasets/${initialId}?includeBars=1`,
+  ));
+  expect(originalResponse.status).toBe(200);
+  expect(await originalResponse.json()).toMatchObject({
+    id: initialId,
+    datasetHash: initialHash,
+    bars: [{ close: 101 }, { close: 101 }, { close: 101 }],
+  });
 });
 
 async function approvedPaperRun(app: ReturnType<typeof testApp>) {

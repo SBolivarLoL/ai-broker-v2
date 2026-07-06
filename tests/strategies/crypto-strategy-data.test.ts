@@ -3,6 +3,7 @@ import {
   CRYPTO_LOOKBACK_DAYS,
   cryptoBarsDto,
   cryptoSnapshotDto,
+  normalizeCryptoBar,
   parseCryptoLookbackDays,
   parseCryptoSymbols,
   parseCryptoTimeframe,
@@ -69,6 +70,26 @@ test("normalizes historical crypto bars with provenance", () => {
     symbols: ["BTC/USD"],
   });
   expect(dto.bars["BTC/USD"][0]).toMatchObject({ close: 105, tradeCount: 4 });
+});
+
+test("rejects malformed and internally inconsistent historical bars", () => {
+  const valid = {
+    t: "2026-06-24T01:00:00Z",
+    o: 100,
+    h: 110,
+    l: 90,
+    c: 105,
+    v: 12,
+  };
+  expect(normalizeCryptoBar("BTC/USD", valid)).not.toBeNull();
+  for (const invalid of [
+    { ...valid, t: "not-a-date" },
+    { ...valid, h: 99 },
+    { ...valid, l: 106 },
+    { ...valid, v: -1 },
+    { ...valid, n: 1.5 },
+  ])
+    expect(normalizeCryptoBar("BTC/USD", invalid)).toBeNull();
 });
 
 test("normalizes latest crypto snapshots and flags stale data", () => {

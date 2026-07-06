@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `f147459`: 2026-07-06.
+Last reviewed against `main` commit `356cc96`: 2026-07-06.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -63,7 +63,12 @@ boundary also accepts `1Min`, `5Min`, and `4Hour`; all six values are covered
 by the strategy-data input test. The server and Strategy Lab input accept 1-90
 lookback days from one tested constraint contract.
 
-Short windows are fast but fragile. A 90-day maximum is not enough to establish long-term robustness across market regimes.
+Direct provider backtests and live shadow ticks use that 1-90 day boundary.
+The API can separately ingest an immutable stored dataset covering up to 3,650
+days and 500,000 estimated bars. It splits the query into bounded 90-day
+provider requests, then normalizes and stores the result. Stored-dataset
+backtests can therefore exceed 90 days without a fresh provider call; this
+workflow is not yet exposed in the Strategy Lab browser UI.
 
 ### Parameters
 
@@ -146,13 +151,14 @@ The current backtester:
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, and reasons.
 - Can return train/test window boundaries when `trainSize` and `testSize` are supplied.
 - Persists an immutable request, result, baselines, Git/plugin/feature/policy versions, exact query window, provider/feed, and normalized dataset hash.
+- Can use an actor-owned stored dataset by `datasetId`; symbols and timeframe must match, and the backtest reuses its immutable hash without querying Alpaca again.
 - Returns a `backtestId`; a matching clean backtest is required to create a comparable shadow run.
 
 It does not yet:
 
 - Tune on training data and score frozen parameters on test data.
 - Model intrabar execution, queue position, market impact, price improvement, or a full fee schedule.
-- Use more than 90 days from the current API request.
+- Fetch more than 90 days in one provider request; long histories must first use the chunked dataset-ingestion API.
 
 Treat a backtest as a screening tool. A stored hash proves which input was used, not that the input was complete or representative. A useful result earns prospective shadow observation, not a larger budget.
 
@@ -184,7 +190,7 @@ The full snapshot remains in SQLite even when the browser displays a compact sum
 
 ## Data and retention boundary
 
-Strategy experiments persist immutable backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records across eight strategy tables. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
+Strategy experiments persist immutable bar-dataset versions and normalized bars, backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records across ten strategy tables. Dataset versions preserve provider, feed, UTC timezone, query bounds, observed bounds, gaps, rejected bars, duplicate and conflicting-duplicate counts, additions, corrections, removals, predecessor ID, and deterministic content hash. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
 
 Retention metadata does not delete data. There is no automatic pruning job, so a long-running experiment can grow the local SQLite database until an operator removes or archives records under a reviewed policy. Inspect `/api/operations/data-governance` for the current provider and stored-output decisions; external entitlement review remains required before any different user, redistribution, or live use.
 
@@ -223,6 +229,21 @@ Experiment reports include config, assumptions, coverage, metrics, orders, attri
 These examples are for local development, where the demo actor has all roles. Production requests must pass the configured proxy identity and origin boundary.
 
 ```sh
+# Ingest a versioned long-history dataset; HTTP 201 creates a version and an
+# exact repeat returns HTTP 200 with reused=true.
+curl -fsS http://localhost:3000/api/strategy/datasets \
+  -X POST -H 'content-type: application/json' \
+  -d '{"symbols":["BTC/USD"],"timeframe":"1Day","start":"2023-01-01T00:00:00.000Z","end":"2026-01-01T00:00:00.000Z"}'
+
+# List versions or retrieve one with its normalized bars.
+curl -fsS http://localhost:3000/api/strategy/datasets
+curl -fsS 'http://localhost:3000/api/strategy/datasets/DATASET_ID?includeBars=1'
+
+# Backtest the stored version without another provider read.
+curl -fsS http://localhost:3000/api/strategy/backtests \
+  -X POST -H 'content-type: application/json' \
+  -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
+
 # Run a backtest; HTTP 201 returns the immutable backtestId and provenance
 curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
@@ -282,8 +303,9 @@ Before continuing or increasing a paper experiment:
 
 | Problem                   | Check                                                                                                                                            |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Backtest rejected         | Paper credentials, symbol, timeframe, 1-90 day bound, JSON, and finite parameters                                                                |
-| Run creation rejected     | Clean current commit, actor-owned `backtestId`, exact strategy/parameters/timeframe/lookback match, and one valid symbol or bounded BTC/ETH pair |
+| Dataset ingest rejected   | Actor role, supported symbols/timeframe, UTC date range, future-date rule, 3,650-day range, 500,000-bar estimate, provider response, and valid bars |
+| Backtest rejected         | Paper credentials; or actor-owned `datasetId`; symbol, timeframe, JSON, finite parameters, and the direct-query 1-90 day bound                      |
+| Run creation rejected     | Clean current commit, actor-owned `backtestId` and optional `datasetId`, exact strategy/parameters/timeframe/history match, and valid symbol set    |
 | Tick blocked              | Run status, fresh bars/snapshot, approval expiry, spread, budget, loss/drawdown/turnover, cooldown, and kill switch                              |
 | Scheduled tick missing    | Nonzero interval, running server process, due timestamp, and `STRATEGY_SCHEDULER_DISABLED`                                                       |
 | Features unavailable      | Increase history; indicators remain null until enough valid bars exist                                                                           |

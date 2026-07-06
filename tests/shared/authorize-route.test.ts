@@ -26,4 +26,10 @@ test("route authorization keeps operations, trading, and research roles separate
   expect(authorizeRoute(auth("researcher"), "/api/research/runs", "POST")).toBe(
     true,
   );
+  expect(
+    authorizeRoute(auth("operator"), "/api/strategy/datasets", "POST"),
+  ).toBe(true);
+  expect(() =>
+    authorizeRoute(auth("viewer"), "/api/strategy/datasets", "POST"),
+  ).toThrow("Forbidden");
 });

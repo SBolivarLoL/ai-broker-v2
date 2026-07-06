@@ -31,6 +31,7 @@ import { createStrategyStore } from "./strategy-store";
 export type { SchemaMigration } from "./migrations";
 export type {
   StrategyAuditInput,
+  StrategyBarDatasetInput,
   StrategyBacktestInput,
   StrategyDataSnapshotInput,
   StrategyDecisionFilter,

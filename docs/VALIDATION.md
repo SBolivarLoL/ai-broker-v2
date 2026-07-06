@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `f147459`: 2026-07-06.
+Last reviewed against `main` commit `356cc96`: 2026-07-06.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-06                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 295 tests, 0 failures, 1,308 assertions across 74 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 304 tests, 0 failures, 1,359 assertions across 75 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 97.18% functions, 96.25% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.23% functions, 96.31% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                        |
-| TypeScript    | 84 production modules and 73 files under `tests/` plus one coverage-gate test                                      |
-| Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 905 lines; browser behavior split across seven assets |
-| Persistence   | 13 migrations; 21 tables including migration history                                                             |
+| TypeScript    | 86 production modules and 74 files under `tests/` plus one coverage-gate test                                      |
+| Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across seven assets |
+| Persistence   | 14 migrations; 23 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `main`, `origin/main`, and `origin/dev` at `f147459`; no open pull request at audit start                         |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `356cc96`; no open pull request at change start                |
 
 ## Test-layer policy
 
@@ -40,10 +40,10 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | --------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Risk and portfolio math     | High at module level                               | Unit, regression, and portfolio system tests                                                                                                                                                                            | No independent production reconciliation over a long account history                                    |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                      | Credentialed real broker drills remain opt-in                                                           |
-| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable backtest, linked run, dataset hash, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests                   | No genuine out-of-sample walk-forward scoring, versioned long-history dataset, or long paper cohort yet |
-| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0013, legacy upgrade fixture, immutable backtest constraints, rollback/mismatch checks, serialized restore, hash-chain verification, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                      |
-| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests                                                                                                                                                        | Live provider contracts are not run in CI and point-in-time datasets are not persisted                  |
-| Data governance             | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 21 SQLite tables, references, terms URLs, and fail-closed live-use decisions                                                                      | Internal classifications are not legal approval; no automatic retention enforcement exists              |
+| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, linked backtests/runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests            | No genuine out-of-sample walk-forward scoring or long paper cohort yet                                  |
+| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0014, legacy upgrade fixture, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests   | No production-sized restore timing or closed-beta operations drill                                      |
+| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, plus deliberate live Alpaca/SEC reads                                                                                                                  | Live provider contracts are not run in CI and point-in-time fundamentals are not persisted              |
+| Data governance             | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, and fail-closed live-use decisions                                                                      | Internal classifications are not legal approval; no automatic retention enforcement exists              |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                 | Live model/tool orchestration paths have lower coverage and require credentials                         |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                           | Stream callbacks and secondary provider mutation paths remain incomplete                                |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                 | Most provider behavior requires credentials and is not executed in CI                                   |
@@ -54,7 +54,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 The 2026-07-06 audit inspected every tracked Markdown file and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `f147459` plus fresh command output.
+language against `356cc96` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -78,8 +78,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 84 production TypeScript modules, 73 files under
-  `tests/`, one coverage-gate test under `scripts/`, 13 ordered migrations, 21
+- Fresh inventory checks found 86 production TypeScript modules, 74 files under
+  `tests/`, one coverage-gate test under `scripts/`, 14 ordered migrations, 23
   SQLite tables, 16 governance sources, and 12 stored-output categories. Every
   table is assigned exactly once.
 - Strategy API examples were checked against route methods, paths, status
@@ -113,12 +113,19 @@ bun run smoke:comparables
 bun run eval:research
 ```
 
-This checkout had no Alpaca, SEC, OpenAI, FRED, BEA, Finnhub, or OpenFIGI key
-configured. The complete credentialed suite therefore was not run and no
-credentialed availability claim is made.
+This checkout has local Alpaca paper, SEC identity, and OpenAI credentials.
+FRED, BEA, Finnhub, and OpenFIGI keys remain unconfigured. The complete
+credentialed suite was not run; no availability claim is made for optional
+key-gated providers or live OpenAI orchestration in this change.
 
-The read-only checks that do not require private credentials were run:
+The following read-only checks were run:
 
+- `bun run alpaca:doctor` and `bun run smoke:read` passed against the configured
+  paper account and data endpoints without creating or changing orders.
+- A deliberate read-only crypto history check fetched 203 daily BTC/USD bars
+  across three adjacent provider chunks spanning 2025-01-01 through 2025-07-20.
+- `bun run smoke:sec` passed with the configured contact identity for AAPL
+  filings, bounded sections, financial trends, and material-event alerts.
 - `bun run smoke:macro` passed with live Treasury and BLS observations while
   preserving explicit `missing_key` states for FRED and BEA.
 - `bun run smoke:openfigi` passed anonymously and mapped AAPL to canonical FIGI
@@ -170,7 +177,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 The following are not validated and remain open in `roadmap.md`:
 
 1. A timed production-sized restore and a closed-beta operations restore drill.
-2. Versioned long-history, point-in-time datasets and genuine walk-forward strategy evaluation.
+2. Point-in-time research datasets and genuine walk-forward strategy evaluation.
 3. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
 4. External legal/compliance and data-entitlement review.
 5. Separate live deployment architecture and review. Live trading remains unavailable.

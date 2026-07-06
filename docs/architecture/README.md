@@ -108,6 +108,8 @@ The strategy boundary is split by responsibility the same way:
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
 - `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.
 - `strategies/strategy-execution-routes.ts` owns crypto market-data ingest and the signed-preview paper-execution pipeline.
+- `strategies/strategy-dataset-routes.ts` owns bounded long-history crypto-bar ingestion and actor-scoped immutable dataset retrieval.
+- `strategies/strategy-datasets.ts` owns chunk planning, normalization, quality evidence, correction comparison, and deterministic dataset hashing.
 - `strategies/strategy-lifecycle-routes.ts` owns backtests, strategy-run creation, scheduler ticks, and admin mutations (approval, pause, kill, review).
 - `strategies/strategy-reporting-routes.ts` owns read-only run reporting, evidence, and single-run manual ticks.
 - `strategies/strategy-runtime-provenance.ts` owns pure symbol, definition, config-hash, provenance, and audit-snapshot helpers.
@@ -118,7 +120,7 @@ These modules share one strategy runtime and route context and preserve the safe
 Persistence is composed behind the `createStore()` API:
 
 - `persistence/migrations.ts` owns ordered transactional schema changes.
-- `persistence/strategy-store.ts` owns strategy evidence and audit persistence.
+- `persistence/strategy-store.ts` owns strategy datasets, evidence, and audit persistence.
 - `persistence/audit.ts` owns deterministic audit hashing.
 - `persistence/store.ts` composes those pieces with order, portfolio, research, and operations storage.
 

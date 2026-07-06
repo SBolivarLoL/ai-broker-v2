@@ -5,6 +5,7 @@ const expectedTables = [
   "schema_migrations", "events", "submissions", "receipts", "risk_reservations", "plans",
   "trade_journal_entries", "operations_policy", "encrypted_secrets", "decision_audit_log",
   "account_activities", "research_runs", "portfolio_snapshots", "strategy_backtests", "strategy_runs",
+  "strategy_bar_datasets", "strategy_bars",
   "strategy_data_snapshots", "strategy_decisions", "strategy_orders", "strategy_metrics",
   "strategy_notes", "strategy_audit_log",
 ].sort();
