@@ -1,16 +1,16 @@
 # Validation record
 
-Last reviewed against `main` commit `42c4053`: 2026-07-06.
+Last reviewed against `main` commit `a3d5e65`: 2026-07-07.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check              | Result on 2026-07-06                                                              | Scope                                                                                             |
+| Check              | Result on 2026-07-07                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 308 tests, 0 failures, 1,380 assertions across 76 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 312 tests, 0 failures, 1,401 assertions across 76 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 97.27% functions, 96.34% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.27% functions, 96.36% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across seven assets |
 | Persistence   | 14 migrations; 23 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `42c4053`; no open pull request at change start                |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `a3d5e65`; no open pull request at change start                |
 
 ## Test-layer policy
 
@@ -40,7 +40,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | --------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Risk and portfolio math     | High at module level                               | Unit, regression, and portfolio system tests                                                                                                                                                                            | No independent production reconciliation over a long account history                                    |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                      | Credentialed real broker drills remain opt-in                                                           |
-| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling walk-forward scoring/leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No anchored/final holdout, uncertainty ranges, or long paper cohort yet |
+| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No uncertainty ranges, richer trade-level metrics, or long paper cohort yet |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0014, legacy upgrade fixture, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests   | No production-sized restore timing or closed-beta operations drill                                      |
 | Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, plus deliberate live Alpaca/SEC reads                                                                                                                  | Live provider contracts are not run in CI and point-in-time fundamentals are not persisted              |
 | Data governance             | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, and fail-closed live-use decisions                                                                      | Internal classifications are not legal approval; no automatic retention enforcement exists              |
@@ -52,9 +52,9 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 ## Full documentation and repository audit
 
-The 2026-07-06 audit inspected every tracked Markdown file and checked its
+The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `42c4053` plus fresh command output.
+language against `a3d5e65` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -163,6 +163,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Basket submissions reserve every leg before placement, persist complete or partial receipts, preserve HTTP 207 on replay, and do not expose raw broker failure text.
 - Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
 - Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
+- Walk-forward evaluation supports rolling and anchored out-of-sample modes, rejects malformed or overlapping regime slices, keeps candidate selection train-only, excludes final holdouts from fold selection, scores holdouts once with pre-holdout-selected parameters, and reports validation and holdout regime observations separately.
 - BTC/ETH relative strength derives the opposite peer from the ordered symbol pair; an ambiguous `peerSymbol` override is rejected at both the schema and direct API boundaries.
 - Comparable strategy records require an immutable matching backtest and record exact Git/dirty state, plugin/feature/policy versions, query window, provider/feed, and normalized input hashes. Legacy or dirty records cannot be ticked or approved.
 - Missing or stale strategy data cannot pass by absence.
@@ -177,7 +178,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 The following are not validated and remain open in `roadmap.md`:
 
 1. A timed production-sized restore and a closed-beta operations restore drill.
-2. Point-in-time research datasets, anchored/final holdouts, regime slices, and uncertainty-aware strategy evaluation.
+2. Point-in-time research datasets, uncertainty-aware strategy evaluation, and richer trade-level strategy metrics.
 3. At least 30 days of measured paper closed-beta evidence with all eight targets passing.
 4. External legal/compliance and data-entitlement review.
 5. Separate live deployment architecture and review. Live trading remains unavailable.

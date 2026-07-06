@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `42c4053`: 2026-07-06.
+Last reviewed against `main` commit `a3d5e65`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -34,7 +34,7 @@ The process records its Git commit and working-tree state at startup. A dirty ch
 7. Review active performance, fill quality, post-fill attribution, alerts, and baseline comparisons.
 8. Continue, pause, revise, retire, or mark the experiment complete with a written note.
 
-Do not tune repeatedly against the same period and call the final result out of sample. The rolling walk-forward API freezes each fold's train-selected candidate before scoring its test bars, but the candidate set must still be declared before inspecting those test results. Anchored folds and a final untouched holdout remain roadmap work.
+Do not tune repeatedly against the same period and call the final result out of sample. The walk-forward API freezes each fold's train-selected candidate before scoring its test bars and can reserve a final holdout that is not used for any fold selection, but the candidate set must still be declared before inspecting those results.
 
 ## Strategy catalog
 
@@ -150,8 +150,9 @@ The current backtester:
 - Returns strategy and cash/buy-and-hold baseline results.
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, and reasons.
 - Preserves legacy train/test boundary segmentation when top-level `trainSize` and `testSize` are supplied.
-- Runs genuine rolling walk-forward evaluation when `walkForward` supplies `trainSize`, `testSize`, and 1-20 unique parameter candidates. Every fold scores candidates only on train bars, deterministically breaks ties by lower drawdown, lower turnover, and canonical hash, then freezes the winner for untouched test scoring.
-- Resets capital and position for each test fold while warming stateful indicators on its train history. It returns exact timestamp boundaries, canonical candidates and train scores, selected parameters/hash, full test results, compounded out-of-sample return, worst fold drawdown, costs, exposure, and explicit leakage checks.
+- Runs genuine rolling or anchored walk-forward evaluation when `walkForward` supplies `trainSize`, `testSize`, and 1-20 unique parameter candidates. Every fold scores candidates only on train bars, deterministically breaks ties by lower drawdown, lower turnover, and canonical hash, then freezes the winner for untouched test scoring.
+- Accepts optional `mode` (`rolling`, default, or `anchored`), `holdoutSize`, and caller-declared `regimes`. A holdout is removed from the validation-fold universe, never participates in fold selection, and is scored once with parameters selected only from pre-holdout bars. Regime slices are reports only: validation and holdout observations are summarized separately and do not influence selection.
+- Resets capital and position for each test fold while warming stateful indicators on its train history. It returns exact timestamp boundaries, canonical candidates and train scores, selected parameters/hash, full test results, compounded out-of-sample return, worst fold drawdown, costs, exposure, regime slices, final holdout evidence when requested, and explicit leakage checks.
 - Rejects more than 100 folds, more than 2,000,000 evaluated bars, incomplete folds, duplicate canonical candidates, and timestamp-misaligned multi-symbol histories.
 - Persists an immutable request, result, baselines, Git/plugin/feature/policy versions, exact query window, provider/feed, and normalized dataset hash.
 - Can use an actor-owned stored dataset by `datasetId`; symbols and timeframe must match, and the backtest reuses its immutable hash without querying Alpaca again.
@@ -159,8 +160,8 @@ The current backtester:
 
 It does not yet:
 
-- Provide anchored folds, a final untouched holdout, regime slices, alternative selection objectives, or uncertainty ranges.
-- Prevent an operator from designing the candidate set after inspecting the same historical period; preregister candidates and reserve a final holdout.
+- Provide alternative selection objectives or uncertainty ranges.
+- Prevent an operator from designing the candidate set after inspecting the same historical period; preregister candidates and reserve a final holdout before looking at the outcome.
 - Model intrabar execution, queue position, market impact, price improvement, or a full fee schedule.
 - Fetch more than 90 days in one provider request; long histories must first use the chunked dataset-ingestion API.
 
@@ -252,10 +253,11 @@ curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
   -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
 
-# Select only on each train slice and score the frozen winner on its test slice.
+# Select only on each train slice, score the frozen winner on its test slice,
+# then score one untouched final holdout and summarize declared regimes.
 curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
-  -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"walkForward":{"trainSize":365,"testSize":30,"candidates":[{"fast":5,"slow":20,"exposure":1},{"fast":10,"slow":50,"exposure":1},{"fast":20,"slow":100,"exposure":0.5}]}}'
+  -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"walkForward":{"mode":"anchored","trainSize":365,"testSize":30,"holdoutSize":90,"regimes":[{"id":"post-halving","start":"2024-04-20T00:00:00.000Z","end":"2024-10-20T00:00:00.000Z"}],"candidates":[{"fast":5,"slow":20,"exposure":1},{"fast":10,"slow":50,"exposure":1},{"fast":20,"slow":100,"exposure":0.5}]}}'
 
 # Run a backtest; HTTP 201 returns the immutable backtestId and provenance
 curl -fsS http://localhost:3000/api/strategy/backtests \
