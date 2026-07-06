@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `3b44428`: 2026-07-07.
+Last reviewed against `main` commit `54b76c2`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -229,6 +229,8 @@ Run dashboards derive decision count, block rate, stale-data rate, exposure, bud
 Active performance reconstructs strategy cash, units, equity, return, and drawdown from filled strategy orders and subsequent bars. It reports insufficient data rather than estimating when budget, fills, or marks are missing.
 
 Post-fill attribution reports side-aware fill slippage and 1h/1d/7d market moves. Order-book replay uses the decision-time snapshot, up to 25 visible levels, 250 ms assumed submit latency, a five-second maximum latency, and the approval spread cap or 200 bps fallback. Outcomes are `full_fill`, `partial_fill`, `missed_fill`, or `missing_order_book`; these are replay assumptions, not broker fills.
+
+Execution replay also emits `calibration`, a deterministic friction-calibration section derived from accumulated paper receipts and order-book replay evidence. It reports sample sizes for paper orders, receipt fill slippage, explicit fees, order-book replays, spreads, and latencies; summarizes average/p50/p95/max evidence; estimates partial-fill, missed-fill, and missing-book rates; and recommends conservative `feeBps`, `slippageBps`, `maxSpreadBps`, and `assumedOrderLatencyMs`. Cost assumptions use the larger of user/default assumptions and p95 evidence, spread guardrails use the stricter user cap or calibrated spread buffer, and latency uses the larger user or observed p95 assumption. Calibration remains `insufficient_evidence` until at least 20 orders have replay evidence.
 
 Deterministic alerts cover stale feeds, strategy errors, rejected orders, drawdown, turnover, repeated slippage, and reconciliation drift.
 

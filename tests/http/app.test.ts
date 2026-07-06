@@ -878,7 +878,7 @@ test("strategy API persists a reviewed backtest and exact run and decision prove
 });
 
 test("approved strategy paper tick submits one bounded broker order with trace and receipt", async () => {
-  const app = testApp();
+  const app = testApp({}, { recoveredOrderStatus: "filled" });
   const run = await approvedPaperRun(app);
   const response = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/tick`, { method: "POST" }));
   expect(response.status).toBe(200);
@@ -888,6 +888,32 @@ test("approved strategy paper tick submits one bounded broker order with trace a
   expect(app.orderAttempts).toEqual([expect.objectContaining({ symbol: "BTC/USD", side: "buy", notional: 25, timeInForce: "gtc", clientOrderId: expect.any(String) })]);
   expect(app.store.strategyOrders(run.runId)).toMatchObject([{ paperOrderId: result.trace.paperOrderId, status: "accepted", payload: { side: "buy", notional: 25 } }]);
   expect(app.store.getReceipt(receiptId)).toMatchObject({ kind: "strategy_paper_decision", runId: run.runId, submittedOrder: true, paperOrderId: result.trace.paperOrderId });
+  const attributionResponse = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/attribution`));
+  expect(attributionResponse.status).toBe(200);
+  expect(await attributionResponse.json()).toMatchObject({
+    executionReplay: {
+      calibration: {
+        calibrationVersion: "strategy-friction-calibration-v1",
+        status: "insufficient_evidence",
+        sampleSize: {
+          paperOrders: 1,
+          orderBookReplaySamples: 1,
+          spreadSamples: 1,
+          latencySamples: 1,
+        },
+        recommendedAssumptions: {
+          feeBps: expect.any(Number),
+          slippageBps: expect.any(Number),
+          maxSpreadBps: expect.any(Number),
+          assumedOrderLatencyMs: expect.any(Number),
+        },
+        overridePolicy: {
+          costModel: expect.stringContaining("larger"),
+          spreadGuardrail: expect.stringContaining("stricter"),
+        },
+      },
+    },
+  });
 });
 
 test("strategy paper tick records a stable block when broker submission fails", async () => {
