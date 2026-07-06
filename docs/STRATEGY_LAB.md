@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `356cc96`: 2026-07-06.
+Last reviewed against `main` commit `42c4053`: 2026-07-06.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -34,7 +34,7 @@ The process records its Git commit and working-tree state at startup. A dirty ch
 7. Review active performance, fill quality, post-fill attribution, alerts, and baseline comparisons.
 8. Continue, pause, revise, retire, or mark the experiment complete with a written note.
 
-Do not tune repeatedly against the same period and call the final result out of sample. Current walk-forward support only exposes train/test window segmentation; rigorous frozen-parameter scoring remains roadmap work.
+Do not tune repeatedly against the same period and call the final result out of sample. The rolling walk-forward API freezes each fold's train-selected candidate before scoring its test bars, but the candidate set must still be declared before inspecting those test results. Anchored folds and a final untouched holdout remain roadmap work.
 
 ## Strategy catalog
 
@@ -149,18 +149,26 @@ The current backtester:
 - Defaults to $10,000 initial cash, 0 bps fee, and 5 bps slippage.
 - Returns strategy and cash/buy-and-hold baseline results.
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, and reasons.
-- Can return train/test window boundaries when `trainSize` and `testSize` are supplied.
+- Preserves legacy train/test boundary segmentation when top-level `trainSize` and `testSize` are supplied.
+- Runs genuine rolling walk-forward evaluation when `walkForward` supplies `trainSize`, `testSize`, and 1-20 unique parameter candidates. Every fold scores candidates only on train bars, deterministically breaks ties by lower drawdown, lower turnover, and canonical hash, then freezes the winner for untouched test scoring.
+- Resets capital and position for each test fold while warming stateful indicators on its train history. It returns exact timestamp boundaries, canonical candidates and train scores, selected parameters/hash, full test results, compounded out-of-sample return, worst fold drawdown, costs, exposure, and explicit leakage checks.
+- Rejects more than 100 folds, more than 2,000,000 evaluated bars, incomplete folds, duplicate canonical candidates, and timestamp-misaligned multi-symbol histories.
 - Persists an immutable request, result, baselines, Git/plugin/feature/policy versions, exact query window, provider/feed, and normalized dataset hash.
 - Can use an actor-owned stored dataset by `datasetId`; symbols and timeframe must match, and the backtest reuses its immutable hash without querying Alpaca again.
 - Returns a `backtestId`; a matching clean backtest is required to create a comparable shadow run.
 
 It does not yet:
 
-- Tune on training data and score frozen parameters on test data.
+- Provide anchored folds, a final untouched holdout, regime slices, alternative selection objectives, or uncertainty ranges.
+- Prevent an operator from designing the candidate set after inspecting the same historical period; preregister candidates and reserve a final holdout.
 - Model intrabar execution, queue position, market impact, price improvement, or a full fee schedule.
 - Fetch more than 90 days in one provider request; long histories must first use the chunked dataset-ingestion API.
 
 Treat a backtest as a screening tool. A stored hash proves which input was used, not that the input was complete or representative. A useful result earns prospective shadow observation, not a larger budget.
+
+The selection objective is fixed: highest train total return, then lower train drawdown, lower train turnover, and candidate hash. This is reproducible, not automatically statistically sound. Test-fold results never influence selection within that fold, but repeated human edits after seeing test output still contaminate the experiment.
+
+Walk-forward fold winners are evaluation evidence. The ordinary full-period result and any linked shadow run continue to use the top-level `params`; the API does not silently promote a fold-specific winner into execution configuration.
 
 Backtest artifacts are immutable and actor-scoped at retrieval. Run creation checks the exact strategy definition, plugin version, feature schema, dataset hash, and Git commit against the selected backtest. A server restarted on a different commit must produce a new reviewed backtest even when the visible parameters are unchanged.
 
@@ -244,6 +252,11 @@ curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
   -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"initialCash":10000,"slippageBps":5}'
 
+# Select only on each train slice and score the frozen winner on its test slice.
+curl -fsS http://localhost:3000/api/strategy/backtests \
+  -X POST -H 'content-type: application/json' \
+  -d '{"datasetId":"DATASET_ID","strategyId":"moving-average-trend","params":{"fast":5,"slow":20,"exposure":1},"walkForward":{"trainSize":365,"testSize":30,"candidates":[{"fast":5,"slow":20,"exposure":1},{"fast":10,"slow":50,"exposure":1},{"fast":20,"slow":100,"exposure":0.5}]}}'
+
 # Run a backtest; HTTP 201 returns the immutable backtestId and provenance
 curl -fsS http://localhost:3000/api/strategy/backtests \
   -X POST -H 'content-type: application/json' \
@@ -305,6 +318,7 @@ Before continuing or increasing a paper experiment:
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Dataset ingest rejected   | Actor role, supported symbols/timeframe, UTC date range, future-date rule, 3,650-day range, 500,000-bar estimate, provider response, and valid bars |
 | Backtest rejected         | Paper credentials; or actor-owned `datasetId`; symbol, timeframe, JSON, finite parameters, and the direct-query 1-90 day bound                      |
+| Walk-forward rejected     | Canonical unique candidates, complete train/test fold, synchronized symbols, 20-candidate/100-fold/2,000,000-evaluated-bar limits, and no legacy-size mix |
 | Run creation rejected     | Clean current commit, actor-owned `backtestId` and optional `datasetId`, exact strategy/parameters/timeframe/history match, and valid symbol set    |
 | Tick blocked              | Run status, fresh bars/snapshot, approval expiry, spread, budget, loss/drawdown/turnover, cooldown, and kill switch                              |
 | Scheduled tick missing    | Nonzero interval, running server process, due timestamp, and `STRATEGY_SCHEDULER_DISABLED`                                                       |

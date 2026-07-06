@@ -7,6 +7,10 @@ import {
   walkForwardWindows,
 } from "./strategy-backtest";
 import {
+  parseWalkForwardRequest,
+  runWalkForwardEvaluation,
+} from "./strategy-walk-forward";
+import {
   cryptoBarsDto,
   parseCryptoLookbackDays,
   parseCryptoTimeframe,
@@ -49,7 +53,10 @@ export async function handleStrategyLifecycleRequest(
       params: Record<string, unknown>,
       timeframe: string,
       days: number,
-      strategyPlugin;
+      trainSize: number,
+      testSize: number,
+      strategyPlugin,
+      walkForwardRequest: ReturnType<typeof parseWalkForwardRequest>;
     try {
       symbols = runtime.normalizeSymbols(
         strategyId,
@@ -57,6 +64,29 @@ export async function handleStrategyLifecycleRequest(
       );
       params = parseStrategyParams(strategyId, input.params ?? {});
       strategyPlugin = strategyPluginFromId(strategyId, params);
+      if (
+        input.walkForward &&
+        (input.trainSize !== undefined || input.testSize !== undefined)
+      )
+        throw new Error(
+          "Use walkForward or legacy trainSize/testSize, not both",
+        );
+      walkForwardRequest = parseWalkForwardRequest(
+        strategyId,
+        input.walkForward,
+      );
+      trainSize = Number(input.trainSize ?? 0);
+      testSize = Number(input.testSize ?? 0);
+      if (
+        (input.trainSize !== undefined || input.testSize !== undefined) &&
+        (!Number.isInteger(trainSize) ||
+          !Number.isInteger(testSize) ||
+          trainSize < 2 ||
+          testSize < 1)
+      )
+        throw new Error(
+          "Legacy trainSize must be at least 2 and testSize at least 1",
+        );
       timeframe = parseCryptoTimeframe(
         input.timeframe ?? storedDataset?.timeframe,
       );
@@ -163,8 +193,6 @@ export async function handleStrategyLifecycleRequest(
         slippageBps,
       }),
     };
-    const trainSize = Number(input.trainSize ?? 0),
-      testSize = Number(input.testSize ?? 0);
     const walkForward =
       trainSize && testSize
         ? walkForwardWindows(bars, trainSize, testSize).map((window) => ({
@@ -174,6 +202,28 @@ export async function handleStrategyLifecycleRequest(
             testBars: window.test.length,
           }))
         : [];
+    let walkForwardEvaluation = null;
+    try {
+      walkForwardEvaluation = walkForwardRequest
+        ? runWalkForwardEvaluation({
+            strategyId,
+            symbol,
+            bars,
+            barsBySymbol,
+            request: walkForwardRequest,
+            initialCash,
+            feeBps,
+            slippageBps,
+          })
+        : null;
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error
+          ? error.message
+          : "Invalid walk-forward evaluation",
+        400,
+      );
+    }
     const definition = runtime.definition(
       symbols,
       strategyId,
@@ -207,6 +257,7 @@ export async function handleStrategyLifecycleRequest(
       result,
       baselines,
       walkForward,
+      walkForwardEvaluation,
       datasetId,
       asOf: dataset.asOf,
     };
@@ -223,6 +274,7 @@ export async function handleStrategyLifecycleRequest(
         slippageBps,
         trainSize,
         testSize,
+        walkForward: walkForwardRequest,
         datasetId,
       },
       result: output,
@@ -237,6 +289,7 @@ export async function handleStrategyLifecycleRequest(
       totalReturnPercent: result.totalReturnPercent,
       bars: bars.length,
       datasetId,
+      walkForwardFolds: walkForwardEvaluation?.aggregate.foldCount ?? 0,
     });
     return json({ backtestId, provenance, ...output }, 201);
   }
