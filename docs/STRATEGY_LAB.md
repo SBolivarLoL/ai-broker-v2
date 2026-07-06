@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `a3d5e65`: 2026-07-07.
+Last reviewed against `main` commit `4c77ba8`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -148,7 +148,7 @@ The current backtester:
 - Executes target-exposure changes at bar close.
 - Defaults to $10,000 initial cash, 0 bps fee, and 5 bps slippage.
 - Returns strategy and cash/buy-and-hold baseline results.
-- Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, and reasons.
+- Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, reasons, and a `tradeMetrics` object with material order count, position episodes, closed round trips, average holding bars/days, gross/net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings.
 - Preserves legacy train/test boundary segmentation when top-level `trainSize` and `testSize` are supplied.
 - Runs genuine rolling or anchored walk-forward evaluation when `walkForward` supplies `trainSize`, `testSize`, and 1-20 unique parameter candidates. Every fold scores candidates only on train bars, deterministically breaks ties by lower drawdown, lower turnover, and canonical hash, then freezes the winner for untouched test scoring.
 - Accepts optional `mode` (`rolling`, default, or `anchored`), `holdoutSize`, and caller-declared `regimes`. A holdout is removed from the validation-fold universe, never participates in fold selection, and is scored once with parameters selected only from pre-holdout bars. Regime slices are reports only: validation and holdout observations are summarized separately and do not influence selection.

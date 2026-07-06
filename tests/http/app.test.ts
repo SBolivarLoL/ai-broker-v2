@@ -607,7 +607,17 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
   expect(backtest.result.points).toHaveLength(3);
   expect(backtest).toMatchObject({
     datasetId,
-    result: { strategyId: "buy-and-hold" },
+    result: {
+      strategyId: "buy-and-hold",
+      tradeMetrics: {
+        tradeCount: expect.any(Number),
+        grossReturnPercent: expect.any(Number),
+        netReturnPercent: expect.any(Number),
+        turnoverPercent: expect.any(Number),
+        exposureTimePercent: expect.any(Number),
+        capacityWarnings: expect.any(Array),
+      },
+    },
     provenance: { datasetHash },
   });
   expect(app.cryptoBarRequests).toHaveLength(6);
@@ -639,7 +649,10 @@ test("strategy dataset API ingests chunked history and powers a stored-data back
         train: { bars: 2 },
         test: { bars: 1 },
         selectedParams: { slices: expect.any(Number), maxExposure: 1 },
-        testResult: { points: [{ timestamp: expect.any(String) }] },
+        testResult: {
+          tradeMetrics: { tradeCount: expect.any(Number) },
+          points: [{ timestamp: expect.any(String) }],
+        },
       }],
     },
   });

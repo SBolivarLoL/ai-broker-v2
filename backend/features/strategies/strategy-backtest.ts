@@ -16,6 +16,25 @@ export type BacktestDecision = {
 };
 export type BacktestStrategy = (history: BacktestBar[], index: number) => BacktestDecision;
 export type BacktestPoint = { timestamp: string; equity: number; cash: number; units: number; price: number; targetExposure: number; reason: string; tradeNotional: number; cost: number; features?: StrategyFeatureMap; weights?: StrategyFeatureMap; thresholds?: StrategyThresholdMap };
+export type BacktestTradeMetrics = {
+  tradeCount: number;
+  positionEpisodeCount: number;
+  roundTripCount: number;
+  averageHoldingBars: number | null;
+  averageHoldingDays: number | null;
+  grossReturnPercent: number;
+  netReturnPercent: number;
+  downsideDeviationPercent: number;
+  sortinoRatio: number | null;
+  calmarRatio: number | null;
+  profitFactor: number | null;
+  hitRatePercent: number | null;
+  averageWinPercent: number | null;
+  averageLossPercent: number | null;
+  turnoverPercent: number;
+  exposureTimePercent: number;
+  capacityWarnings: string[];
+};
 export type BacktestResult = {
   strategyId: string;
   initialCash: number;
@@ -26,6 +45,7 @@ export type BacktestResult = {
   turnoverPercent: number;
   totalCost: number;
   exposureTimePercent: number;
+  tradeMetrics: BacktestTradeMetrics;
   points: BacktestPoint[];
   assumptions: { feeBps: number; slippageBps: number; execution: "close" };
 };
@@ -185,6 +205,135 @@ function maxDrawdown(equity: number[]) {
   return drawdown * 100;
 }
 
+const finiteOrNull = (value: number) => Number.isFinite(value) ? value : null;
+
+function buildTradeMetrics(input: {
+  points: BacktestPoint[];
+  initialCash: number;
+  finalEquity: number;
+  totalCost: number;
+  turnoverPercent: number;
+  exposureTimePercent: number;
+  maxDrawdownPercent: number;
+}) {
+  const tradeCount = input.points.filter(
+    (point) =>
+      Math.abs(point.tradeNotional) >= Math.max(1e-6, input.initialCash * 0.001),
+  ).length;
+  const returns: number[] = [];
+  let previousEquity = input.initialCash;
+  for (const point of input.points) {
+    returns.push(point.equity / previousEquity - 1);
+    previousEquity = point.equity;
+  }
+  const downsideReturns = returns.filter((value) => value < 0);
+  const downsideDeviationPercent = downsideReturns.length
+    ? Math.sqrt(
+        downsideReturns.reduce((sum, value) => sum + value ** 2, 0) /
+          downsideReturns.length,
+      ) * 100
+    : 0;
+  const averageReturnPercent = returns.length
+    ? (returns.reduce((sum, value) => sum + value, 0) / returns.length) * 100
+    : 0;
+  const sortinoRatio = downsideDeviationPercent > 0
+    ? averageReturnPercent / downsideDeviationPercent
+    : null;
+  const firstTime = new Date(input.points[0]!.timestamp).getTime();
+  const lastTime = new Date(input.points.at(-1)!.timestamp).getTime();
+  const years = Math.max(0, lastTime - firstTime) / (365.25 * 86_400_000);
+  const annualizedReturnPercent = years > 0 && input.finalEquity > 0
+    ? ((input.finalEquity / input.initialCash) ** (1 / years) - 1) * 100
+    : input.finalEquity / input.initialCash * 100 - 100;
+  const calmarRatio = input.maxDrawdownPercent > 0
+    ? annualizedReturnPercent / input.maxDrawdownPercent
+    : null;
+
+  const episodes: {
+    returnPercent: number;
+    bars: number;
+    days: number;
+    closed: boolean;
+  }[] = [];
+  let open:
+    | {
+        startIndex: number;
+        startTime: number;
+        growth: number;
+      }
+    | null = null;
+  previousEquity = input.initialCash;
+  for (let index = 0; index < input.points.length; index++) {
+    const point = input.points[index]!;
+    const pointReturn = point.equity / previousEquity - 1;
+    const exposed = point.targetExposure > 0.01;
+    if (!open && exposed)
+      open = {
+        startIndex: index,
+        startTime: new Date(point.timestamp).getTime(),
+        growth: 1,
+      };
+    if (open) open.growth *= 1 + pointReturn;
+    if (open && !exposed) {
+      const endTime = new Date(point.timestamp).getTime();
+      episodes.push({
+        returnPercent: (open.growth - 1) * 100,
+        bars: index - open.startIndex + 1,
+        days: Math.max(0, endTime - open.startTime) / 86_400_000,
+        closed: true,
+      });
+      open = null;
+    }
+    previousEquity = point.equity;
+  }
+  if (open) {
+    const endTime = new Date(input.points.at(-1)!.timestamp).getTime();
+    episodes.push({
+      returnPercent: (open.growth - 1) * 100,
+      bars: input.points.length - open.startIndex,
+      days: Math.max(0, endTime - open.startTime) / 86_400_000,
+      closed: false,
+    });
+  }
+  const closedEpisodes = episodes.filter((episode) => episode.closed);
+  const wins = closedEpisodes.filter((episode) => episode.returnPercent > 0);
+  const losses = closedEpisodes.filter((episode) => episode.returnPercent < 0);
+  const grossProfit = wins.reduce((sum, episode) => sum + episode.returnPercent, 0);
+  const grossLoss = Math.abs(losses.reduce((sum, episode) => sum + episode.returnPercent, 0));
+  const capacityWarnings = [
+    ...(input.turnoverPercent > 200 ? ["high_turnover_capacity_risk"] : []),
+    ...(tradeCount / input.points.length > 0.5 ? ["high_trade_frequency_capacity_risk"] : []),
+    ...(input.exposureTimePercent > 95 ? ["high_exposure_capacity_risk"] : []),
+  ];
+  return {
+    tradeCount,
+    positionEpisodeCount: episodes.length,
+    roundTripCount: closedEpisodes.length,
+    averageHoldingBars: episodes.length
+      ? episodes.reduce((sum, episode) => sum + episode.bars, 0) / episodes.length
+      : null,
+    averageHoldingDays: episodes.length
+      ? episodes.reduce((sum, episode) => sum + episode.days, 0) / episodes.length
+      : null,
+    grossReturnPercent: ((input.finalEquity + input.totalCost) / input.initialCash - 1) * 100,
+    netReturnPercent: (input.finalEquity / input.initialCash - 1) * 100,
+    downsideDeviationPercent,
+    sortinoRatio: finiteOrNull(sortinoRatio ?? Number.NaN),
+    calmarRatio: finiteOrNull(calmarRatio ?? Number.NaN),
+    profitFactor: grossLoss > 0 ? grossProfit / grossLoss : null,
+    hitRatePercent: closedEpisodes.length ? wins.length / closedEpisodes.length * 100 : null,
+    averageWinPercent: wins.length
+      ? wins.reduce((sum, episode) => sum + episode.returnPercent, 0) / wins.length
+      : null,
+    averageLossPercent: losses.length
+      ? losses.reduce((sum, episode) => sum + episode.returnPercent, 0) / losses.length
+      : null,
+    turnoverPercent: input.turnoverPercent,
+    exposureTimePercent: input.exposureTimePercent,
+    capacityWarnings,
+  };
+}
+
 export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; strategy: BacktestStrategy; initialCash?: number; feeBps?: number; slippageBps?: number; evaluationStartIndex?: number }): BacktestResult {
   const bars = normalizeBars(input.bars);
   const initialCash = input.initialCash ?? 10_000, feeBps = input.feeBps ?? 0, slippageBps = input.slippageBps ?? 5;
@@ -214,16 +363,29 @@ export function runBacktest(input: { strategyId: string; bars: BacktestBar[]; st
     points.push({ timestamp: bar.timestamp.toISOString(), equity, cash, units, price: bar.close, targetExposure, reason: decision.reason, tradeNotional, cost, features: decision.features, weights: decision.weights, thresholds: decision.thresholds });
   }
   const finalEquity = points.at(-1)!.equity;
+  const totalReturnPercent = (finalEquity / initialCash - 1) * 100;
+  const maxDrawdownPercent = maxDrawdown(points.map(point => point.equity));
+  const turnoverPercent = turnover / initialCash * 100;
+  const exposureTimePercent = exposed / points.length * 100;
   return {
     strategyId: input.strategyId,
     initialCash,
     finalEquity,
-    totalReturnPercent: (finalEquity / initialCash - 1) * 100,
-    maxDrawdownPercent: maxDrawdown(points.map(point => point.equity)),
+    totalReturnPercent,
+    maxDrawdownPercent,
     turnover,
-    turnoverPercent: turnover / initialCash * 100,
+    turnoverPercent,
     totalCost,
-    exposureTimePercent: exposed / points.length * 100,
+    exposureTimePercent,
+    tradeMetrics: buildTradeMetrics({
+      points,
+      initialCash,
+      finalEquity,
+      totalCost,
+      turnoverPercent,
+      exposureTimePercent,
+      maxDrawdownPercent,
+    }),
     points,
     assumptions: { feeBps, slippageBps, execution: "close" },
   };
