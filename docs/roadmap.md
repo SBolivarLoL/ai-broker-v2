@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `7da0609`: 2026-07-07.
+Last reviewed against `main` commit `4ee0978`: 2026-07-07.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -22,7 +22,7 @@ The 2026-07-06 audit found a capable deterministic core and a large difference b
 | Instrumented coverage | The reviewed deterministic-module boundary passes its floors                                                                  | Floors remain 95% functions and 96% lines; exact results live in `VALIDATION.md`                            |
 | Dependency audit      | No known vulnerabilities                                                                                                       | `bun audit` passes; the dated result lives in `VALIDATION.md`                                               |
 | Execution             | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy                                                                                         | Strong fail-closed order boundary                                                                                                                                         |
-| Research data         | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI                                                                                                         | The registry covers 16 sources and all 23 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
+| Research data         | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI                                                                                                         | The registry covers 16 sources and all 23 SQLite tables through 12 output categories; provider health and strategy dataset quality are visible from local evidence, while retention enforcement and external entitlement review remain open |
 | Strategy research     | Nine deterministic plugins, immutable linked backtests, versioned long-history crypto bars, rolling/anchored train-only walk-forward evaluation with final holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered shadow/paper runs, traces and attribution                      | Exact lineage, per-fold leakage checks, final-holdout isolation, report-only regime summaries, deterministic trade metrics, not-rankable bootstrap uncertainty evidence, paper-friction calibration, protocol-gated approval, promotion evidence gates, and compatibility warnings are enforced; long paper evidence remains open                                  |
 | Operations            | OIDC proxy contract, roles, encrypted envelopes, ordered migrations, backup/export endpoints, audit chains, beta report                                                                                 | Fixture upgrade/restore is proven; production-sized and closed-beta drills remain external work                                                                           |
 | Live trading          | Unavailable by construction                                                                                                                                                                             | Remains blocked by legal, data, beta, and deployment reviews                                                                                                              |
@@ -89,7 +89,7 @@ Exit gate: at least three frozen strategies have comparable out-of-sample and 30
 
 ## Priority 1: data quality and lineage
 
-1. [ ] Add a provider-health and dataset-quality service with freshness, completeness, gaps, duplicate rate, schema failures, throttling, revisions, and last-success timestamps.
+1. [x] Add a provider-health and dataset-quality service with freshness, completeness, gaps, duplicate rate, schema failures, throttling, revisions, and last-success timestamps. `GET /api/operations/data-quality` now derives provider status, throttling, last-event and last-success timestamps from local events, and actor-scoped strategy dataset freshness, accepted/completeness ratio, gap count, rejected/schema-failure rate, duplicate rate, conflicting duplicates, and revision counts from immutable dataset stats. It does not claim live provider probing, retention enforcement, or external entitlement approval.
 2. [ ] Distinguish provider observation time, publication time, effective period, retrieval time, and server response time in every normalized DTO. Do not label retrieval time as market observation time.
 3. [ ] Persist the canonical evidence used by important research/strategy decisions so later replays do not depend on mutable provider responses.
 4. [ ] Add point-in-time controls for fundamentals and classifications used in historical analysis. A filing published after a test date must not influence that date.
@@ -179,7 +179,7 @@ The historical implementation phases are condensed here so the active roadmap st
 - [x] Evidence-bound portfolio/company agents, counter-thesis review, and receipt-linked trade journal.
 - [x] Crypto strategy plugins with strict canonical configuration, immutable backtests linked to comparable runs, exact code/data provenance, shadow/scheduled evaluation, approved paper runner, traces, alerts, performance, attribution, reviews, and reports.
 - [x] Global operations policy, OIDC proxy roles, encrypted secret envelopes, audit chains, ordered migrations, fixture-level backup restore, export endpoints, governance reports, and beta target definitions.
-- [x] Source/output governance registry covering SEC, Treasury, BLS, FRED, BEA, OpenAI, Alpaca, news, identity, local analytics, and every current SQLite table.
+- [x] Source/output governance registry covering SEC, Treasury, BLS, FRED, BEA, OpenAI, Alpaca, news, identity, local analytics, and every current SQLite table, plus local provider-health and dataset-quality reporting.
 
 The former `LATER_FEATURES.md` and `future-improvements.md` inventories are fully absorbed here. Portfolio Q&A, diversification proposals, and what-if scenarios are implemented; daily briefings and evidence-based price-move explanations remain in Priority 2; scale-triggered caches, virtualization, indexing, scheduling, screeners, profiles, and account settings remain in Priority 3. No separate later-features file should be recreated.
 

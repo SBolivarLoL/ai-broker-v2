@@ -56,3 +56,31 @@ test("operations secret routes never return plaintext", async () => {
     secrets: [expect.objectContaining({ name: "finnhub_api_key" })],
   });
 });
+
+test("operations data-quality route exposes provider health evidence", async () => {
+  const store = createStore(":memory:");
+  store.event("strategy.dataset.ingested", "test-admin", {
+    datasetId: "dataset-1",
+  });
+  store.event("strategy.crypto.order.preview", "test-admin", {
+    warning: "provider rate limit 429",
+  });
+
+  const response = await route(store, "/api/operations/data-quality");
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    reportVersion: "data-quality-v1",
+    providers: expect.arrayContaining([
+      expect.objectContaining({
+        sourceId: "alpaca_crypto_data",
+        status: "throttled",
+        throttlingEvents: 1,
+      }),
+    ]),
+    summary: {
+      providerCount: expect.any(Number),
+      degradedProviders: expect.any(Number),
+      datasetCount: 0,
+    },
+  });
+});

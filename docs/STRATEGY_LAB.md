@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `7da0609`: 2026-07-07.
+Last reviewed against `main` commit `4ee0978`: 2026-07-07.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -69,6 +69,9 @@ days and 500,000 estimated bars. It splits the query into bounded 90-day
 provider requests, then normalizes and stores the result. Stored-dataset
 backtests can therefore exceed 90 days without a fresh provider call; this
 workflow is not yet exposed in the Strategy Lab browser UI.
+Stored datasets also feed `/api/operations/data-quality`, which reports their
+freshness, accepted/completeness ratio, gaps, rejected/schema-failure rate,
+duplicate rate, and revision counts from the immutable ingestion stats.
 
 ### Parameters
 
