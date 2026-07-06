@@ -23,6 +23,7 @@ import {
   getCompanySecEvidence,
   getComparableValuations,
   getValuationScenarios,
+  openaiModel,
   runCompanyResearch,
 } from "./research";
 
@@ -394,7 +395,7 @@ export async function handleResearchRequest(
     if (!validSymbol(symbol))
       return json({ error: "A valid stock symbol is required" }, 400);
     const runId = crypto.randomUUID();
-    const model = env.OPENAI_MODEL ?? "gpt-5.5";
+    const model = openaiModel(env);
     store.startResearch(runId, symbol, model);
     try {
       const result = await runCompanyResearch(alpaca, symbol, runId);

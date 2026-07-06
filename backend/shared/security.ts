@@ -1,12 +1,19 @@
 /**
  * Authentication and request-boundary helpers.
  *
- * Production trusts only headers authenticated by the configured reverse
- * proxy. Local development receives an explicit all-role demo identity.
+ * The strict production path trusts only headers authenticated by the
+ * configured reverse proxy. Relaxed behavior (all-role demo identity, lenient
+ * origin and readiness) requires an explicit NODE_ENV of "development" or
+ * "test"; any other value, including unset, uses the strict path.
  */
 import { timingSafeEqual } from "node:crypto";
 
 type Env = Record<string, string | undefined>;
+
+// Relaxed auth is opt-in: unset or unexpected NODE_ENV fails closed to the
+// strict production path.
+const relaxedEnv = (env: Env) =>
+  env.NODE_ENV === "development" || env.NODE_ENV === "test";
 export type AuthRole =
   "viewer" | "researcher" | "trader" | "operator" | "admin";
 export type AuthContext = { actor: string; email: string; roles: AuthRole[] };
@@ -48,8 +55,8 @@ export function authContextFor(
   request: Request,
   env: Env = process.env,
 ): AuthContext {
-  // This bypass is intentionally limited to non-production environments.
-  if (env.NODE_ENV !== "production")
+  // This bypass is intentionally limited to explicit development/test runs.
+  if (relaxedEnv(env))
     return {
       actor: "demo-advisor",
       email: "demo-advisor",
@@ -96,13 +103,13 @@ export function authorize(context: AuthContext, allowed: AuthRole[]) {
 
 export function validMutationOrigin(request: Request, env: Env = process.env) {
   const origin = request.headers.get("origin");
-  if (!origin) return env.NODE_ENV !== "production";
+  if (!origin) return relaxedEnv(env);
   return origin === (env.APP_ORIGIN ?? new URL(request.url).origin);
 }
 
 export function securityReady(env: Env = process.env) {
   return (
-    env.NODE_ENV !== "production" ||
+    relaxedEnv(env) ||
     Boolean(
       env.APP_ORIGIN &&
       env.AUTHORIZED_EMAIL_DOMAIN &&

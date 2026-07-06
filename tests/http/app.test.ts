@@ -230,7 +230,10 @@ function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpa
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(options);
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
+  // Relaxed auth is opt-in; default test apps to the development/test path so
+  // demo-identity contracts hold unless a test supplies its own NODE_ENV.
+  const resolvedEnv = { NODE_ENV: "test", ...env };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -287,6 +290,25 @@ test("runtime starts once and reconciles terminal trade stream updates", async (
   expect(app.store.getReceipt(order.receiptId)).toMatchObject({ orderId: order.id, status: "filled", updatedAt: expect.any(String) });
   expect(app.store.activeRiskReservations()).toEqual([]);
   expect(app.store.events(10, "order.stream.update")).toMatchObject([{ payload: { event: "fill", orderId: order.id, clientOrderId: "stream-reconcile", status: "filled" } }]);
+});
+
+test("injected env, not process.env, controls the strategy scheduler", async () => {
+  const intervals: number[] = [];
+  const setIntervalFn = (_callback: () => void, milliseconds: number) => {
+    intervals.push(milliseconds);
+    return 0;
+  };
+  const store = createStore(":memory:");
+  stores.push(store);
+
+  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1" }, setIntervalFn });
+  disabled.startRuntime();
+  expect(intervals).toEqual([15 * 60_000]);
+
+  intervals.length = 0;
+  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000" }, setIntervalFn });
+  enabled.startRuntime();
+  expect(intervals).toEqual([15 * 60_000, 30_000]);
 });
 
 test("data-governance API exposes provider and stored-output decisions", async () => {

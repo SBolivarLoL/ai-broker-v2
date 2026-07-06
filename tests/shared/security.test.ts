@@ -16,6 +16,48 @@ const production = {
   SECRET_VAULT_KEY: "abcdefghijklmnopqrstuvwxyz123456",
 };
 
+test("unset NODE_ENV fails closed to the strict production path", () => {
+  const strict = {
+    APP_ORIGIN: production.APP_ORIGIN,
+    AUTHORIZED_EMAIL_DOMAIN: production.AUTHORIZED_EMAIL_DOMAIN,
+    AUTH_PROXY_SECRET: production.AUTH_PROXY_SECRET,
+    SECRET_VAULT_KEY: production.SECRET_VAULT_KEY,
+  };
+  expect(() =>
+    actorFor(new Request("https://broker.test/api/account"), strict),
+  ).toThrow("Unauthorized");
+  expect(actorFor(
+    new Request("https://broker.test/api/account", {
+      headers: {
+        "x-auth-proxy-secret": strict.AUTH_PROXY_SECRET,
+        "x-auth-request-email": "advisor@example.com",
+      },
+    }),
+    strict,
+  )).toBe("advisor@example.com");
+  expect(
+    validMutationOrigin(new Request("https://broker.test/api/orders"), strict),
+  ).toBe(false);
+  expect(securityReady(strict)).toBe(true);
+});
+
+test("development grants the all-role demo identity", () => {
+  const context = authContextFor(
+    new Request("https://broker.test/api/account"),
+    { NODE_ENV: "development" },
+  );
+  expect(context).toMatchObject({
+    actor: "demo-advisor",
+    roles: ["viewer", "researcher", "trader", "operator", "admin"],
+  });
+  expect(
+    validMutationOrigin(new Request("https://broker.test/api/orders"), {
+      NODE_ENV: "development",
+    }),
+  ).toBe(true);
+  expect(securityReady({ NODE_ENV: "development" })).toBe(true);
+});
+
 test("production trusts only the configured OIDC proxy identity", () => {
   const request = new Request("https://broker.test/api/account", {
     headers: {

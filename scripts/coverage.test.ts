@@ -1,3 +1,5 @@
+// Lives beside coverage.ts, outside tests/, so the same coverage run collects
+// coverage.ts toward the reviewed floor it exports.
 import { describe, expect, test } from "bun:test";
 import {
   excludedFromCoverage,

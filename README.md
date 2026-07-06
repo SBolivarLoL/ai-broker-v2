@@ -113,7 +113,7 @@ SMOKE_ORDER=paper-confirm SMOKE_SIDE=sell SMOKE_SYMBOL=<owned-symbol> bun run sm
 
 ## Production boundary
 
-Local development grants the demo actor all roles. Production expects a managed OIDC identity-aware proxy, same-origin requests, role headers, a 32+ character proxy secret, a 32+ character secret-vault key, and a non-placeholder SEC contact identity. See `.env.example` and [`docs/FEATURES.md`](docs/FEATURES.md) for the full boundary.
+Setting `NODE_ENV=development` (or `test`) grants the demo actor all roles; any other value, including unset, uses the strict production path. Production expects a managed OIDC identity-aware proxy, same-origin requests, role headers, a 32+ character proxy secret, a 32+ character secret-vault key, and a non-placeholder SEC contact identity. See `.env.example` and [`docs/FEATURES.md`](docs/FEATURES.md) for the full boundary.
 
 Source checkouts resolve the running Git commit automatically. Packaged deployments without `.git` metadata must set `APP_GIT_COMMIT` to the full build commit; builds marked dirty are retained for audit but cannot seed comparable strategy runs.
 

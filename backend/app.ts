@@ -53,14 +53,20 @@ export function createApp({
   setIntervalFn = setInterval,
 }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
-  const accountDto = (account: any) => ({
+  type BrokerAccount = Awaited<
+    ReturnType<typeof alpaca.trading.account.getAccount>
+  >;
+  type BrokerPosition = Awaited<
+    ReturnType<typeof alpaca.trading.positions.getAllOpenPositions>
+  >[number];
+  const accountDto = (account: BrokerAccount) => ({
     equity: account.equity,
     cash: account.cash,
     buyingPower: account.buyingPower,
     currency: account.currency,
     status: account.status,
   });
-  const positionDto = (position: any) => ({
+  const positionDto = (position: BrokerPosition) => ({
     symbol: position.symbol,
     qty: position.qty,
     avgEntryPrice: position.avgEntryPrice,
@@ -334,8 +340,8 @@ export function createApp({
         ),
       15 * 60_000,
     );
-    if (process.env.STRATEGY_SCHEDULER_DISABLED !== "1") {
-      const pollMs = Number(process.env.STRATEGY_SCHEDULER_POLL_MS ?? 60_000);
+    if (env.STRATEGY_SCHEDULER_DISABLED !== "1") {
+      const pollMs = Number(env.STRATEGY_SCHEDULER_POLL_MS ?? 60_000);
       if (Number.isFinite(pollMs) && pollMs >= 10_000)
         setIntervalFn(() => void strategies.pollScheduler(), pollMs);
     }
