@@ -55,6 +55,24 @@ test("blocks paper strategy orders on stale approval, kill switch and wide sprea
   expect(draftStrategyPaperOrder({ approval: { ...approval, killSwitch: { activatedAt: "2026-06-24T10:01:00.000Z", reason: "manual kill" } }, symbol: "BTC/USD", targetExposure: 1, currentNotional: 0, referencePrice: 50_000, spreadBps: 20, now: new Date("2026-06-24T10:02:00.000Z") })).toMatchObject({ allowed: false, reasons: ["kill_switch"], order: null });
 });
 
+test("blocks paper strategy orders outside the pre-registered protocol window", () => {
+  const approval = {
+    ...parseStrategyPaperApproval({ budget: 1_000, maxSpreadBps: 50 }, "tester", new Date("2026-06-24T10:00:00.000Z")),
+    experimentProtocol: {
+      version: 1,
+      protocolHash: `sha256:${"a".repeat(64)}`,
+      startAt: "2026-06-24T12:00:00.000Z",
+      stopAt: "2026-06-24T18:00:00.000Z",
+      minimumObservations: 10,
+      maximumBudget: 1_000,
+      reviewCadenceDays: 7,
+    },
+  };
+  expect(draftStrategyPaperOrder({ approval, symbol: "BTC/USD", targetExposure: 1, currentNotional: 0, referencePrice: 50_000, spreadBps: 20, now: new Date("2026-06-24T11:00:00.000Z") })).toMatchObject({ allowed: false, reasons: ["protocol_not_started"], order: null });
+  expect(draftStrategyPaperOrder({ approval, symbol: "BTC/USD", targetExposure: 1, currentNotional: 0, referencePrice: 50_000, spreadBps: 20, now: new Date("2026-06-24T13:00:00.000Z") })).toMatchObject({ allowed: true, order: { side: "buy" } });
+  expect(draftStrategyPaperOrder({ approval, symbol: "BTC/USD", targetExposure: 1, currentNotional: 0, referencePrice: 50_000, spreadBps: 20, now: new Date("2026-06-24T19:00:00.000Z") })).toMatchObject({ allowed: false, reasons: ["protocol_expired"], order: null });
+});
+
 test("calculates strategy paper state from linked order payloads", () => {
   expect(strategyPaperState([
     { status: "accepted", payload: { side: "buy", notional: 100 } },

@@ -23,6 +23,11 @@ import {
   parseStrategyReview,
   withStrategyReviewConfig,
 } from "./strategy-review";
+import {
+  currentStrategyExperimentProtocol,
+  parseStrategyExperimentProtocol,
+  withStrategyExperimentProtocolConfig,
+} from "./strategy-experiment-protocol";
 import { parseStrategyIntervalMinutes } from "./strategy-scheduler";
 import {
   canonicalHash,
@@ -497,6 +502,73 @@ export async function handleStrategyLifecycleRequest(
       return json({ error: "Strategy scheduler rate limit exceeded" }, 429);
     return json(await runtime.evaluateDue(actor));
   }
+  const strategyProtocolMatch = url.pathname.match(
+    /^\/api\/strategy\/runs\/([^/]+)\/experiment-protocol$/,
+  );
+  if (strategyProtocolMatch && request.method === "POST") {
+    if (!allow(`${actor}:strategy-experiment-protocol`, 10))
+      return json(
+        { error: "Strategy experiment protocol rate limit exceeded" },
+        429,
+      );
+    const runId = decodeURIComponent(strategyProtocolMatch[1]!);
+    const run = store.getStrategyRun(runId);
+    if (!run) return json({ error: "Strategy run not found" }, 404);
+    if (!["shadow", "paused"].includes(run.status))
+      return json(
+        {
+          error:
+            "Only shadow or paused runs can register a paper experiment protocol",
+        },
+        409,
+      );
+    const input = await requestJson(request);
+    let protocol: ReturnType<typeof parseStrategyExperimentProtocol>;
+    try {
+      protocol = parseStrategyExperimentProtocol(input, {
+        actor,
+        config: run.config,
+      });
+    } catch (error) {
+      throw new ClientError(
+        error instanceof Error
+          ? error.message
+          : "Invalid strategy experiment protocol",
+        400,
+      );
+    }
+    const config = withStrategyExperimentProtocolConfig(run.config, protocol);
+    store.updateStrategyRunConfig(
+      runId,
+      config,
+      await runtime.configHash(config),
+    );
+    runtime.recordAudit(
+      actor,
+      "experiment_protocol_registered",
+      "strategy_experiment_protocol",
+      run,
+      store.getStrategyRun(runId),
+      {
+        version: protocol.version,
+        protocolHash: protocol.protocolHash,
+        startAt: protocol.startAt,
+        stopAt: protocol.stopAt,
+        maximumBudget: protocol.maximumBudget,
+      },
+    );
+    store.strategyNote(
+      runId,
+      actor,
+      `Registered paper experiment protocol v${protocol.version} through ${protocol.stopAt}.`,
+    );
+    store.event("strategy.experiment_protocol.registered", actor, {
+      runId,
+      version: protocol.version,
+      protocolHash: protocol.protocolHash,
+    });
+    return json({ runId, protocol, ...store.getStrategyRun(runId) });
+  }
   const strategyPaperApprovalMatch = url.pathname.match(
     /^\/api\/strategy\/runs\/([^/]+)\/paper-approval$/,
   );
@@ -527,6 +599,40 @@ export async function handleStrategyLifecycleRequest(
         400,
       );
     }
+    const protocol = currentStrategyExperimentProtocol(run.config);
+    if (!protocol)
+      return json(
+        {
+          error:
+            "Strategy paper approval requires a pre-registered experiment protocol",
+        },
+        409,
+      );
+    if (approval.budget > protocol.maximumBudget)
+      throw new ClientError(
+        "Paper approval budget exceeds the registered protocol maximum budget",
+        400,
+      );
+    if (
+      new Date(approval.expiresAt).getTime() >
+      new Date(protocol.stopAt).getTime()
+    )
+      throw new ClientError(
+        "Paper approval expiry must not exceed the registered protocol stop date",
+        400,
+      );
+    approval = {
+      ...approval,
+      experimentProtocol: {
+        version: protocol.version,
+        protocolHash: protocol.protocolHash,
+        startAt: protocol.startAt,
+        stopAt: protocol.stopAt,
+        minimumObservations: protocol.minimumObservations,
+        maximumBudget: protocol.maximumBudget,
+        reviewCadenceDays: protocol.reviewCadenceDays,
+      },
+    };
     const config = {
       ...(run.config as Record<string, unknown>),
       mode: "paper",
