@@ -88,6 +88,26 @@ test("macro context keeps public providers available and explains key-gated gaps
     context.indicators.find((item) => item.id === "unemployment_rate"),
   ).toMatchObject({ value: 4.3, previousValue: 4.2, change: 0.1 });
   expect(context.sources).toHaveLength(3);
+  expect(context.sources.find((source) => source.provider === "treasury")).toMatchObject({
+    effectivePeriod: {
+      start: "2026-06-25T00:00:00.000Z",
+      end: "2026-06-25T00:00:00.000Z",
+      label: "2026-06-25",
+    },
+    time: {
+      effectivePeriod: {
+        start: "2026-06-25T00:00:00.000Z",
+        end: "2026-06-25T00:00:00.000Z",
+        label: "2026-06-25",
+      },
+    },
+  });
+  expect(context.sources.find((source) => source.id === "macro:bls:CUUR0000SA0")).toMatchObject({
+    effectivePeriod: {
+      end: "2026-05-31T23:59:59.999Z",
+      label: "2026-M05",
+    },
+  });
   expect(
     context.sources.every(
       (source) =>
@@ -190,9 +210,22 @@ test("macro context normalizes configured FRED and BEA observations", async () =
   expect(
     context.sources.find((source) => source.provider === "fred")?.url,
   ).not.toContain("api_key");
+  expect(context.sources.find((source) => source.id === "macro:fred:DFF")).toMatchObject({
+    effectivePeriod: {
+      start: "2026-06-26T00:00:00.000Z",
+      end: "2026-06-26T00:00:00.000Z",
+      label: "2026-06-26",
+    },
+  });
   expect(
     context.sources.find((source) => source.provider === "bea")?.url,
   ).not.toContain("UserID");
+  expect(context.sources.find((source) => source.provider === "bea")).toMatchObject({
+    effectivePeriod: {
+      end: "2026-03-31T23:59:59.999Z",
+      label: "2026Q1",
+    },
+  });
 });
 
 test("macro context preserves successful providers when one source fails", async () => {

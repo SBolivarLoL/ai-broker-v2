@@ -347,6 +347,11 @@ export class MacroContextClient {
       url: TREASURY_URL,
       asOf: dateTime(latest.record_date),
       retrievedAt,
+      effectivePeriod: {
+        start: dateTime(latest.record_date),
+        end: dateTime(latest.record_date),
+        label: latest.record_date,
+      },
       entityIds: {},
       data,
     });
@@ -433,6 +438,10 @@ export class MacroContextClient {
       url: BLS_URL,
       asOf: monthEnd(latestCpi),
       retrievedAt,
+      effectivePeriod: {
+        end: monthEnd(latestCpi),
+        label: `${latestCpi.year}-${latestCpi.period}`,
+      },
       entityIds: {},
       data: {
         seriesId: "CUUR0000SA0",
@@ -453,6 +462,10 @@ export class MacroContextClient {
       url: BLS_URL,
       asOf: monthEnd(latestLabor),
       retrievedAt,
+      effectivePeriod: {
+        end: monthEnd(latestLabor),
+        label: `${latestLabor.year}-${latestLabor.period}`,
+      },
       entityIds: {},
       data: {
         seriesId: "LNS14000000",
@@ -547,6 +560,11 @@ export class MacroContextClient {
           url: publicUrl,
           asOf: dateTime(latest.date),
           retrievedAt,
+          effectivePeriod: {
+            start: dateTime(latest.date),
+            end: dateTime(latest.date),
+            label: latest.date,
+          },
           entityIds: {},
           data: { seriesId, latest, previous: previous ?? null },
         });
@@ -651,6 +669,10 @@ export class MacroContextClient {
       url: publicUrl,
       asOf: quarterEnd(latest.TimePeriod),
       retrievedAt,
+      effectivePeriod: {
+        end: quarterEnd(latest.TimePeriod),
+        label: latest.TimePeriod,
+      },
       entityIds: {},
       data: {
         dataset: "NIPA",

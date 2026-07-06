@@ -49,6 +49,8 @@ test("normalizes historical crypto bars with provenance", () => {
     timeframe: "1Hour",
     start,
     end,
+    retrievedAt: new Date("2026-06-24T02:00:10Z"),
+    serverRespondedAt: new Date("2026-06-24T02:00:11Z"),
     bars: {
       "BTC/USD": [
         {
@@ -68,8 +70,26 @@ test("normalizes historical crypto bars with provenance", () => {
     feed: "us",
     timeframe: "1Hour",
     symbols: ["BTC/USD"],
+    observedStart: "2026-06-24T01:00:00.000Z",
+    observedEnd: "2026-06-24T01:00:00.000Z",
+    retrievedAt: "2026-06-24T02:00:10.000Z",
+    serverRespondedAt: "2026-06-24T02:00:11.000Z",
   });
-  expect(dto.bars["BTC/USD"][0]).toMatchObject({ close: 105, tradeCount: 4 });
+  expect(dto.time).toMatchObject({
+    observationTime: "2026-06-24T01:00:00.000Z",
+    retrievalTime: "2026-06-24T02:00:10.000Z",
+    serverResponseTime: "2026-06-24T02:00:11.000Z",
+  });
+  expect(dto.bars["BTC/USD"][0]).toMatchObject({
+    close: 105,
+    tradeCount: 4,
+    observedAt: "2026-06-24T01:00:00.000Z",
+    time: {
+      observationTime: "2026-06-24T01:00:00.000Z",
+      retrievalTime: "2026-06-24T02:00:10.000Z",
+      serverResponseTime: "2026-06-24T02:00:11.000Z",
+    },
+  });
 });
 
 test("rejects malformed and internally inconsistent historical bars", () => {
@@ -124,6 +144,13 @@ test("normalizes latest crypto snapshots and flags stale data", () => {
     symbol: "BTC/USD",
     source: "Alpaca crypto snapshot",
     feed: "us",
+    observedAt: "2026-06-24T10:01:30.000Z",
+    retrievedAt: "2026-06-24T10:02:00.000Z",
+    time: {
+      observationTime: "2026-06-24T10:01:30.000Z",
+      retrievalTime: "2026-06-24T10:02:00.000Z",
+      serverResponseTime: "2026-06-24T10:02:00.000Z",
+    },
     stale: false,
     payload: {
       quote: { bid: 99, ask: 101 },

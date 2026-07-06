@@ -5,6 +5,13 @@
  * retrieval order, and JavaScript object insertion order.
  */
 import { createHash } from "node:crypto";
+import {
+  normalizeIsoTime,
+  normalizeTimeProvenance,
+  type EffectivePeriodInput,
+  type NormalizedEffectivePeriod,
+  type NormalizedTimeProvenance,
+} from "./time-provenance";
 
 export type EvidenceCategory =
   | "market"
@@ -47,8 +54,12 @@ export type CanonicalEvidence<
   url: string;
   canonicalUrl: string;
   asOf: string;
+  observedAt: string;
   retrievedAt: string;
+  serverRespondedAt: string;
   publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
+  time: NormalizedTimeProvenance;
   entityIds: EvidenceEntityIds;
   contentHash: string;
   data: T;
@@ -56,9 +67,18 @@ export type CanonicalEvidence<
 
 export type CanonicalEvidenceInput<T, C extends EvidenceCategory> = Omit<
   CanonicalEvidence<T, C>,
-  "canonicalUrl" | "contentHash" | "publishedAt"
+  | "canonicalUrl"
+  | "contentHash"
+  | "publishedAt"
+  | "observedAt"
+  | "serverRespondedAt"
+  | "effectivePeriod"
+  | "time"
 > & {
+  observedAt?: string | null;
+  serverRespondedAt?: string | null;
   publishedAt?: string | null;
+  effectivePeriod?: EffectivePeriodInput | null;
 };
 
 const authorityRank: Record<EvidenceAuthority, number> = {
@@ -74,13 +94,6 @@ function requiredText(value: string, label: string, maximum = 500) {
   if (!text || text.length > maximum)
     throw new Error(`${label} must be between 1 and ${maximum} characters`);
   return text;
-}
-
-function isoTime(value: string, label: string) {
-  const time = new Date(value);
-  if (!value || !Number.isFinite(time.getTime()))
-    throw new Error(`${label} must be a valid timestamp`);
-  return time.toISOString();
 }
 
 function jsonValue(value: unknown): unknown {
@@ -154,6 +167,18 @@ export function canonicalEvidence<T, C extends EvidenceCategory>(
   input: CanonicalEvidenceInput<T, C>,
 ): CanonicalEvidence<T, C> {
   const data = jsonValue(input.data) as T;
+  const asOf = normalizeIsoTime(input.asOf, "Evidence as-of time");
+  const retrievedAt = normalizeIsoTime(
+    input.retrievedAt,
+    "Evidence retrieval time",
+  );
+  const time = normalizeTimeProvenance({
+    observationTime: input.observedAt ?? asOf,
+    publicationTime: input.publishedAt ?? null,
+    effectivePeriod: input.effectivePeriod ?? null,
+    retrievalTime: retrievedAt,
+    serverResponseTime: input.serverRespondedAt ?? retrievedAt,
+  });
   return {
     id: requiredText(input.id, "Evidence ID", 240),
     provider: requiredText(
@@ -168,11 +193,13 @@ export function canonicalEvidence<T, C extends EvidenceCategory>(
     title: requiredText(input.title, "Evidence title"),
     url: requiredText(input.url, "Evidence URL", 2_000),
     canonicalUrl: canonicalEvidenceUrl(input.url),
-    asOf: isoTime(input.asOf, "Evidence as-of time"),
-    retrievedAt: isoTime(input.retrievedAt, "Evidence retrieval time"),
-    publishedAt: input.publishedAt
-      ? isoTime(input.publishedAt, "Evidence publication time")
-      : null,
+    asOf,
+    observedAt: time.observationTime ?? asOf,
+    retrievedAt,
+    serverRespondedAt: time.serverResponseTime,
+    publishedAt: time.publicationTime,
+    effectivePeriod: time.effectivePeriod,
+    time,
     entityIds: normalizedEntityIds(input.entityIds),
     contentHash: evidenceContentHash(data),
     data,
