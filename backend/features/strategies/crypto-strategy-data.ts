@@ -1,4 +1,6 @@
 /** Normalizes crypto bars and snapshots into reproducible strategy datasets. */
+import { normalizeTimeProvenance } from "../../shared/time-provenance";
+
 const CRYPTO_SYMBOLS = new Set(["BTC/USD", "ETH/USD", "SOL/USD"]);
 const TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "1Hour", "4Hour", "1Day"]);
 export const CRYPTO_LOOKBACK_DAYS = { minimum: 1, maximum: 90, defaultValue: 7 } as const;
@@ -82,7 +84,32 @@ export function parseCryptoLookbackDays(value: unknown) {
   return days;
 }
 
-export function cryptoBarsDto(input: { symbols: string[]; timeframe: string; start: Date; end: Date; bars: Record<string, any[]> }) {
+export function cryptoBarsDto(input: { symbols: string[]; timeframe: string; start: Date; end: Date; bars: Record<string, any[]>; retrievedAt?: Date; serverRespondedAt?: Date }) {
+  const retrievedAt = input.retrievedAt ?? new Date();
+  const serverRespondedAt = input.serverRespondedAt ?? retrievedAt;
+  const bars = Object.fromEntries(input.symbols.map(symbol => [symbol, (input.bars[symbol] ?? [])
+    .map(bar => normalizeCryptoBar(symbol, bar))
+    .filter((bar): bar is NormalizedCryptoBar => bar !== null)
+    .map(bar => ({
+      ...bar,
+      observedAt: bar.timestamp,
+      time: normalizeTimeProvenance({
+        observationTime: bar.timestamp,
+        effectivePeriod: {
+          start: bar.timestamp,
+          end: bar.timestamp,
+          label: `${input.timeframe} bar close`,
+        },
+        retrievalTime: retrievedAt,
+        serverResponseTime: serverRespondedAt,
+      }),
+    }))]));
+  const observationTimes = Object.values(bars)
+    .flat()
+    .map(bar => new Date(bar.timestamp).getTime())
+    .filter(Number.isFinite);
+  const observedStart = observationTimes.length ? new Date(Math.min(...observationTimes)).toISOString() : null;
+  const observedEnd = observationTimes.length ? new Date(Math.max(...observationTimes)).toISOString() : null;
   return {
     source: "Alpaca crypto historical bars",
     feed: "us",
@@ -90,10 +117,22 @@ export function cryptoBarsDto(input: { symbols: string[]; timeframe: string; sta
     start: input.start.toISOString(),
     end: input.end.toISOString(),
     symbols: input.symbols,
-    bars: Object.fromEntries(input.symbols.map(symbol => [symbol, (input.bars[symbol] ?? [])
-      .map(bar => normalizeCryptoBar(symbol, bar))
-      .filter((bar): bar is NormalizedCryptoBar => bar !== null)])),
-    asOf: new Date().toISOString(),
+    bars,
+    observedStart,
+    observedEnd,
+    retrievedAt: retrievedAt.toISOString(),
+    serverRespondedAt: serverRespondedAt.toISOString(),
+    time: normalizeTimeProvenance({
+      observationTime: observedEnd,
+      effectivePeriod: {
+        start: observedStart ?? input.start,
+        end: observedEnd ?? input.end,
+        label: `${input.timeframe} requested bar window`,
+      },
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: retrievedAt.toISOString(),
   };
 }
 
@@ -119,6 +158,13 @@ export function cryptoSnapshotDto(input: { symbols: string[]; snapshots: Record<
       source: "Alpaca crypto snapshot",
       feed: "us",
       observedAt: newestDataAt.toISOString(),
+      retrievedAt: receivedAt.toISOString(),
+      serverRespondedAt: receivedAt.toISOString(),
+      time: normalizeTimeProvenance({
+        observationTime: newestDataAt,
+        retrievalTime: receivedAt,
+        serverResponseTime: receivedAt,
+      }),
       stale: !Number.isFinite(ageMs) || ageMs > 60_000,
       latencyMs,
       payload: {
@@ -147,5 +193,20 @@ export function cryptoSnapshotDto(input: { symbols: string[]; snapshots: Record<
       },
     };
   });
-  return { source: "Alpaca crypto market data", feed: "us", records, asOf: receivedAt.toISOString() };
+  return {
+    source: "Alpaca crypto market data",
+    feed: "us",
+    records,
+    retrievedAt: receivedAt.toISOString(),
+    serverRespondedAt: receivedAt.toISOString(),
+    time: normalizeTimeProvenance({
+      observationTime: records
+        .map(record => new Date(record.observedAt).getTime())
+        .filter(Number.isFinite)
+        .sort((left, right) => right - left)[0] ?? null,
+      retrievalTime: receivedAt,
+      serverResponseTime: receivedAt,
+    }),
+    asOf: receivedAt.toISOString(),
+  };
 }

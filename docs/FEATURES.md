@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `4ee0978`: 2026-07-07.
+Last reviewed against `main` commit `900db9e`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -56,7 +56,7 @@ The browser exposes seven workspaces:
 ### Research and AI
 
 - Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts.
-- Canonical evidence records carrying provider/source identity, authority, claim status, timestamps, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
+- Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
 - Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
 - Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage.
 - Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states.
@@ -74,7 +74,7 @@ The browser exposes seven workspaces:
 - Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
 - Backtest cohorts can be compared through a deterministic compatibility report. It requires 2-20 immutable backtests and flags mismatched period, symbols, timeframe, dataset hash, initial cash, fee/slippage/execution model, baseline set, code identity, provider, or feed before any operator treats the metrics as comparable.
 - Genuine rolling or anchored walk-forward evaluation over a caller-declared set of 1-20 canonical parameter candidates. Each fold ranks candidates only on its training bars, freezes the winner, warms indicators without scoring train execution, evaluates only the untouched test bars, and reports candidate scores, exact boundaries, out-of-sample results/aggregates, and leakage checks. Optional final holdouts are excluded from all fold selection and then scored once with parameters selected from pre-holdout history; optional caller-declared regime slices summarize validation and holdout observations separately. Work is bounded to 100 folds and 2,000,000 evaluated bars; multi-symbol histories must be timestamp-synchronized.
-- Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
+- Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, retrieval/server-response provenance in normalized bar DTOs, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
 - Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
 - Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable, and a changed commit or definition requires a new reviewed backtest.
 - Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
@@ -132,6 +132,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
 - Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
+- Canonical evidence and crypto Strategy Lab market DTOs distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, and quarters.
 - Media repetition is not event confirmation. Provider failure does not mean no event occurred.
 - Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
 - SEC SIC is labeled as SEC SIC, not GICS or ICB.
@@ -144,6 +145,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
+- The explicit time taxonomy is not yet present on every normalized provider DTO or browser-facing object. `asOf` remains a legacy compatibility field while call sites migrate to observation/publication/effective/retrieval/server-response fields.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
