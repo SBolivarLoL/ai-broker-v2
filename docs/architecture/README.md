@@ -103,6 +103,18 @@ The order boundary is deliberately split by responsibility:
 
 These modules share one runtime and preserve the safety pipeline above.
 
+The strategy boundary is split by responsibility the same way:
+
+- `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
+- `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.
+- `strategies/strategy-execution-routes.ts` owns crypto market-data ingest and the signed-preview paper-execution pipeline.
+- `strategies/strategy-lifecycle-routes.ts` owns backtests, strategy-run creation, scheduler ticks, and admin mutations (approval, pause, kill, review).
+- `strategies/strategy-reporting-routes.ts` owns read-only run reporting, evidence, and single-run manual ticks.
+- `strategies/strategy-runtime-provenance.ts` owns pure symbol, definition, config-hash, provenance, and audit-snapshot helpers.
+- `strategies/strategy-runtime-reporting.ts` owns order reconciliation, attribution, performance, and alert reporting.
+
+These modules share one strategy runtime and route context and preserve the safety pipeline above.
+
 Persistence is composed behind the `createStore()` API:
 
 - `persistence/migrations.ts` owns ordered transactional schema changes.
