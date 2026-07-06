@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `ace67cc`: 2026-07-05.
+Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -13,14 +13,14 @@ This is the only future-work inventory for AI Broker. It incorporates the former
 
 ## Review baseline
 
-The 2026-07-05 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
+The 2026-07-06 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
 
 | Area                  | Current state                                                                                                                                                                                           | Evidence / implication                                                                                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository            | 78 production TypeScript modules, 73 test files, a 27-line Bun entry point, a 332-line application boundary, feature-owned routes, split browser assets, one migration registry, and SQLite persistence | Frontend, backend, tests, scripts, docs, architecture, integrations, and persistence now have explicit homes                                                              |
-| Automated checks      | 292 tests, 1,291 assertions, strict TypeScript for `backend/`, `tests/`, and `scripts/`, 39 focused safety/evaluation tests                                                                             | `bun run check` and `bun run eval` pass; static and coverage floors are enforced in CI                                                                                    |
-| Instrumented coverage | 98.27% functions and 97.50% lines across the reviewed deterministic-module boundary                                                                                                                     | Reviewed floors remain 95% functions and 96% lines; orchestration and browser behavior use direct contract and interaction tests                                          |
-| Dependency audit      | No known vulnerabilities                                                                                                                                                                                | `bun audit` passed on 2026-07-05                                                                                                                                          |
+| Repository            | Feature-owned routes, split browser assets, one migration registry, and SQLite persistence; current counts live in `VALIDATION.md` | Frontend, backend, tests, scripts, docs, architecture, integrations, and persistence now have explicit homes                     |
+| Automated checks      | Strict TypeScript plus standard and focused safety/evaluation suites                                                           | `bun run check` and `bun run eval` pass; current counts live in `VALIDATION.md` and CI enforces the gates    |
+| Instrumented coverage | The reviewed deterministic-module boundary passes its floors                                                                  | Floors remain 95% functions and 96% lines; exact results live in `VALIDATION.md`                            |
+| Dependency audit      | No known vulnerabilities                                                                                                       | `bun audit` passes; the dated result lives in `VALIDATION.md`                                               |
 | Execution             | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy                                                                                         | Strong fail-closed order boundary                                                                                                                                         |
 | Research data         | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI                                                                                                         | The registry covers 16 sources and all 21 SQLite tables through 12 output categories; provider health, retention enforcement, and external entitlement review remain open |
 | Strategy research     | Nine deterministic plugins, immutable linked backtests, 90-day bar retrieval, shadow/paper runs, traces and attribution                                                                                 | Exact code/data lineage is enforced for comparable records; long-history and genuine out-of-sample evaluation remain open                                                 |

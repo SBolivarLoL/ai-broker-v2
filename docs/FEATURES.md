@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `ace67cc`: 2026-07-05.
+Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -136,7 +136,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - “Walk-forward” currently returns train/test window boundaries; it does not tune on train data and score frozen parameters out of sample.
 - Backtests remain bounded to a single provider request and are not yet backed by a versioned long-history dataset; a stored hash proves exact input identity, not completeness or point-in-time correctness.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
-- The 292-test standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage.
+- The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Ordered migrations, rollback/upgrade fixtures, and serialized backup restore with audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.

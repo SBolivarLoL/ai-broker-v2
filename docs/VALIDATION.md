@@ -1,16 +1,16 @@
 # Validation record
 
-Last reviewed against `main` commit `ace67cc`: 2026-07-05.
+Last reviewed against `main` commit `7cf3e3d`: 2026-07-06.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check              | Result on 2026-07-05                                                              | Scope                                                                                             |
+| Check              | Result on 2026-07-06                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 292 tests, 0 failures, 1,291 assertions across 74 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
-| `bun run eval`     | Pass: 39 tests, 0 failures, 177 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.27% functions, 97.50% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run check`    | Pass: 295 tests, 0 failures, 1,300 assertions across 74 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
+| `bun run coverage` | Pass: 97.18% functions, 96.25% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                        |
-| TypeScript    | 78 production modules and 73 test files                                                                          |
-| Concentration | `backend/app.ts` 332 lines; `backend/persistence/store.ts` 890 lines; browser behavior split across seven assets |
+| TypeScript    | 84 production modules and 73 files under `tests/` plus one coverage-gate test                                      |
+| Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 890 lines; browser behavior split across seven assets |
 | Persistence   | 13 migrations; 21 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `origin/main` and `origin/dev` at `ace67cc` before this restructure                                              |
+| Git baseline  | `origin/main` at `7cf3e3d`; `origin/dev` at `ace67cc` after the restructure merge                               |
 
 ## Test-layer policy
 
@@ -47,7 +47,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                 | Live model/tool orchestration paths have lower coverage and require credentials                         |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                           | Stream callbacks and secondary provider mutation paths remain incomplete                                |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                 | Most provider behavior requires credentials and is not executed in CI                                   |
-| Browser UI                  | Targeted interaction confidence                    | Isolated 2026-07-05 browser check verified disabled creation, successful backtest unlock, linked shadow creation, input invalidation, layout, and a clean console                                                       | No maintained automated accessibility/responsive regression suite                                       |
+| Browser UI                  | Targeted interaction confidence                    | The 2026-07-05 interaction check verified Strategy Lab creation flows; the 2026-07-06 navigation smoke rendered all seven workspaces with correct selection/hash state, honest unavailable-provider fallbacks, and a clean console | No maintained automated accessibility/responsive regression suite                                       |
 | Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                   | No production-sized or closed-beta restore drill, deployment, real participants, or external approval   |
 
 ## Reproducible local gates
@@ -78,7 +78,7 @@ bun run smoke:comparables
 bun run eval:research
 ```
 
-The full smoke suite was not rerun during this 2026-07-05 review. The isolated UI check performed one read-only Alpaca crypto backtest; this record makes no broader claim about provider availability.
+The full credentialed smoke suite was not rerun during this 2026-07-06 review. The browser navigation smoke used invalid placeholder broker credentials to verify unavailable-provider behavior and makes no live-provider claim.
 
 The paper-order smoke test mutates only the Alpaca paper account and requires explicit opt-in:
 

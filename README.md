@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `ace67cc` on 2026-07-05.
+Code baseline reviewed: `main` at `7cf3e3d` on 2026-07-06.
 
 ## Quick start
 
@@ -62,14 +62,14 @@ The application currently runs as one Bun process with a local SQLite database a
 - `frontend/` separates the browser shell, styles, shared utilities, and workspace scripts.
 - `tests/` mirrors the backend boundaries; `scripts/` contains deliberate diagnostics and smoke checks.
 
-The reviewed tree has 78 production TypeScript modules, 73 test files, 13 migrations, and 21 SQLite tables. The application boundary is 332 lines, feature routes are independently owned, and the browser is split into seven assets instead of one inline client.
+Feature routes are independently owned, persistence uses ordered migrations, and the browser is split into seven assets instead of one inline client. The current repository inventory is recorded in [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 ## Quality snapshot
 
 | Boundary              | Reviewed state                                                                                                                                                      |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Automated checks      | 292 tests and 1,291 assertions pass; strict TypeScript covers `backend/`, `tests/`, and `scripts/`                                                                  |
-| Instrumented coverage | Reviewed deterministic-module mean is 98.27% functions and 97.50% lines                                                                                             |
+| Automated checks      | The standard and focused safety suites pass; strict TypeScript covers `backend/`, `tests/`, and `scripts/`                                                          |
+| Instrumented coverage | The reviewed deterministic-module mean passes the 95% function and 96% line floors                                                                                  |
 | API composition       | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional |
 | Browser               | Targeted Strategy Lab interaction validation exists; no maintained accessibility/responsive regression suite                                                        |
 | Persistence           | Transactional migrations through 0013 and a serialized fixture restore pass                                                                                         |
