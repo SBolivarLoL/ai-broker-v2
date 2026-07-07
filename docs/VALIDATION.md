@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `6916e79`: 2026-07-07.
+Last reviewed against `main` commit `dbb25dc`: 2026-07-07.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-07                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 335 tests, 0 failures, 1,524 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 337 tests, 0 failures, 1,537 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.03% functions, 96.99% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.97% functions, 97.01% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across seven assets |
 | Persistence   | 14 migrations; 23 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `6916e79`; no open pull request at change start                |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `dbb25dc`; no open pull request at change start                |
 
 ## Test-layer policy
 
@@ -54,7 +54,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `6916e79` plus fresh command output.
+language against `dbb25dc` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -94,6 +94,10 @@ Additional mechanical checks:
 - Single-symbol quote responses were checked for explicit `observedAt:null`,
   retrieval, server-response, and normalized time-provenance fields when the
   provider helper exposes no event timestamp.
+- Market monitoring news, corporate-action, SEC alert, and route-root DTOs were
+  checked for publication, effective-period, retrieval, and server-response
+  time provenance; cached monitoring responses preserve provider retrieval time
+  while refreshing server response time.
 - Company-market snapshot and equity quote/bar stream DTOs were checked for
   explicit provider observation, retrieval, and server-response timestamps
   while preserving legacy browser compatibility fields.
@@ -204,7 +208,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Migration identity drift stops startup, failed migration DDL and history roll back together, and serialized restores preserve both audit chains in the fixture drill.
 - Every current SQLite table belongs to exactly one stored-output category; every external source is blocked or requires external review for live use.
 - Provider-health and stored-dataset quality reports expose local event and immutable dataset evidence, but do not imply entitlement approval or successful live provider probes.
-- Canonical evidence, crypto Strategy Lab market DTOs, single-symbol quote responses, company-market snapshots, market workspace discovery/calendar DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and multi-asset market DTOs preserve retrieval/server-response timestamps separately from provider observation timestamps; official macro evidence records effective periods for dated, monthly, quarterly, and market-session calendar observations.
+- Canonical evidence, crypto Strategy Lab market DTOs, single-symbol quote responses, market monitoring DTOs, company-market snapshots, market workspace discovery/calendar DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and multi-asset market DTOs preserve retrieval/server-response timestamps separately from provider observation/publication/effective timestamps; official macro evidence records effective periods for dated, monthly, quarterly, and market-session calendar observations.
 - Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.
 - Plaintext vault values are not returned by vault API reads.
 

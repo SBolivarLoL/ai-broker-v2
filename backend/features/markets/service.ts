@@ -13,6 +13,7 @@ import {
   monitoringCorporateActions,
   monitoringEventClusters,
   monitoringNews,
+  monitoringResponseDto,
   monitoringSecFilings,
   type MonitoringWatchlist,
 } from "./market-monitoring";
@@ -44,7 +45,7 @@ type MarketMonitoringResponse = {
     secSymbols: string[];
     secOmittedSymbols: number;
   };
-  asOf: string;
+  retrievedAt: string;
 };
 type CompanyMarketSource = {
   asset: any;
@@ -192,9 +193,10 @@ export function createMarketService({
       symbols,
     });
     const cached = monitoringCache.get(key);
-    if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
+    if (!force && cached && cached.expiresAt > Date.now())
+      return monitoringResponseDto(cached.value, new Date());
     if (!symbols.length) {
-      return {
+      return monitoringResponseDto({
         news: [],
         corporateActions: [],
         secFilings: [],
@@ -206,8 +208,8 @@ export function createMarketService({
           secSymbols: [],
           secOmittedSymbols: 0,
         },
-        asOf: new Date().toISOString(),
-      };
+        retrievedAt: new Date().toISOString(),
+      });
     }
 
     const now = new Date();
@@ -236,6 +238,7 @@ export function createMarketService({
       ),
     ]);
     const [newsResult, actionsResult] = brokerResults;
+    const retrievedAt = new Date().toISOString();
     const warnings: string[] = [];
     if (newsResult.status === "rejected") {
       warnings.push("Portfolio and watchlist news is temporarily unavailable.");
@@ -264,11 +267,15 @@ export function createMarketService({
       newsResult.status === "fulfilled" ? newsResult.value.news : [],
       positions,
       watchlists,
+      retrievedAt,
+      retrievedAt,
     );
     const corporateActions = monitoringCorporateActions(
       actionsResult.status === "fulfilled" ? (actionsResult.value as any) : {},
       positions,
       watchlists,
+      retrievedAt,
+      retrievedAt,
     );
     const secFilings = monitoringSecFilings(
       secResults.flatMap((result) =>
@@ -276,8 +283,9 @@ export function createMarketService({
       ),
       positions,
       watchlists,
+      retrievedAt,
     );
-    const value = {
+    const value: MarketMonitoringResponse = {
       news,
       corporateActions,
       secFilings,
@@ -289,11 +297,11 @@ export function createMarketService({
         secSymbols,
         secOmittedSymbols: symbols.length - secSymbols.length,
       },
-      asOf: new Date().toISOString(),
+      retrievedAt,
     };
     monitoringCache.clear();
     monitoringCache.set(key, { value, expiresAt: Date.now() + 60_000 });
-    return value;
+    return monitoringResponseDto(value, retrievedAt);
   }
 
   function watchlistInput(value: unknown) {
