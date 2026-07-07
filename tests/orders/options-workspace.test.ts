@@ -29,7 +29,7 @@ test("combines contract metadata, liquidity and Greeks", () => {
     ],
     {
       AAPL260717C00300000: {
-        latestQuote: { bp: 4, ap: 6 },
+        latestQuote: { bp: 4, ap: 6, t: "2026-06-22T14:30:00Z" },
         dailyBar: { v: 50 },
         impliedVolatility: 0.25,
         greeks: { delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.2, rho: 0.1 },
@@ -41,14 +41,30 @@ test("combines contract metadata, liquidity and Greeks", () => {
       optionsTradingLevel: 2,
       optionsBuyingPower: "5000",
     },
+    new Date("2026-06-22T14:30:02Z"),
+    new Date("2026-06-22T14:30:03Z"),
   );
   expect(dto.contracts[0]).toMatchObject({
     midpoint: 5,
     spreadBps: 4000,
     openInterest: 120,
     volume: 50,
+    observedAt: "2026-06-22T14:30:00.000Z",
+    retrievedAt: "2026-06-22T14:30:02.000Z",
+    serverRespondedAt: "2026-06-22T14:30:03.000Z",
+    time: {
+      observationTime: "2026-06-22T14:30:00.000Z",
+      retrievalTime: "2026-06-22T14:30:02.000Z",
+      serverResponseTime: "2026-06-22T14:30:03.000Z",
+    },
     impliedVolatility: 0.25,
     greeks: { delta: 0.5 },
+  });
+  expect(dto).toMatchObject({
+    observedAt: "2026-06-22T14:30:00.000Z",
+    retrievedAt: "2026-06-22T14:30:02.000Z",
+    serverRespondedAt: "2026-06-22T14:30:03.000Z",
+    asOf: "2026-06-22T14:30:03.000Z",
   });
   expect(dto.account).toEqual({
     approvedLevel: 3,
@@ -93,8 +109,12 @@ test("aggregates signed portfolio Greeks by contract multiplier", () => {
       { symbol: "AAPL-P", qty: "-1", marketValue: "-200" },
     ],
     {
-      "AAPL-C": { greeks: { delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.2 } },
+      "AAPL-C": {
+        latestQuote: { t: "2026-06-22T14:30:00Z" },
+        greeks: { delta: 0.5, gamma: 0.02, theta: -0.1, vega: 0.2 },
+      },
       "AAPL-P": {
+        latestQuote: { t: "2026-06-22T14:31:00Z" },
         greeks: { delta: -0.4, gamma: 0.03, theta: -0.08, vega: 0.15 },
       },
     },
@@ -103,7 +123,19 @@ test("aggregates signed portfolio Greeks by contract multiplier", () => {
       { symbol: "AAPL-P", underlyingSymbol: "AAPL", multiplier: "100" },
     ],
     { AAPL: 100 },
+    new Date("2026-06-22T14:31:02Z"),
+    new Date("2026-06-22T14:31:03Z"),
   );
+  expect(result.legs[0]).toMatchObject({
+    observedAt: "2026-06-22T14:30:00.000Z",
+    retrievedAt: "2026-06-22T14:31:02.000Z",
+  });
+  expect(result).toMatchObject({
+    observedAt: "2026-06-22T14:31:00.000Z",
+    retrievedAt: "2026-06-22T14:31:02.000Z",
+    serverRespondedAt: "2026-06-22T14:31:03.000Z",
+    asOf: "2026-06-22T14:31:03.000Z",
+  });
   expect(result.totals).toEqual({ delta: 140, gamma: 1, theta: -12, vega: 25 });
   expect(result.missingGreeks).toEqual([]);
   expect(

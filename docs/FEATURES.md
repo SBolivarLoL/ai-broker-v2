@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `8cfa0d7`: 2026-07-07.
+Last reviewed against `main` commit `a81152c`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -37,7 +37,7 @@ The browser exposes seven workspaces:
 - Buy bracket/OTO and sell OCO linked orders.
 - Multi-leg equity rebalance baskets with application-level atomic preview/reservation and sequential broker submission.
 - Explicit paper short workflow with margin, marginability, easy-to-borrow, DAY, quantity, concentration, and fresh-state checks.
-- Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable.
+- Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable. Option-chain and option-portfolio Greek DTOs preserve provider observation, retrieval, and server-response provenance where provider timestamps are available.
 - Standalone paper crypto market, limit, and stop-limit tickets. Approved strategy automation submits only bounded paper crypto market orders.
 - Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders.
 - HMAC-signed two-minute previews, exact confirmation, fresh broker/market revalidation, idempotency keys, local risk reservations, broker reconciliation, and decision receipts.
@@ -132,7 +132,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
 - Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
-- Canonical evidence, crypto Strategy Lab market DTOs, company-market snapshots, market workspace discovery/calendar DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
+- Canonical evidence, crypto Strategy Lab market DTOs, company-market snapshots, market workspace discovery/calendar DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
 - Media repetition is not event confirmation. Provider failure does not mean no event occurred.
 - Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
 - SEC SIC is labeled as SEC SIC, not GICS or ICB.

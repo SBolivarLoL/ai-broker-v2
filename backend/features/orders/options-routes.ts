@@ -34,6 +34,14 @@ type OptionRouteDependencies = {
   allow: RateLimit;
   previewSecret: string;
 };
+type OptionChainSource = {
+  contracts: any[];
+  snapshots: Record<string, any>;
+  underlyingPrice: number;
+  account: any;
+  expirations: string[];
+  retrievedAt: string;
+};
 
 /** Handles option discovery, position actions, previews, and submissions. */
 export function createOptionRoutes({
@@ -47,7 +55,7 @@ export function createOptionRoutes({
     string,
     {
       expiresAt: number;
-      value: ReturnType<typeof optionChainDto>;
+      source: OptionChainSource;
     }
   >();
 
@@ -73,7 +81,19 @@ export function createOptionRoutes({
         );
       const cacheKey = `${parsed.data.symbol}:${parsed.data.expiration ?? "nearest"}`,
         cached = optionChainCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) return json(cached.value);
+      if (cached && cached.expiresAt > Date.now()) {
+        const source = cached.source;
+        const value = optionChainDto(
+          source.contracts,
+          source.snapshots,
+          source.underlyingPrice,
+          source.account,
+          source.retrievedAt,
+          new Date(),
+        );
+        value.expirations = source.expirations;
+        return json(value);
+      }
       const start = new Date(),
         end = new Date(Date.now() + 60 * 86_400_000);
       const [account, underlyingPrice, contractResponse] = await Promise.all([
@@ -120,21 +140,39 @@ export function createOptionRoutes({
         expirationDate: new Date(`${expiration}T00:00:00Z`),
         limit: 500,
       });
+      const retrievedAt = new Date().toISOString();
       const value = optionChainDto(
         contracts,
         chainResponse.snapshots ?? {},
         underlyingPrice,
         account,
+        retrievedAt,
+        retrievedAt,
       );
       value.expirations = expirations;
-      optionChainCache.set(cacheKey, { expiresAt: Date.now() + 30_000, value });
+      optionChainCache.set(cacheKey, {
+        expiresAt: Date.now() + 30_000,
+        source: {
+          contracts,
+          snapshots: chainResponse.snapshots ?? {},
+          underlyingPrice,
+          account,
+          expirations,
+          retrievedAt,
+        },
+      });
       return json(value);
     }
     if (url.pathname === "/api/options/portfolio" && request.method === "GET") {
       const positions = (await alpaca.trading.positions.getAllOpenPositions())
         .filter((position) => position.assetClass === "us_option")
         .slice(0, 50);
-      if (!positions.length) return json(optionPortfolioGreeks([], {}, []));
+      if (!positions.length) {
+        const retrievedAt = new Date().toISOString();
+        return json(
+          optionPortfolioGreeks([], {}, [], {}, retrievedAt, retrievedAt),
+        );
+      }
       const symbols = positions.map((position) => String(position.symbol));
       const [snapshotResponse, contracts] = await Promise.all([
         alpaca.marketData.options.optionSnapshots({
@@ -161,12 +199,15 @@ export function createOptionRoutes({
           ]),
         ),
       );
+      const retrievedAt = new Date().toISOString();
       return json(
         optionPortfolioGreeks(
           positions,
           snapshotResponse.snapshots ?? {},
           contracts,
           underlyingPrices,
+          retrievedAt,
+          retrievedAt,
         ),
       );
     }
