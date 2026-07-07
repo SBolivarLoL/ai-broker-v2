@@ -4,7 +4,8 @@ import { createMarketService } from "../../backend/features/markets/service";
 import { createStore } from "../../backend/persistence/store";
 
 function fakeMarketService(allow = () => true) {
-  let clockCalls = 0;
+  let clockCalls = 0,
+    multiAssetCalls = 0;
   const stockStream = {
     onStateChange() {},
     onConnect() {},
@@ -22,6 +23,37 @@ function fakeMarketService(allow = () => true) {
     marketData: {
       stockStream: () => stockStream,
       getLatestPrice: async () => 123.45,
+      indices: {
+        indexLatestValues: async () => {
+          multiAssetCalls++;
+          return {
+            values: { SPX: { v: 6000, t: "2026-06-22T20:00:00Z" } },
+          };
+        },
+      },
+      forex: {
+        latestRates: async () => ({
+          rates: {
+            "EUR/USD": {
+              bp: 1.1,
+              ap: 1.1002,
+              mp: 1.1001,
+              t: "2026-06-22T20:00:01Z",
+            },
+          },
+        }),
+      },
+      crypto: {
+        cryptoSnapshots: async () => ({
+          snapshots: {
+            "BTC/USD": {
+              latestQuote: { bp: 99, ap: 101, t: "2026-06-22T20:00:02Z" },
+              dailyBar: { c: 105, h: 110, l: 90, v: 12 },
+              prevDailyBar: { c: 100 },
+            },
+          },
+        }),
+      },
     },
     trading: {
       calendar: {
@@ -39,6 +71,7 @@ function fakeMarketService(allow = () => true) {
       allow,
     }),
     clockCalls: () => clockCalls,
+    multiAssetCalls: () => multiAssetCalls,
   };
 }
 
@@ -82,4 +115,51 @@ test("market service preserves stream limits before opening subscriptions", asyn
     "test",
   );
   expect(response?.status).toBe(429);
+});
+
+test("multi-asset route preserves provider retrieval time across cached responses", async () => {
+  const { service, multiAssetCalls } = fakeMarketService();
+  const request = new Request("http://localhost/api/market/multi-asset");
+  const first = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const firstBody = await first?.json();
+  await Bun.sleep(5);
+  const second = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const secondBody = await second?.json();
+
+  expect(firstBody).toMatchObject({
+    indices: [
+      {
+        symbol: "SPX",
+        observedAt: "2026-06-22T20:00:00.000Z",
+      },
+    ],
+    forex: [
+      {
+        symbol: "EUR/USD",
+        observedAt: "2026-06-22T20:00:01.000Z",
+      },
+    ],
+    crypto: [
+      {
+        symbol: "BTC/USD",
+        observedAt: "2026-06-22T20:00:02.000Z",
+      },
+    ],
+    observedAt: "2026-06-22T20:00:02.000Z",
+  });
+  expect(secondBody.retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.time.retrievalTime).toBe(firstBody.retrievedAt);
+  expect(new Date(secondBody.serverRespondedAt).getTime()).toBeGreaterThan(
+    new Date(firstBody.serverRespondedAt).getTime(),
+  );
+  expect(secondBody.asOf).toBe(secondBody.serverRespondedAt);
+  expect(multiAssetCalls()).toBe(1);
 });

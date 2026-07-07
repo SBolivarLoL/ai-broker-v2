@@ -23,7 +23,7 @@ import {
   parseWatchlistInput,
   watchlistDto,
 } from "./market-workspace";
-import { multiAssetDto } from "./multi-asset";
+import { multiAssetDto, type MultiAssetDtoInput } from "./multi-asset";
 import { searchAssets, type SearchableAsset } from "./search";
 import { createStockStreamService } from "./stock-stream";
 
@@ -81,7 +81,7 @@ export function createMarketService({
   >();
   let multiAssetCache: {
     expiresAt: number;
-    value: ReturnType<typeof multiAssetDto>;
+    source: MultiAssetDtoInput & { retrievedAt: string };
   } | null = null;
 
   const stockStream = createStockStreamService(alpaca);
@@ -352,7 +352,12 @@ export function createMarketService({
       request.method === "GET"
     ) {
       if (multiAssetCache && multiAssetCache.expiresAt > Date.now()) {
-        return json(multiAssetCache.value);
+        return json(
+          multiAssetDto({
+            ...multiAssetCache.source,
+            serverRespondedAt: new Date(),
+          }),
+        );
       }
       const warnings: string[] = [];
       const [indices, forex, crypto] = await Promise.all([
@@ -384,8 +389,13 @@ export function createMarketService({
             return {};
           }),
       ]);
-      const value = multiAssetDto({ indices, forex, crypto, warnings });
-      multiAssetCache = { value, expiresAt: Date.now() + 30_000 };
+      const retrievedAt = new Date().toISOString();
+      const source = { indices, forex, crypto, warnings, retrievedAt };
+      const value = multiAssetDto({
+        ...source,
+        serverRespondedAt: retrievedAt,
+      });
+      multiAssetCache = { source, expiresAt: Date.now() + 30_000 };
       return json(value);
     }
 
