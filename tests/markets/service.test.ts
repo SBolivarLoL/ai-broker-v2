@@ -213,10 +213,25 @@ test("market service owns quote validation and clock caching", async () => {
     new URL(quote.url),
     "test",
   );
-  expect(await response?.json()).toMatchObject({
+  const body = await response?.json();
+  expect(body).toMatchObject({
     symbol: "AAPL",
     price: 123.45,
+    observedAt: null,
+    retrievedAt: body.serverRespondedAt,
+    serverRespondedAt: body.serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: body.serverRespondedAt,
+      serverResponseTime: body.serverRespondedAt,
+    },
+    asOf: body.serverRespondedAt,
   });
+  expect(Number.isFinite(new Date(body.serverRespondedAt).getTime())).toBe(
+    true,
+  );
 
   await service.getClock();
   await service.getClock();
