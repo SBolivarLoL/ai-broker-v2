@@ -3,6 +3,7 @@ import {
   monitoringCorporateActions,
   monitoringEventClusters,
   monitoringNews,
+  monitoringResponseDto,
   monitoringSecFilings,
 } from "../../backend/features/markets/market-monitoring";
 import type { Sec8KAlertEvidence } from "../../backend/integrations/sec-edgar";
@@ -43,11 +44,30 @@ test("market monitoring keeps only portfolio and watchlist news with explicit re
       updatedAt: new Date("2026-06-22T12:00:00Z"),
     },
   ];
-  const result = monitoringNews(articles, positions, watchlists);
+  const result = monitoringNews(
+    articles,
+    positions,
+    watchlists,
+    "2026-06-22T12:05:00Z",
+    "2026-06-22T12:05:01Z",
+  );
   expect(result.map((article) => article.id)).toEqual([1, 2]);
   expect(result[0].relevance.portfolio).toBe(true);
   expect(result[0].summary).toBe("Analyst's note");
   expect(result[0].relevantSymbols).toEqual(["AAPL"]);
+  expect(result[0]).toMatchObject({
+    observedAt: null,
+    publishedAt: "2026-06-22T10:00:00.000Z",
+    retrievedAt: "2026-06-22T12:05:00.000Z",
+    serverRespondedAt: "2026-06-22T12:05:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: "2026-06-22T10:00:00.000Z",
+      retrievalTime: "2026-06-22T12:05:00.000Z",
+      serverResponseTime: "2026-06-22T12:05:01.000Z",
+    },
+    asOf: "2026-06-22T12:05:01.000Z",
+  });
   expect(result[1].relevance.watchlists).toEqual([
     { id: "growth", name: "Growth" },
   ]);
@@ -95,11 +115,29 @@ test("market monitoring estimates bounded holding impact for dividends and split
     },
     positions,
     watchlists,
+    "2026-06-24T13:00:00Z",
+    "2026-06-24T13:00:01Z",
   );
   expect(actions).toHaveLength(3);
   expect(actions.find((action) => action.id === "div")?.impact).toMatchObject({
     kind: "cash",
     estimatedCash: 2.5,
+  });
+  expect(actions.find((action) => action.id === "div")).toMatchObject({
+    observedAt: null,
+    eventDate: "2026-06-25T00:00:00.000Z",
+    retrievedAt: "2026-06-24T13:00:00.000Z",
+    serverRespondedAt: "2026-06-24T13:00:01.000Z",
+    time: {
+      observationTime: null,
+      effectivePeriod: {
+        start: "2026-06-25T00:00:00.000Z",
+        end: "2026-06-25T00:00:00.000Z",
+        label: "corporate action event date",
+      },
+      retrievalTime: "2026-06-24T13:00:00.000Z",
+      serverResponseTime: "2026-06-24T13:00:01.000Z",
+    },
   });
   expect(actions.find((action) => action.id === "split")?.impact).toMatchObject(
     { kind: "quantity", estimatedQuantity: 40 },
@@ -203,12 +241,31 @@ test("scopes SEC 8-K alerts and prioritizes material filing items", () => {
     ] as Sec8KAlertEvidence[],
     positions,
     watchlists,
+    "2026-06-29T12:00:01Z",
   );
   expect(alerts.map((alert) => alert.accession)).toEqual([
     "critical",
     "standard",
   ]);
   expect(alerts[0]?.relevance.portfolio).toBe(true);
+  expect(alerts[0]).toMatchObject({
+    observedAt: null,
+    publishedAt: "2026-06-28T00:00:00.000Z",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: "2026-06-28T00:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-06-27T00:00:00.000Z",
+        end: "2026-06-27T00:00:00.000Z",
+        label: "SEC report date",
+      },
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:01.000Z",
+    },
+    asOf: "2026-06-29T12:00:01.000Z",
+  });
   expect(alerts[1]?.relevance.watchlists).toEqual([
     { id: "growth", name: "Growth" },
   ]);
@@ -220,4 +277,62 @@ test("scopes SEC 8-K alerts and prioritizes material filing items", () => {
   expect(
     clusters.find((cluster) => cluster.symbol === "AAPL")?.timeline[0]?.source,
   ).toBe("sec_8k");
+});
+
+test("monitoring response refreshes server time while preserving provider retrieval", () => {
+  const news = monitoringNews(
+    [
+      {
+        id: 1,
+        headline: "Apple update",
+        summary: "A",
+        source: "Wire",
+        symbols: ["AAPL"],
+        createdAt: new Date("2026-06-22T10:00:00Z"),
+      },
+    ],
+    positions,
+    watchlists,
+    "2026-06-22T12:05:00Z",
+    "2026-06-22T12:05:00Z",
+  );
+  const first = monitoringResponseDto({
+    news,
+    corporateActions: [],
+    secFilings: [],
+    clusters: monitoringEventClusters(news, []),
+    warnings: [],
+    coverage: {
+      symbols: ["AAPL"],
+      omittedSymbols: 0,
+      secSymbols: ["AAPL"],
+      secOmittedSymbols: 0,
+    },
+    retrievedAt: "2026-06-22T12:05:00.000Z",
+  });
+  const second = monitoringResponseDto(first, "2026-06-22T12:05:03Z");
+  expect(second.retrievedAt).toBe("2026-06-22T12:05:00.000Z");
+  expect(second.news[0]?.retrievedAt).toBe("2026-06-22T12:05:00.000Z");
+  expect(second.serverRespondedAt).toBe("2026-06-22T12:05:03.000Z");
+  expect(second.news[0]?.serverRespondedAt).toBe(
+    "2026-06-22T12:05:03.000Z",
+  );
+  expect(second.clusters[0]).toMatchObject({
+    observedAt: null,
+    retrievedAt: "2026-06-22T12:05:00.000Z",
+    serverRespondedAt: "2026-06-22T12:05:03.000Z",
+    time: {
+      effectivePeriod: {
+        start: "2026-06-22T10:00:00.000Z",
+        end: "2026-06-22T10:00:00.000Z",
+        label: "latest clustered event",
+      },
+      retrievalTime: "2026-06-22T12:05:00.000Z",
+      serverResponseTime: "2026-06-22T12:05:03.000Z",
+    },
+    asOf: "2026-06-22T12:05:03.000Z",
+  });
+  expect(second.time.retrievalTime).toBe("2026-06-22T12:05:00.000Z");
+  expect(second.time.serverResponseTime).toBe("2026-06-22T12:05:03.000Z");
+  expect(second.asOf).toBe(second.serverRespondedAt);
 });

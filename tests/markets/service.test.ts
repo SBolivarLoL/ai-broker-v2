@@ -128,6 +128,9 @@ function fakeMarketService(allow = () => true) {
       },
     },
     trading: {
+      positions: {
+        getAllOpenPositions: async () => [],
+      },
       assets: {
         getV2AssetsSymbolOrAssetId: async () => ({
           symbol: "AAPL",
@@ -249,6 +252,35 @@ test("market service preserves stream limits before opening subscriptions", asyn
     "test",
   );
   expect(response?.status).toBe(429);
+});
+
+test("market monitoring route returns explicit response time provenance", async () => {
+  const { service } = fakeMarketService();
+  const request = new Request("http://localhost/api/market/monitoring");
+  const response = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const body = await response?.json();
+  expect(body).toMatchObject({
+    news: [],
+    corporateActions: [],
+    secFilings: [],
+    retrievedAt: body.serverRespondedAt,
+    serverRespondedAt: body.serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: body.serverRespondedAt,
+      serverResponseTime: body.serverRespondedAt,
+    },
+    asOf: body.serverRespondedAt,
+  });
+  expect(Number.isFinite(new Date(body.serverRespondedAt).getTime())).toBe(
+    true,
+  );
 });
 
 test("multi-asset route preserves provider retrieval time across cached responses", async () => {

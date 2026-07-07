@@ -3,6 +3,10 @@
  * monitoring records with explicit relevance and holding impact.
  */
 import type { Sec8KAlertEvidence } from "../../integrations/sec-edgar";
+import {
+  normalizeTimeProvenance,
+  type NormalizedTimeProvenance,
+} from "../../shared/time-provenance";
 
 export type MonitoringPosition = { symbol: string; qty: string | number };
 export type MonitoringWatchlist = {
@@ -62,6 +66,13 @@ const eventDate = (action: any) =>
       action.processDate ??
       action.payableDate,
   );
+const requiredIso = (value: string | Date | number) => {
+  const result = iso(value);
+  if (!result) throw new Error("Monitoring timestamp must be valid");
+  return result;
+};
+const dateOnlyIso = (value: string | null | undefined) =>
+  value ? iso(`${value}T00:00:00.000Z`) : null;
 
 function scopeFor(
   symbols: string[],
@@ -83,7 +94,11 @@ export function monitoringNews(
   articles: any[],
   positions: MonitoringPosition[],
   watchlists: MonitoringWatchlist[],
+  retrievedAtInput: string | Date | number = new Date(),
+  serverRespondedAtInput: string | Date | number = retrievedAtInput,
 ) {
+  const retrievedAt = requiredIso(retrievedAtInput);
+  const serverRespondedAt = requiredIso(serverRespondedAtInput);
   const held = new Set(
     positions.map((position) => position.symbol.toUpperCase()),
   );
@@ -104,13 +119,25 @@ export function monitoringNews(
             list.assets.some((asset) => asset.symbol.toUpperCase() === symbol),
           ),
       );
+      const publishedAt = iso(article.createdAt);
       return {
         id: Number(article.id),
         headline: plainText(article.headline || "Untitled article"),
         summary: plainText(article.summary),
         source: String(article.source ?? "Unknown source"),
-        createdAt: iso(article.createdAt),
+        createdAt: publishedAt,
+        publishedAt,
         updatedAt: iso(article.updatedAt),
+        observedAt: null,
+        retrievedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: null,
+          publicationTime: publishedAt,
+          retrievalTime: retrievedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
+        asOf: serverRespondedAt,
         url: typeof article.url === "string" ? article.url : null,
         symbols,
         relevantSymbols,
@@ -162,7 +189,11 @@ export function monitoringCorporateActions(
   envelope: Record<string, any[] | undefined>,
   positions: MonitoringPosition[],
   watchlists: MonitoringWatchlist[],
+  retrievedAtInput: string | Date | number = new Date(),
+  serverRespondedAtInput: string | Date | number = retrievedAtInput,
 ) {
+  const retrievedAt = requiredIso(retrievedAtInput);
+  const serverRespondedAt = requiredIso(serverRespondedAtInput);
   const quantities = new Map(
     positions.map((position) => [
       position.symbol.toUpperCase(),
@@ -190,15 +221,33 @@ export function monitoringCorporateActions(
           quantities.has(symbol) && Number.isFinite(quantities.get(symbol))
             ? quantities.get(symbol)!
             : null;
+        const actionEventDate = eventDate(action);
+        const effectivePeriod = actionEventDate
+          ? {
+              start: actionEventDate,
+              end: actionEventDate,
+              label: "corporate action event date",
+            }
+          : null;
         return {
-          id: String(action.id ?? `${type}:${symbol}:${eventDate(action)}`),
+          id: String(action.id ?? `${type}:${symbol}:${actionEventDate}`),
           type,
           label: actionLabels[type] ?? type,
           symbol,
           relatedSymbols,
-          eventDate: eventDate(action),
+          eventDate: actionEventDate,
+          observedAt: null,
           processDate: iso(action.processDate),
           payableDate: iso(action.payableDate),
+          retrievedAt,
+          serverRespondedAt,
+          time: normalizeTimeProvenance({
+            observationTime: null,
+            effectivePeriod,
+            retrievalTime: retrievedAt,
+            serverResponseTime: serverRespondedAt,
+          }),
+          asOf: serverRespondedAt,
           rate: Number.isFinite(Number(action.rate))
             ? Number(action.rate)
             : null,
@@ -233,15 +282,38 @@ export function monitoringSecFilings(
   alerts: Sec8KAlertEvidence[],
   positions: MonitoringPosition[],
   watchlists: MonitoringWatchlist[],
+  serverRespondedAtInput: string | Date | number = new Date(),
 ) {
+  const serverRespondedAt = requiredIso(serverRespondedAtInput);
   const held = new Set(
     positions.map((position) => position.symbol.toUpperCase()),
   );
   return alerts
-    .map((alert) => ({
-      ...alert,
-      relevance: scopeFor([alert.symbol], held, watchlists),
-    }))
+    .map((alert) => {
+      const publishedAt = dateOnlyIso(alert.filed);
+      const effectiveAt = dateOnlyIso(alert.reportDate);
+      return {
+        ...alert,
+        observedAt: null,
+        publishedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: null,
+          publicationTime: publishedAt,
+          effectivePeriod: effectiveAt
+            ? {
+                start: effectiveAt,
+                end: effectiveAt,
+                label: "SEC report date",
+              }
+            : null,
+          retrievalTime: alert.retrievedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
+        asOf: serverRespondedAt,
+        relevance: scopeFor([alert.symbol], held, watchlists),
+      };
+    })
     .filter(
       (alert) => alert.relevance.portfolio || alert.relevance.watchlists.length,
     )
@@ -321,4 +393,87 @@ export function monitoringEventClusters(
     })
     .sort((a, b) => b.count - a.count || b.latestAt.localeCompare(a.latestAt))
     .slice(0, 12);
+}
+
+function refreshServerTime<
+  T extends { retrievedAt: string; time: NormalizedTimeProvenance },
+>(
+  record: T,
+  serverRespondedAt: string,
+) {
+  return {
+    ...record,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: record.time.observationTime,
+      publicationTime: record.time.publicationTime,
+      effectivePeriod: record.time.effectivePeriod,
+      retrievalTime: record.retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
+}
+
+function refreshClusterServerTime<T extends { latestAt: string }>(
+  cluster: T,
+  retrievedAt: string,
+  serverRespondedAt: string,
+) {
+  return {
+    ...cluster,
+    observedAt: null,
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: null,
+      effectivePeriod: {
+        start: cluster.latestAt,
+        end: cluster.latestAt,
+        label: "latest clustered event",
+      },
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
+}
+
+export function monitoringResponseDto(
+  input: {
+    news: ReturnType<typeof monitoringNews>;
+    corporateActions: ReturnType<typeof monitoringCorporateActions>;
+    secFilings: ReturnType<typeof monitoringSecFilings>;
+    clusters: ReturnType<typeof monitoringEventClusters>;
+    warnings: string[];
+    coverage: {
+      symbols: string[];
+      omittedSymbols: number;
+      secSymbols: string[];
+      secOmittedSymbols: number;
+    };
+    retrievedAt: string;
+  },
+  serverRespondedAtInput: string | Date | number = input.retrievedAt,
+) {
+  const serverRespondedAt = requiredIso(serverRespondedAtInput);
+  return {
+    ...input,
+    news: input.news.map((item) => refreshServerTime(item, serverRespondedAt)),
+    corporateActions: input.corporateActions.map((item) =>
+      refreshServerTime(item, serverRespondedAt),
+    ),
+    secFilings: input.secFilings.map((item) =>
+      refreshServerTime(item, serverRespondedAt),
+    ),
+    clusters: input.clusters.map((item) =>
+      refreshClusterServerTime(item, input.retrievedAt, serverRespondedAt),
+    ),
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      retrievalTime: input.retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
 }
