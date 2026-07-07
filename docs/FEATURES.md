@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `900db9e`: 2026-07-07.
+Last reviewed against `main` commit `9c7c373`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -27,7 +27,7 @@ The browser exposes seven workspaces:
 - Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness.
 - Alpaca watchlist create, rename, symbol add/remove, and delete workflows.
 - NASDAQ clock/calendar, early-close information, session-aware order guidance, SIP discovery panels where entitled, and an IEX quote/bar SSE bridge.
-- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback.
+- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback. The company-market snapshot and equity quote/bar stream DTOs distinguish provider observation time from retrieval and server response time.
 - Read-only crypto quotes for BTC/USD, ETH/USD, and SOL/USD. Index and FX states remain explicitly unavailable when the account lacks entitlement.
 - Fixed-income research returns an explicit unavailable capability record because this personal Trading API account is not a fixed-income-enabled Broker API partner.
 
@@ -132,7 +132,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
 - Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
-- Canonical evidence and crypto Strategy Lab market DTOs distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, and quarters.
+- Canonical evidence, crypto Strategy Lab market DTOs, company-market snapshots, and equity quote/bar stream DTOs distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, and quarters.
 - Media repetition is not event confirmation. Provider failure does not mean no event occurred.
 - Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
 - SEC SIC is labeled as SEC SIC, not GICS or ICB.
@@ -145,7 +145,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
-- The explicit time taxonomy is not yet present on every normalized provider DTO or browser-facing object. `asOf` remains a legacy compatibility field while call sites migrate to observation/publication/effective/retrieval/server-response fields.
+- The explicit time taxonomy is not yet present on every normalized provider DTO or browser-facing object. `asOf`, `timestamp`, and `quoteAt` remain legacy compatibility fields while call sites migrate to observation/publication/effective/retrieval/server-response fields.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
