@@ -19,6 +19,8 @@ import { parseStreamSymbols } from "./market-stream";
 import {
   calendarDto,
   discoveryDto,
+  type MarketCalendarSource,
+  type MarketWorkspaceSource,
   parseSymbol,
   parseWatchlistInput,
   watchlistDto,
@@ -68,12 +70,12 @@ export function createMarketService({
   >();
   let discoveryCache: {
     expiresAt: number;
-    value: ReturnType<typeof discoveryDto>;
+    source: MarketWorkspaceSource;
   } | null = null;
   let clockCache: { expiresAt: number; value: any } | null = null;
   let calendarCache: {
     expiresAt: number;
-    value: ReturnType<typeof calendarDto>;
+    source: MarketCalendarSource;
   } | null = null;
   const monitoringCache = new Map<
     string,
@@ -96,28 +98,47 @@ export function createMarketService({
 
   async function getDiscovery() {
     if (discoveryCache && discoveryCache.expiresAt > Date.now())
-      return discoveryCache.value;
+      return discoveryDto(
+        discoveryCache.source.movers,
+        discoveryCache.source.actives,
+        discoveryCache.source.clock,
+        discoveryCache.source.retrievedAt,
+        new Date(),
+      );
     const [movers, actives, clock] = await Promise.all([
       alpaca.marketData.screener.movers({ marketType: "stocks", top: 5 }),
       alpaca.marketData.screener.mostActives({ by: "volume", top: 5 }),
       getClock(),
     ]);
-    const value = discoveryDto(movers, actives, clock);
-    discoveryCache = { value, expiresAt: Date.now() + 30_000 };
+    const retrievedAt = new Date().toISOString();
+    const value = discoveryDto(movers, actives, clock, retrievedAt, retrievedAt);
+    discoveryCache = {
+      source: { movers, actives, clock, retrievedAt },
+      expiresAt: Date.now() + 30_000,
+    };
     return value;
   }
 
   async function getCalendar() {
     if (calendarCache && calendarCache.expiresAt > Date.now())
-      return calendarCache.value;
+      return calendarDto(
+        calendarCache.source.response,
+        calendarCache.source.clock,
+        calendarCache.source.retrievedAt,
+        new Date(),
+      );
     const start = new Date();
     const end = new Date(Date.now() + 21 * 86_400_000);
     const [calendar, clock] = await Promise.all([
       alpaca.trading.calendar.calendar({ market: "NASDAQ", start, end }),
       getClock(),
     ]);
-    const value = calendarDto(calendar, clock);
-    calendarCache = { value, expiresAt: Date.now() + 5 * 60_000 };
+    const retrievedAt = new Date().toISOString();
+    const value = calendarDto(calendar, clock, retrievedAt, retrievedAt);
+    calendarCache = {
+      source: { response: calendar, clock, retrievedAt },
+      expiresAt: Date.now() + 5 * 60_000,
+    };
     return value;
   }
 

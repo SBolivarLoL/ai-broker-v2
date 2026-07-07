@@ -5,6 +5,8 @@ import { createStore } from "../../backend/persistence/store";
 
 function fakeMarketService(allow = () => true) {
   let clockCalls = 0,
+    discoveryCalls = 0,
+    calendarCalls = 0,
     multiAssetCalls = 0;
   const stockStream = {
     onStateChange() {},
@@ -23,6 +25,22 @@ function fakeMarketService(allow = () => true) {
     marketData: {
       stockStream: () => stockStream,
       getLatestPrice: async () => 123.45,
+      screener: {
+        movers: async () => {
+          discoveryCalls++;
+          return {
+            gainers: [
+              { symbol: "AAPL", price: 200, change: 10, percentChange: 5 },
+            ],
+            losers: [],
+            lastUpdated: "2026-06-22T14:30:00Z",
+          };
+        },
+        mostActives: async () => ({
+          mostActives: [{ symbol: "MSFT", volume: 1_000, tradeCount: 20 }],
+          lastUpdated: "2026-06-22T14:31:00Z",
+        }),
+      },
       indices: {
         indexLatestValues: async () => {
           multiAssetCalls++;
@@ -59,8 +77,40 @@ function fakeMarketService(allow = () => true) {
       calendar: {
         clock: async () => {
           clockCalls++;
-          return { clocks: [] };
+          return {
+            clocks: [
+              {
+                market: { acronym: "NASDAQ" },
+                phase: "open",
+                isMarketDay: true,
+                timestamp: new Date("2026-06-22T14:32:00Z"),
+                nextMarketClose: new Date("2026-06-22T20:00:00Z"),
+              },
+            ],
+          };
         },
+        calendar: async () => {
+          calendarCalls++;
+          return {
+            market: {
+              name: "Nasdaq",
+              acronym: "NASDAQ",
+              timezone: "America/New_York",
+            },
+            calendar: [
+              {
+                date: new Date("2026-06-22"),
+                coreStart: new Date("2026-06-22T13:30:00Z"),
+                coreEnd: new Date("2026-06-22T20:00:00Z"),
+                settlementDate: new Date("2026-06-24"),
+              },
+            ],
+          };
+        },
+      },
+      watchlists: {
+        getWatchlists: async () => [],
+        getWatchlistById: async () => null,
       },
     },
   } as unknown as Alpaca;
@@ -71,6 +121,8 @@ function fakeMarketService(allow = () => true) {
       allow,
     }),
     clockCalls: () => clockCalls,
+    discoveryCalls: () => discoveryCalls,
+    calendarCalls: () => calendarCalls,
     multiAssetCalls: () => multiAssetCalls,
   };
 }
@@ -162,4 +214,60 @@ test("multi-asset route preserves provider retrieval time across cached response
   );
   expect(secondBody.asOf).toBe(secondBody.serverRespondedAt);
   expect(multiAssetCalls()).toBe(1);
+});
+
+test("market workspace route keeps cached provider retrieval separate from response time", async () => {
+  const { service, discoveryCalls, calendarCalls } = fakeMarketService();
+  const request = new Request("http://localhost/api/market/workspace");
+  const first = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const firstBody = await first?.json();
+  await Bun.sleep(5);
+  const second = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const secondBody = await second?.json();
+
+  expect(firstBody.discovery).toMatchObject({
+    gainers: [
+      {
+        symbol: "AAPL",
+        observedAt: "2026-06-22T14:30:00.000Z",
+      },
+    ],
+    mostActive: [
+      {
+        symbol: "MSFT",
+        observedAt: "2026-06-22T14:31:00.000Z",
+      },
+    ],
+    session: {
+      observedAt: "2026-06-22T14:32:00.000Z",
+    },
+    observedAt: "2026-06-22T14:32:00.000Z",
+  });
+  expect(firstBody.calendar.sessions[0]).toMatchObject({
+    date: "2026-06-22",
+    time: {
+      effectivePeriod: {
+        start: "2026-06-22T13:30:00.000Z",
+        end: "2026-06-22T20:00:00.000Z",
+      },
+    },
+  });
+  expect(secondBody.discovery.retrievedAt).toBe(firstBody.discovery.retrievedAt);
+  expect(secondBody.calendar.retrievedAt).toBe(firstBody.calendar.retrievedAt);
+  expect(
+    new Date(secondBody.discovery.serverRespondedAt).getTime(),
+  ).toBeGreaterThan(new Date(firstBody.discovery.serverRespondedAt).getTime());
+  expect(
+    new Date(secondBody.calendar.serverRespondedAt).getTime(),
+  ).toBeGreaterThan(new Date(firstBody.calendar.serverRespondedAt).getTime());
+  expect(discoveryCalls()).toBe(1);
+  expect(calendarCalls()).toBe(1);
 });
