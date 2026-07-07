@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `a81152c`: 2026-07-07.
+Last reviewed against `main` commit `6916e79`: 2026-07-07.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -27,7 +27,7 @@ The browser exposes seven workspaces:
 - Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness.
 - Alpaca watchlist create, rename, symbol add/remove, and delete workflows.
 - NASDAQ clock/calendar, early-close information, session-aware order guidance, SIP discovery panels where entitled, and an IEX quote/bar SSE bridge.
-- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback. The company-market snapshot, market workspace discovery/calendar DTOs, equity quote/bar stream DTOs, and multi-asset index/FX/crypto DTO distinguish provider observation time, effective session periods, retrieval time, and server response time where applicable; cached company-market responses preserve provider retrieval time while refreshing server response time.
+- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback. The single-symbol quote route, company-market snapshot, market workspace discovery/calendar DTOs, equity quote/bar stream DTOs, and multi-asset index/FX/crypto DTO distinguish provider observation time, effective session periods, retrieval time, and server response time where applicable; the quote route reports `observedAt:null` when the provider helper exposes no event timestamp, and cached company-market responses preserve provider retrieval time while refreshing server response time.
 - Read-only crypto quotes for BTC/USD, ETH/USD, and SOL/USD. Index and FX states remain explicitly unavailable when the account lacks entitlement.
 - Fixed-income research returns an explicit unavailable capability record because this personal Trading API account is not a fixed-income-enabled Broker API partner.
 
@@ -132,7 +132,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
 - Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
-- Canonical evidence, crypto Strategy Lab market DTOs, company-market snapshots, market workspace discovery/calendar DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
+- Canonical evidence, crypto Strategy Lab market DTOs, single-symbol quote responses, company-market snapshots, market workspace discovery/calendar DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
 - Media repetition is not event confirmation. Provider failure does not mean no event occurred.
 - Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
 - SEC SIC is labeled as SEC SIC, not GICS or ICB.

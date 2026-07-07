@@ -6,6 +6,7 @@ import {
   securityHeaders,
 } from "../../http/http";
 import type { createStore } from "../../persistence/store";
+import { normalizeTimeProvenance } from "../../shared/time-provenance";
 import { getSec8KAlerts } from "../research/research";
 import { companyMarketSnapshot } from "./company-market";
 import {
@@ -360,7 +361,21 @@ export function createMarketService({
       if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
         return json({ error: "No valid current price" }, 502);
       }
-      return json({ symbol, price, asOf: new Date().toISOString() });
+      const retrievedAt = new Date().toISOString();
+      const serverRespondedAt = retrievedAt;
+      return json({
+        symbol,
+        price,
+        observedAt: null,
+        retrievedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: null,
+          retrievalTime: retrievedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
+        asOf: serverRespondedAt,
+      });
     }
 
     if (url.pathname === "/api/market/stream" && request.method === "GET") {
