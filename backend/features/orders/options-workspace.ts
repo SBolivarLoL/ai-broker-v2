@@ -5,6 +5,9 @@
  * the explicit maximum-loss calculations in option-order.ts.
  */
 import { z } from "zod";
+import { normalizeTimeProvenance } from "../../shared/time-provenance";
+
+type DateInput = string | number | Date;
 
 export const OptionChainQuery = z.object({
   symbol: z
@@ -22,6 +25,16 @@ const finite = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
+
+const iso = (value: DateInput) => new Date(value).toISOString();
+
+const optionalIso = (value: unknown) => (value ? iso(value as DateInput) : null);
+
+const latest = (times: (string | null)[]) =>
+  times
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? null;
 
 const normalPdf = (value: number) =>
   Math.exp(-0.5 * value * value) / Math.sqrt(2 * Math.PI);
@@ -110,7 +123,11 @@ export function optionChainDto(
   snapshots: Record<string, any>,
   underlyingPrice: number,
   account: any,
+  retrievedAtInput: DateInput = new Date(),
+  serverRespondedAtInput: DateInput = retrievedAtInput,
 ) {
+  const retrievedAt = iso(retrievedAtInput);
+  const serverRespondedAt = iso(serverRespondedAtInput);
   const rows = contracts
     .map((contract) => {
       const snapshot = snapshots[contract.symbol] ?? {},
@@ -129,6 +146,9 @@ export function optionChainDto(
         multiplier = Number(contract.multiplier ?? 100);
       const impliedVolatility = finite(snapshot.impliedVolatility),
         expiration = new Date(contract.expirationDate),
+        observedAt = optionalIso(
+          quote.t ?? snapshot.latestTrade?.t ?? snapshot.dailyBar?.t,
+        ),
         years = Math.max(
           1 / 365,
           (expiration.getTime() + 20 * 3_600_000 - Date.now()) /
@@ -147,6 +167,14 @@ export function optionChainDto(
         ask,
         midpoint,
         spreadBps,
+        observedAt,
+        retrievedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: observedAt,
+          retrievalTime: retrievedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
         impliedVolatility,
         modelGreeks: impliedVolatility
           ? blackScholesGreeks(
@@ -176,6 +204,7 @@ export function optionChainDto(
         a.type.localeCompare(b.type),
     );
   const expirations = [...new Set(rows.map((row) => row.expiration))];
+  const observedAt = latest(rows.map((row) => row.observedAt));
   const selected =
     rows
       .filter((row) => row.midpoint !== null)
@@ -204,10 +233,18 @@ export function optionChainDto(
       tradingLevel: Number(account.optionsTradingLevel ?? 0),
       buyingPower: finite(account.optionsBuyingPower),
     },
+    observedAt,
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: observedAt,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
     source: "Alpaca OPRA indicative option snapshots",
     modelAssumptions:
       "Independent Black-Scholes comparison uses a 4% risk-free rate, no dividend yield and the snapshot implied volatility.",
-    asOf: new Date().toISOString(),
+    asOf: serverRespondedAt,
   };
 }
 
@@ -216,7 +253,11 @@ export function optionPortfolioGreeks(
   snapshots: Record<string, any>,
   contracts: any[],
   underlyingPrices: Record<string, number> = {},
+  retrievedAtInput: DateInput = new Date(),
+  serverRespondedAtInput: DateInput = retrievedAtInput,
 ) {
+  const retrievedAt = iso(retrievedAtInput);
+  const serverRespondedAt = iso(serverRespondedAtInput);
   const contractMap = new Map(
     contracts.map((contract) => [String(contract.symbol), contract]),
   );
@@ -226,12 +267,25 @@ export function optionPortfolioGreeks(
       contract = contractMap.get(symbol),
       qty = Number(position.qty),
       multiplier = Number(contract?.multiplier ?? 100),
-      greeks = snapshot.greeks;
+      greeks = snapshot.greeks,
+      observedAt = optionalIso(
+        snapshot.latestQuote?.t ??
+          snapshot.latestTrade?.t ??
+          snapshot.dailyBar?.t,
+      );
     return {
       symbol,
       underlying: contract?.underlyingSymbol ?? null,
       qty,
       marketValue: Number(position.marketValue ?? 0),
+      observedAt,
+      retrievedAt,
+      serverRespondedAt,
+      time: normalizeTimeProvenance({
+        observationTime: observedAt,
+        retrievalTime: retrievedAt,
+        serverResponseTime: serverRespondedAt,
+      }),
       greeks: greeks
         ? {
             delta: Number(greeks.delta) * multiplier * qty,
@@ -242,6 +296,7 @@ export function optionPortfolioGreeks(
         : null,
     };
   });
+  const observedAt = latest(legs.map((leg) => leg.observedAt));
   const total = (key: "delta" | "gamma" | "theta" | "vega") =>
     legs.reduce((sum, leg) => sum + (leg.greeks?.[key] ?? 0), 0);
   const shockPnl = (shock: number) =>
@@ -272,6 +327,14 @@ export function optionPortfolioGreeks(
       { name: "One day decay", estimatedPnl: total("theta") },
     ],
     missingGreeks: legs.filter((leg) => !leg.greeks).map((leg) => leg.symbol),
-    asOf: new Date().toISOString(),
+    observedAt,
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: observedAt,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
   };
 }

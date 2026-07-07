@@ -4,8 +4,7 @@ import { createOrderRoutes } from "../../backend/features/orders/routes";
 import { createOrderRuntime } from "../../backend/features/orders/runtime";
 import { createStore } from "../../backend/persistence/store";
 
-function routes(allow = () => true) {
-  const alpaca = {} as Alpaca;
+function routes(allow = () => true, alpaca = {} as Alpaca) {
   const store = createStore(":memory:");
   return createOrderRoutes({
     alpaca,
@@ -52,4 +51,75 @@ test("order routes enforce mutation limits before broker calls", async () => {
       429,
     );
   }
+});
+
+test("option chain route preserves cached retrieval time separately from response time", async () => {
+  let chainCalls = 0;
+  const alpaca = {
+    trading: {
+      account: {
+        getAccount: async () => ({
+          optionsApprovedLevel: 3,
+          optionsTradingLevel: 3,
+          optionsBuyingPower: "5000",
+        }),
+      },
+      assets: {
+        getOptionsContracts: async () => ({
+          optionContracts: [
+            {
+              symbol: "AAPL260717C00300000",
+              type: "call",
+              expirationDate: new Date("2026-07-17"),
+              strikePrice: "300",
+              multiplier: "100",
+              tradable: true,
+              openInterest: "120",
+            },
+          ],
+        }),
+      },
+    },
+    marketData: {
+      getLatestPrice: async () => 299,
+      options: {
+        optionChain: async () => {
+          chainCalls++;
+          return {
+            snapshots: {
+              AAPL260717C00300000: {
+                latestQuote: {
+                  bp: 4,
+                  ap: 6,
+                  t: "2026-06-22T14:30:00Z",
+                },
+                dailyBar: { v: 50 },
+                impliedVolatility: 0.25,
+              },
+            },
+          };
+        },
+      },
+    },
+  } as unknown as Alpaca;
+  const handle = routes(() => true, alpaca);
+  const request = new Request("http://localhost/api/options/chain?symbol=AAPL");
+  const first = await handle(request, new URL(request.url), "test");
+  const firstBody = await first?.json();
+  await Bun.sleep(5);
+  const second = await handle(request, new URL(request.url), "test");
+  const secondBody = await second?.json();
+
+  expect(firstBody.contracts[0]).toMatchObject({
+    symbol: "AAPL260717C00300000",
+    observedAt: "2026-06-22T14:30:00.000Z",
+  });
+  expect(secondBody.retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.contracts[0].retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.time.retrievalTime).toBe(firstBody.retrievedAt);
+  expect(new Date(secondBody.serverRespondedAt).getTime()).toBeGreaterThan(
+    new Date(firstBody.serverRespondedAt).getTime(),
+  );
+  expect(secondBody.asOf).toBe(secondBody.serverRespondedAt);
+  expect(chainCalls).toBe(1);
 });
