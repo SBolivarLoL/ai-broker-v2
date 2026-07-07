@@ -9,6 +9,10 @@ import {
   dedupeEvidence,
   type CanonicalEvidence,
 } from "../shared/evidence";
+import {
+  normalizeTimeProvenance,
+  type NormalizedTimeProvenance,
+} from "../shared/time-provenance";
 
 type FetchLike = (
   input: string | URL | Request,
@@ -25,6 +29,9 @@ export type GdeltArticle = {
   language: string;
   sourceCountry: string;
   publishedAt: string;
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
 };
 
 export type GdeltEvidence = CanonicalEvidence<unknown, "news">;
@@ -39,6 +46,9 @@ export type GdeltCompanySignals = {
   articles: GdeltArticle[];
   sources: GdeltEvidence[];
   warnings: string[];
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
   asOf: string;
 };
 
@@ -125,6 +135,46 @@ function articleId(url: string) {
     .update(canonicalEvidenceUrl(url))
     .digest("hex")
     .slice(0, 24);
+}
+
+function gdeltArticleTime(
+  publishedAt: string,
+  retrievedAt: string,
+  serverRespondedAt: string,
+) {
+  return normalizeTimeProvenance({
+    publicationTime: publishedAt,
+    retrievalTime: retrievedAt,
+    serverResponseTime: serverRespondedAt,
+  });
+}
+
+function gdeltRootTime(retrievedAt: string, serverRespondedAt: string) {
+  return normalizeTimeProvenance({
+    retrievalTime: retrievedAt,
+    serverResponseTime: serverRespondedAt,
+  });
+}
+
+function withServerResponseTime(
+  value: GdeltCompanySignals,
+  serverRespondedAt: string,
+): GdeltCompanySignals {
+  return {
+    ...value,
+    asOf: serverRespondedAt,
+    serverRespondedAt,
+    time: gdeltRootTime(value.retrievedAt, serverRespondedAt),
+    articles: value.articles.map((article) => ({
+      ...article,
+      serverRespondedAt,
+      time: gdeltArticleTime(
+        article.publishedAt,
+        article.retrievedAt,
+        serverRespondedAt,
+      ),
+    })),
+  };
 }
 
 const genericCompanyWords = new Set([
@@ -268,6 +318,7 @@ export class GdeltClient {
     windowDays: number,
     payload: { articles?: unknown[] },
     retrievedAt: string,
+    serverRespondedAt: string,
   ) {
     if (!Array.isArray(payload.articles))
       throw new Error("GDELT returned an invalid ArticleList payload");
@@ -294,6 +345,9 @@ export class GdeltClient {
         language: decodeText(item.language).slice(0, 80) || "Unknown",
         sourceCountry: decodeText(item.sourcecountry).slice(0, 80) || "Unknown",
         publishedAt,
+        retrievedAt,
+        serverRespondedAt,
+        time: gdeltArticleTime(publishedAt, retrievedAt, serverRespondedAt),
       };
       const source = canonicalEvidence({
         id: evidenceId,
@@ -306,6 +360,7 @@ export class GdeltClient {
         url,
         asOf: publishedAt,
         retrievedAt,
+        serverRespondedAt,
         publishedAt,
         entityIds: { symbol },
         data: {
@@ -361,11 +416,16 @@ export class GdeltClient {
     const key = JSON.stringify({ symbol, query, windowDays, limit });
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > this.now())
-      return Promise.resolve(cached.value);
+      return Promise.resolve(
+        withServerResponseTime(
+          cached.value,
+          new Date(this.now()).toISOString(),
+        ),
+      );
     const active = this.inflight.get(key);
     if (active) return active;
     const request = (async () => {
-      const asOf = new Date(this.now()).toISOString();
+      const retrievedAt = new Date(this.now()).toISOString();
       const params = new URLSearchParams({
         query,
         mode: "artlist",
@@ -376,13 +436,15 @@ export class GdeltClient {
       });
       try {
         const payload = await this.fetchJson(`${API_URL}?${params}`);
+        const serverRespondedAt = new Date(this.now()).toISOString();
         const normalized = this.normalize(
           symbol,
           companyName,
           query,
           windowDays,
           payload,
-          asOf,
+          retrievedAt,
+          serverRespondedAt,
         );
         const value: GdeltCompanySignals = {
           symbol,
@@ -397,11 +459,15 @@ export class GdeltClient {
                 `${normalized.filteredOut} GDELT broad match${normalized.filteredOut === 1 ? " was" : "es were"} omitted because headline-level company relevance could not be established.`,
               ]
             : [],
-          asOf,
+          retrievedAt,
+          serverRespondedAt,
+          time: gdeltRootTime(retrievedAt, serverRespondedAt),
+          asOf: serverRespondedAt,
         };
         this.cache.set(key, { value, expiresAt: this.now() + this.cacheTtlMs });
         return value;
       } catch (error) {
+        const serverRespondedAt = new Date(this.now()).toISOString();
         const rateLimited =
           error instanceof GdeltHttpError && error.status === 429;
         const value: GdeltCompanySignals = {
@@ -414,7 +480,10 @@ export class GdeltClient {
           filteredOut: 0,
           articles: [],
           sources: [],
-          asOf,
+          retrievedAt,
+          serverRespondedAt,
+          time: gdeltRootTime(retrievedAt, serverRespondedAt),
+          asOf: serverRespondedAt,
           warnings: [
             rateLimited
               ? "GDELT broad media signals are rate limited; Alpaca/Benzinga coverage remains available and no absence of events should be inferred."
