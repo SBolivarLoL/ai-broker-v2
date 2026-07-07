@@ -1,4 +1,6 @@
 /** Validation and browser DTOs for live equity quote/bar stream messages. */
+import { normalizeTimeProvenance } from "../../shared/time-provenance";
+
 const symbolPattern = /^[A-Z.]{1,10}$/;
 
 export function parseStreamSymbols(value: string, maximum = 20) {
@@ -26,10 +28,12 @@ const timestamp = (value: unknown) => {
   return date.toISOString();
 };
 
-export function streamQuoteDto(quote: any) {
+export function streamQuoteDto(quote: any, serverRespondedAt = new Date()) {
   const bid = Number(quote.bidPrice),
     ask = Number(quote.askPrice);
   const midpoint = bid > 0 && ask > 0 ? (bid + ask) / 2 : null;
+  const observedAt = timestamp(quote.timestamp);
+  const responseAt = timestamp(serverRespondedAt);
   return {
     kind: "quote" as const,
     symbol: String(quote.symbol),
@@ -40,12 +44,20 @@ export function streamQuoteDto(quote: any) {
     midpoint,
     spreadBps:
       midpoint && ask >= bid ? ((ask - bid) / midpoint) * 10_000 : null,
-    timestamp: timestamp(quote.timestamp),
+    timestamp: observedAt,
+    observedAt,
+    retrievedAt: responseAt,
+    serverRespondedAt: responseAt,
+    time: normalizeTimeProvenance({
+      observationTime: observedAt,
+      retrievalTime: responseAt,
+      serverResponseTime: responseAt,
+    }),
     feed: "iex",
   };
 }
 
-export function streamBarDto(bar: any) {
+export function streamBarDto(bar: any, serverRespondedAt = new Date()) {
   const values = [bar.open, bar.high, bar.low, bar.close, bar.volume].map(
     Number,
   );
@@ -55,6 +67,8 @@ export function streamBarDto(bar: any) {
     values[4] < 0
   )
     throw new Error("Stream bar contains invalid market data");
+  const observedAt = timestamp(bar.timestamp);
+  const responseAt = timestamp(serverRespondedAt);
   return {
     kind: "bar" as const,
     symbol: String(bar.symbol),
@@ -67,7 +81,20 @@ export function streamBarDto(bar: any) {
     tradeCount: Number.isFinite(Number(bar.tradeCount))
       ? Number(bar.tradeCount)
       : null,
-    timestamp: timestamp(bar.timestamp),
+    timestamp: observedAt,
+    observedAt,
+    retrievedAt: responseAt,
+    serverRespondedAt: responseAt,
+    time: normalizeTimeProvenance({
+      observationTime: observedAt,
+      effectivePeriod: {
+        start: observedAt,
+        end: observedAt,
+        label: "IEX stream bar",
+      },
+      retrievalTime: responseAt,
+      serverResponseTime: responseAt,
+    }),
     feed: "iex",
   };
 }

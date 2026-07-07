@@ -77,11 +77,26 @@ test("normalizes company price, spread, volume and news", () => {
     "1M",
     "SPY",
     benchmarkBars,
+    new Date("2026-01-02T20:00:31Z"),
   );
   expect(result.quote).toMatchObject({
     price: 111,
     midpoint: 111,
     quality: "healthy",
+    observedAt: "2026-01-02T20:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:31.000Z",
+    time: {
+      observationTime: "2026-01-02T20:00:00.000Z",
+      retrievalTime: "2026-01-02T20:00:31.000Z",
+      serverResponseTime: "2026-01-02T20:00:31.000Z",
+    },
+  });
+  expect(result).toMatchObject({
+    observedAt: "2026-01-02T20:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:31.000Z",
+    asOf: "2026-01-02T20:00:31.000Z",
   });
   expect(result.quote.spreadBps).toBeCloseTo(18.018);
   expect(result.stats).toMatchObject({
@@ -98,7 +113,24 @@ test("normalizes company price, spread, volume and news", () => {
   });
   expect(result.benchmark.returnPercent).toBeCloseTo(5);
   expect(result.benchmark.relativeStrengthPercent).toBeCloseTo(5);
-  expect(result.news[0]).toMatchObject({ headline: "News", source: "Wire" });
+  expect(result.bars[0]).toMatchObject({
+    observedAt: "2026-01-01T00:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    time: {
+      observationTime: "2026-01-01T00:00:00.000Z",
+      retrievalTime: "2026-01-02T20:00:31.000Z",
+    },
+  });
+  expect(result.benchmark.bars[0]).toMatchObject({
+    observedAt: "2026-01-01T00:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+  });
+  expect(result.news[0]).toMatchObject({
+    headline: "News",
+    source: "Wire",
+    publishedAt: "2026-01-02T00:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+  });
 });
 
 test("reports insufficient benchmark coverage without inventing relative strength", () => {

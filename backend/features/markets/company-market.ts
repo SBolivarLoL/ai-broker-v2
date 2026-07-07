@@ -1,3 +1,8 @@
+import {
+  normalizeTimeProvenance,
+  type NormalizedTimeProvenance,
+} from "../../shared/time-provenance";
+
 type DateInput = string | number | Date;
 
 type CompanyAsset = {
@@ -57,6 +62,10 @@ type CompanyNewsInput = {
 
 export type CompanyBar = {
   timestamp: string;
+  observedAt: string;
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
   open: number;
   high: number;
   low: number;
@@ -68,23 +77,39 @@ export type CompanyBar = {
 const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-function normalizeCompanyBars(bars: CompanyBarInput[]) {
+function normalizeCompanyBars(bars: CompanyBarInput[], serverRespondedAt: string) {
   // Reject malformed provider rows before any extrema or return calculations;
   // a single NaN would otherwise poison the entire browser snapshot.
   return bars
-    .map((bar) => ({
-      timestamp: new Date(bar.timestamp).toISOString(),
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume),
-      vwap: Number(bar.vwap),
-    }))
+    .map((bar) => {
+      const observedAt = new Date(bar.timestamp).toISOString();
+      return {
+        timestamp: observedAt,
+        observedAt,
+        retrievedAt: serverRespondedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: observedAt,
+          effectivePeriod: {
+            start: observedAt,
+            end: observedAt,
+            label: "IEX historical bar",
+          },
+          retrievalTime: serverRespondedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+        volume: Number(bar.volume),
+        vwap: Number(bar.vwap),
+      };
+    })
     .filter(
       (bar): bar is CompanyBar =>
-        Object.values(bar).every(
-          (value) => typeof value === "string" || finite(value),
+        [bar.open, bar.high, bar.low, bar.close, bar.volume, bar.vwap].every(
+          finite,
         ) &&
         bar.open > 0 &&
         bar.high > 0 &&
@@ -95,12 +120,28 @@ function normalizeCompanyBars(bars: CompanyBarInput[]) {
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
-function normalizeBenchmarkBars(bars: BenchmarkBarInput[]) {
+function normalizeBenchmarkBars(bars: BenchmarkBarInput[], serverRespondedAt: string) {
   return bars
-    .map((bar) => ({
-      timestamp: new Date(bar.timestamp).toISOString(),
-      close: Number(bar.close),
-    }))
+    .map((bar) => {
+      const observedAt = new Date(bar.timestamp).toISOString();
+      return {
+        timestamp: observedAt,
+        observedAt,
+        retrievedAt: serverRespondedAt,
+        serverRespondedAt,
+        time: normalizeTimeProvenance({
+          observationTime: observedAt,
+          effectivePeriod: {
+            start: observedAt,
+            end: observedAt,
+            label: "benchmark historical bar",
+          },
+          retrievalTime: serverRespondedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
+        close: Number(bar.close),
+      };
+    })
     .filter((bar) => finite(bar.close) && bar.close > 0)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
@@ -120,9 +161,11 @@ export function companyMarketSnapshot(
   period: string,
   benchmarkSymbol = "SPY",
   benchmarkBars: BenchmarkBarInput[] = [],
+  serverRespondedAt: DateInput = new Date(),
 ) {
-  const normalizedBars = normalizeCompanyBars(bars);
-  const normalizedBenchmark = normalizeBenchmarkBars(benchmarkBars);
+  const responseAt = new Date(serverRespondedAt).toISOString();
+  const normalizedBars = normalizeCompanyBars(bars, responseAt);
+  const normalizedBenchmark = normalizeBenchmarkBars(benchmarkBars, responseAt);
   const quote = snapshot.latestQuote ?? {};
   const trade = snapshot.latestTrade ?? {};
   const daily = snapshot.dailyBar ?? {};
@@ -142,6 +185,12 @@ export function companyMarketSnapshot(
   // fixtures and delayed market clocks remain deterministic.
   const marketPhase = exchangeClock?.phase ?? "unknown";
   const quoteAt = quote.t ? new Date(quote.t).toISOString() : null;
+  const tradeAt = trade.t ? new Date(trade.t).toISOString() : null;
+  const quoteObservationAt = quoteAt ?? tradeAt ?? normalizedBars.at(-1)?.observedAt ?? null;
+  const marketObservationAt = [quoteAt, tradeAt, normalizedBars.at(-1)?.observedAt]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? null;
   const clockAt = exchangeClock?.timestamp
     ? new Date(exchangeClock.timestamp).getTime()
     : Date.now();
@@ -196,7 +245,7 @@ export function companyMarketSnapshot(
     period,
     quote: {
       price,
-      tradeAt: trade.t ? new Date(trade.t).toISOString() : null,
+      tradeAt,
       bid: bid > 0 ? bid : null,
       ask: ask > 0 ? ask : null,
       bidSize: finite(quote.bs) ? quote.bs : null,
@@ -205,6 +254,14 @@ export function companyMarketSnapshot(
       spread,
       spreadBps,
       quoteAt,
+      observedAt: quoteObservationAt,
+      retrievedAt: responseAt,
+      serverRespondedAt: responseAt,
+      time: normalizeTimeProvenance({
+        observationTime: quoteObservationAt,
+        retrievalTime: responseAt,
+        serverResponseTime: responseAt,
+      }),
       quoteAgeSeconds,
       quality,
       feed: "iex",
@@ -254,8 +311,24 @@ export function companyMarketSnapshot(
       author: article.author,
       createdAt: new Date(article.createdAt).toISOString(),
       updatedAt: new Date(article.updatedAt).toISOString(),
+      publishedAt: new Date(article.createdAt).toISOString(),
+      retrievedAt: responseAt,
+      serverRespondedAt: responseAt,
+      time: normalizeTimeProvenance({
+        publicationTime: new Date(article.createdAt).toISOString(),
+        retrievalTime: responseAt,
+        serverResponseTime: responseAt,
+      }),
       url: article.url ?? null,
     })),
-    asOf: new Date().toISOString(),
+    observedAt: marketObservationAt,
+    retrievedAt: responseAt,
+    serverRespondedAt: responseAt,
+    time: normalizeTimeProvenance({
+      observationTime: marketObservationAt,
+      retrievalTime: responseAt,
+      serverResponseTime: responseAt,
+    }),
+    asOf: responseAt,
   };
 }

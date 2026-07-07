@@ -20,12 +20,21 @@ test("normalizes live quotes and bars without exposing wire fields", () => {
       bidSize: 2,
       askSize: 3,
       timestamp: new Date("2026-06-22T14:00:00Z"),
-    }),
+    }, new Date("2026-06-22T14:00:01Z")),
   ).toMatchObject({
     kind: "quote",
     symbol: "AAPL",
     midpoint: 100,
     spreadBps: 200,
+    timestamp: "2026-06-22T14:00:00.000Z",
+    observedAt: "2026-06-22T14:00:00.000Z",
+    retrievedAt: "2026-06-22T14:00:01.000Z",
+    serverRespondedAt: "2026-06-22T14:00:01.000Z",
+    time: {
+      observationTime: "2026-06-22T14:00:00.000Z",
+      retrievalTime: "2026-06-22T14:00:01.000Z",
+      serverResponseTime: "2026-06-22T14:00:01.000Z",
+    },
     feed: "iex",
   });
   expect(
@@ -39,6 +48,24 @@ test("normalizes live quotes and bars without exposing wire fields", () => {
       vwap: 100.5,
       tradeCount: 42,
       timestamp: new Date("2026-06-22T14:00:00Z"),
-    }),
-  ).toMatchObject({ kind: "bar", close: 101, volume: 1_000, tradeCount: 42 });
+    }, new Date("2026-06-22T14:00:01Z")),
+  ).toMatchObject({
+    kind: "bar",
+    close: 101,
+    volume: 1_000,
+    tradeCount: 42,
+    timestamp: "2026-06-22T14:00:00.000Z",
+    observedAt: "2026-06-22T14:00:00.000Z",
+    retrievedAt: "2026-06-22T14:00:01.000Z",
+    serverRespondedAt: "2026-06-22T14:00:01.000Z",
+    time: {
+      observationTime: "2026-06-22T14:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-06-22T14:00:00.000Z",
+        end: "2026-06-22T14:00:00.000Z",
+        label: "IEX stream bar",
+      },
+      retrievalTime: "2026-06-22T14:00:01.000Z",
+    },
+  });
 });

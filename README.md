@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `900db9e` on 2026-07-07.
+Code baseline reviewed: `main` at `9c7c373` on 2026-07-07.
 
 ## Quick start
 
@@ -44,7 +44,7 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 
 ## What is included
 
-- Alpaca paper account, positions, orders, activities, watchlists, market clock, calendar, and IEX market data.
+- Alpaca paper account, positions, orders, activities, watchlists, market clock, calendar, and IEX market data with explicit observation/retrieval provenance on normalized equity market DTOs where migrated.
 - Signed equity, linked, basket, short, option, and crypto paper-order previews with fresh-state confirmation, idempotency, receipts, and global operations policy.
 - Portfolio performance, FIFO ledger, risk, exposure, scenarios, optimizer proposals, and constrained rebalance planning.
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks with canonical source/time provenance.
