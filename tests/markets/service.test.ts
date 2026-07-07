@@ -7,6 +7,7 @@ function fakeMarketService(allow = () => true) {
   let clockCalls = 0,
     discoveryCalls = 0,
     calendarCalls = 0,
+    companyMarketCalls = 0,
     multiAssetCalls = 0;
   const stockStream = {
     onStateChange() {},
@@ -25,6 +26,59 @@ function fakeMarketService(allow = () => true) {
     marketData: {
       stockStream: () => stockStream,
       getLatestPrice: async () => 123.45,
+      getStockBarsFor: async (symbol: string) => [
+        {
+          timestamp: new Date("2026-06-21T00:00:00Z"),
+          open: symbol === "SPY" ? 500 : 190,
+          high: symbol === "SPY" ? 505 : 202,
+          low: symbol === "SPY" ? 495 : 189,
+          close: symbol === "SPY" ? 502 : 200,
+          volume: 1_000,
+          vwap: symbol === "SPY" ? 501 : 198,
+        },
+        {
+          timestamp: new Date("2026-06-22T00:00:00Z"),
+          open: symbol === "SPY" ? 502 : 200,
+          high: symbol === "SPY" ? 510 : 206,
+          low: symbol === "SPY" ? 501 : 199,
+          close: symbol === "SPY" ? 507 : 205,
+          volume: 2_000,
+          vwap: symbol === "SPY" ? 506 : 204,
+        },
+      ],
+      stocks: {
+        stockSnapshotSingle: async () => {
+          companyMarketCalls++;
+          return {
+            latestTrade: { p: 205, t: new Date("2026-06-22T14:33:00Z") },
+            latestQuote: {
+              bp: 204.5,
+              ap: 205.5,
+              bs: 2,
+              as: 3,
+              t: new Date("2026-06-22T14:33:00Z"),
+            },
+            dailyBar: { v: 3_000 },
+            prevDailyBar: { c: 200 },
+          };
+        },
+      },
+      news: {
+        news: async () => ({
+          news: [
+            {
+              id: 1,
+              headline: "AAPL news",
+              summary: "Summary",
+              source: "Wire",
+              author: "A",
+              createdAt: new Date("2026-06-22T13:00:00Z"),
+              updatedAt: new Date("2026-06-22T13:05:00Z"),
+              url: "https://example.com/aapl",
+            },
+          ],
+        }),
+      },
       screener: {
         movers: async () => {
           discoveryCalls++;
@@ -74,6 +128,18 @@ function fakeMarketService(allow = () => true) {
       },
     },
     trading: {
+      assets: {
+        getV2AssetsSymbolOrAssetId: async () => ({
+          symbol: "AAPL",
+          name: "Apple Inc.",
+          exchange: "NASDAQ",
+          status: "active",
+          tradable: true,
+          fractionable: true,
+          shortable: true,
+          marginable: true,
+        }),
+      },
       calendar: {
         clock: async () => {
           clockCalls++;
@@ -123,6 +189,7 @@ function fakeMarketService(allow = () => true) {
     clockCalls: () => clockCalls,
     discoveryCalls: () => discoveryCalls,
     calendarCalls: () => calendarCalls,
+    companyMarketCalls: () => companyMarketCalls,
     multiAssetCalls: () => multiAssetCalls,
   };
 }
@@ -270,4 +337,47 @@ test("market workspace route keeps cached provider retrieval separate from respo
   ).toBeGreaterThan(new Date(firstBody.calendar.serverRespondedAt).getTime());
   expect(discoveryCalls()).toBe(1);
   expect(calendarCalls()).toBe(1);
+});
+
+test("company market route keeps cached provider retrieval separate from response time", async () => {
+  const { service, companyMarketCalls } = fakeMarketService();
+  const request = new Request(
+    "http://localhost/api/company/market?symbol=AAPL&period=1M&benchmark=SPY",
+  );
+  const first = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const firstBody = await first?.json();
+  await Bun.sleep(5);
+  const second = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const secondBody = await second?.json();
+
+  expect(firstBody).toMatchObject({
+    company: {
+      symbol: "AAPL",
+    },
+    quote: {
+      observedAt: "2026-06-22T14:33:00.000Z",
+    },
+  });
+  expect(firstBody.bars[0]).toMatchObject({
+    observedAt: "2026-06-21T00:00:00.000Z",
+  });
+  expect(firstBody.news[0]).toMatchObject({
+    publishedAt: "2026-06-22T13:00:00.000Z",
+  });
+  expect(secondBody.retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.quote.retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.time.retrievalTime).toBe(firstBody.retrievedAt);
+  expect(new Date(secondBody.serverRespondedAt).getTime()).toBeGreaterThan(
+    new Date(firstBody.serverRespondedAt).getTime(),
+  );
+  expect(secondBody.asOf).toBe(secondBody.serverRespondedAt);
+  expect(companyMarketCalls()).toBe(1);
 });

@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `4da4baa`: 2026-07-07.
+Last reviewed against `main` commit `8cfa0d7`: 2026-07-07.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-07                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 333 tests, 0 failures, 1,504 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 334 tests, 0 failures, 1,513 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 97.99% functions, 96.98% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 351 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across seven assets |
 | Persistence   | 14 migrations; 23 tables including migration history                                                             |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                               |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `4da4baa`; no open pull request at change start                |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `8cfa0d7`; no open pull request at change start                |
 
 ## Test-layer policy
 
@@ -54,7 +54,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `4da4baa` plus fresh command output.
+language against `8cfa0d7` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -101,6 +101,9 @@ Additional mechanical checks:
   for explicit provider observation, effective-session periods, retrieval time,
   and per-response server timestamps; the route cache preserves provider
   retrieval time while refreshing server response time.
+- Company-market route caching was checked to preserve cached provider
+  retrieval time separately from per-response server time across the root
+  snapshot, quote, bars, benchmark bars, and news entries.
 
 ## Reproducible local gates
 
