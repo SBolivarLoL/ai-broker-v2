@@ -45,6 +45,17 @@ type MarketMonitoringResponse = {
   };
   asOf: string;
 };
+type CompanyMarketSource = {
+  asset: any;
+  snapshot: any;
+  bars: any[];
+  news: any[];
+  clock: any;
+  period: string;
+  benchmarkSymbol: string;
+  benchmarkBars: any[];
+  retrievedAt: string;
+};
 
 type MarketServiceDependencies = {
   alpaca: Alpaca;
@@ -65,7 +76,7 @@ export function createMarketService({
     string,
     {
       expiresAt: number;
-      value: ReturnType<typeof companyMarketSnapshot>;
+      source: CompanyMarketSource;
     }
   >();
   let discoveryCache: {
@@ -487,7 +498,23 @@ export function createMarketService({
       }
       const cacheKey = `${symbol}:${period}:${benchmarkSymbol}`;
       const cached = companyMarketCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) return json(cached.value);
+      if (cached && cached.expiresAt > Date.now()) {
+        const source = cached.source;
+        return json(
+          companyMarketSnapshot(
+            source.asset,
+            source.snapshot,
+            source.bars,
+            source.news,
+            source.clock,
+            source.period,
+            source.benchmarkSymbol,
+            source.benchmarkBars,
+            source.retrievedAt,
+            new Date(),
+          ),
+        );
+      }
       const start = new Date(Date.now() - periodDays[period] * 86_400_000);
       const [asset, snapshot, bars, news, clock, benchmarkBars] =
         await Promise.all([
@@ -511,6 +538,7 @@ export function createMarketService({
             feed: "iex",
           }),
         ]);
+      const retrievedAt = new Date().toISOString();
       const value = companyMarketSnapshot(
         asset,
         snapshot,
@@ -520,9 +548,21 @@ export function createMarketService({
         period,
         benchmarkSymbol,
         benchmarkBars,
+        retrievedAt,
+        retrievedAt,
       );
       companyMarketCache.set(cacheKey, {
-        value,
+        source: {
+          asset,
+          snapshot,
+          bars,
+          news,
+          clock,
+          period,
+          benchmarkSymbol,
+          benchmarkBars,
+          retrievedAt,
+        },
         expiresAt: Date.now() + 30_000,
       });
       if (companyMarketCache.size > 60) {

@@ -77,7 +77,11 @@ export type CompanyBar = {
 const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-function normalizeCompanyBars(bars: CompanyBarInput[], serverRespondedAt: string) {
+function normalizeCompanyBars(
+  bars: CompanyBarInput[],
+  retrievedAt: string,
+  serverRespondedAt: string,
+) {
   // Reject malformed provider rows before any extrema or return calculations;
   // a single NaN would otherwise poison the entire browser snapshot.
   return bars
@@ -86,7 +90,7 @@ function normalizeCompanyBars(bars: CompanyBarInput[], serverRespondedAt: string
       return {
         timestamp: observedAt,
         observedAt,
-        retrievedAt: serverRespondedAt,
+        retrievedAt,
         serverRespondedAt,
         time: normalizeTimeProvenance({
           observationTime: observedAt,
@@ -95,7 +99,7 @@ function normalizeCompanyBars(bars: CompanyBarInput[], serverRespondedAt: string
             end: observedAt,
             label: "IEX historical bar",
           },
-          retrievalTime: serverRespondedAt,
+          retrievalTime: retrievedAt,
           serverResponseTime: serverRespondedAt,
         }),
         open: Number(bar.open),
@@ -120,14 +124,18 @@ function normalizeCompanyBars(bars: CompanyBarInput[], serverRespondedAt: string
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
-function normalizeBenchmarkBars(bars: BenchmarkBarInput[], serverRespondedAt: string) {
+function normalizeBenchmarkBars(
+  bars: BenchmarkBarInput[],
+  retrievedAt: string,
+  serverRespondedAt: string,
+) {
   return bars
     .map((bar) => {
       const observedAt = new Date(bar.timestamp).toISOString();
       return {
         timestamp: observedAt,
         observedAt,
-        retrievedAt: serverRespondedAt,
+        retrievedAt,
         serverRespondedAt,
         time: normalizeTimeProvenance({
           observationTime: observedAt,
@@ -136,7 +144,7 @@ function normalizeBenchmarkBars(bars: BenchmarkBarInput[], serverRespondedAt: st
             end: observedAt,
             label: "benchmark historical bar",
           },
-          retrievalTime: serverRespondedAt,
+          retrievalTime: retrievedAt,
           serverResponseTime: serverRespondedAt,
         }),
         close: Number(bar.close),
@@ -161,11 +169,17 @@ export function companyMarketSnapshot(
   period: string,
   benchmarkSymbol = "SPY",
   benchmarkBars: BenchmarkBarInput[] = [],
-  serverRespondedAt: DateInput = new Date(),
+  retrievedAtInput: DateInput = new Date(),
+  serverRespondedAtInput: DateInput = retrievedAtInput,
 ) {
-  const responseAt = new Date(serverRespondedAt).toISOString();
-  const normalizedBars = normalizeCompanyBars(bars, responseAt);
-  const normalizedBenchmark = normalizeBenchmarkBars(benchmarkBars, responseAt);
+  const retrievedAt = new Date(retrievedAtInput).toISOString();
+  const responseAt = new Date(serverRespondedAtInput).toISOString();
+  const normalizedBars = normalizeCompanyBars(bars, retrievedAt, responseAt);
+  const normalizedBenchmark = normalizeBenchmarkBars(
+    benchmarkBars,
+    retrievedAt,
+    responseAt,
+  );
   const quote = snapshot.latestQuote ?? {};
   const trade = snapshot.latestTrade ?? {};
   const daily = snapshot.dailyBar ?? {};
@@ -255,11 +269,11 @@ export function companyMarketSnapshot(
       spreadBps,
       quoteAt,
       observedAt: quoteObservationAt,
-      retrievedAt: responseAt,
+      retrievedAt,
       serverRespondedAt: responseAt,
       time: normalizeTimeProvenance({
         observationTime: quoteObservationAt,
-        retrievalTime: responseAt,
+        retrievalTime: retrievedAt,
         serverResponseTime: responseAt,
       }),
       quoteAgeSeconds,
@@ -312,21 +326,21 @@ export function companyMarketSnapshot(
       createdAt: new Date(article.createdAt).toISOString(),
       updatedAt: new Date(article.updatedAt).toISOString(),
       publishedAt: new Date(article.createdAt).toISOString(),
-      retrievedAt: responseAt,
+      retrievedAt,
       serverRespondedAt: responseAt,
       time: normalizeTimeProvenance({
         publicationTime: new Date(article.createdAt).toISOString(),
-        retrievalTime: responseAt,
+        retrievalTime: retrievedAt,
         serverResponseTime: responseAt,
       }),
       url: article.url ?? null,
     })),
     observedAt: marketObservationAt,
-    retrievedAt: responseAt,
+    retrievedAt,
     serverRespondedAt: responseAt,
     time: normalizeTimeProvenance({
       observationTime: marketObservationAt,
-      retrievalTime: responseAt,
+      retrievalTime: retrievedAt,
       serverResponseTime: responseAt,
     }),
     asOf: responseAt,
