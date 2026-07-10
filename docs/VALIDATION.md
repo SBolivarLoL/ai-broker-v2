@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-10                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 338 tests, 0 failures, 1,568 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 339 tests, 0 failures, 1,570 assertions across 81 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 184 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 98.02% functions, 97.01% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -45,7 +45,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, equity, options, market-workspace, GDELT/Finnhub provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate live Alpaca/SEC reads           | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and point-in-time fundamentals are not persisted |
 | Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats | Internal classifications are not legal approval; no automatic retention enforcement exists              |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                 | Live model/tool orchestration paths have lower coverage and require credentials                         |
-| HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                           | Stream callbacks and secondary provider mutation paths remain incomplete                                |
+| HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                               | Stream callbacks and secondary provider mutation paths remain incomplete                                |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                 | Most provider behavior requires credentials and is not executed in CI                                   |
 | Browser UI                  | Targeted interaction confidence                    | The 2026-07-05 interaction check verified Strategy Lab creation flows; the 2026-07-06 isolated smoke rendered all seven workspaces at 1280×720 and 390×844 with correct selection/hash state, no mobile horizontal overflow, honest unavailable-provider fallbacks, and a clean console | No maintained automated accessibility/responsive regression suite                                       |
 | Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                   | No production-sized or closed-beta restore drill, deployment, real participants, or external approval   |
@@ -54,7 +54,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 
 The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `2ea494a` plus fresh command output.
+language against `1a8e5fd` plus fresh command output.
 
 | File | Audit disposition |
 | ---- | ----------------- |
@@ -94,6 +94,10 @@ Additional mechanical checks:
 - Single-symbol quote responses were checked for explicit `observedAt:null`,
   retrieval, server-response, and normalized time-provenance fields when the
   provider helper exposes no event timestamp.
+- `GET /api/account` was checked through a direct success contract using the
+  post-PDT Alpaca account shape. The public DTO exposes only equity, cash,
+  `buyingPower`, currency, and status and does not depend on deprecated PDT or
+  day-trading-buying-power fields.
 - Market monitoring news, corporate-action, SEC alert, and route-root DTOs were
   checked for publication, effective-period, retrieval, and server-response
   time provenance; cached monitoring responses preserve provider retrieval time
@@ -162,6 +166,10 @@ The following read-only checks were run:
 
 - `bun run alpaca:doctor` and `bun run smoke:read` passed against the configured
   paper account and data endpoints without creating or changing orders.
+- A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
+  usable `buying_power`, and confirmed that `pattern_day_trader`,
+  `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
+  `last_daytrading_buying_power`, and `bod_dtbp` were absent.
 - A deliberate read-only crypto history check fetched 203 daily BTC/USD bars
   across three adjacent provider chunks spanning 2025-01-01 through 2025-07-20.
 - `bun run smoke:sec` passed with the configured contact identity for AAPL
