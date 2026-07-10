@@ -284,6 +284,24 @@ test("createApp is side-effect free and exposes basic HTTP contracts", async () 
   expect(app.stockConnects()).toBe(0);
 });
 
+test("account API accepts the post-PDT broker shape and exposes only allow-listed fields", async () => {
+  const app = testApp();
+  const response = await app.fetch(new Request("http://local/api/account"));
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    account: {
+      equity: 1_000,
+      cash: 1_000,
+      buyingPower: 1_000,
+      currency: "USD",
+      status: "ACTIVE",
+    },
+    positions: [],
+    orders: [],
+  });
+});
+
 test("runtime starts once and reconciles terminal trade stream updates", async () => {
   const app = testApp({ PREVIEW_SECRET: "p".repeat(32), STRATEGY_SCHEDULER_DISABLED: "1" });
   const order = await (await equitySubmission(app, (await equityPreview(app)).previewToken, "stream-reconcile")).json() as any;
