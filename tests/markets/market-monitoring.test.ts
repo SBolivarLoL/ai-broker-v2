@@ -205,6 +205,25 @@ test("scopes SEC 8-K alerts and prioritizes material filing items", () => {
     relevanceSummary: "Grounded filing excerpt.",
     items: [],
     retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    publishedAt: "2026-06-28T00:00:00.000Z",
+    effectivePeriod: {
+      start: "2026-06-27T00:00:00.000Z",
+      end: "2026-06-27T00:00:00.000Z",
+      label: "SEC report date",
+    },
+    time: {
+      observationTime: null,
+      publicationTime: "2026-06-28T00:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-06-27T00:00:00.000Z",
+        end: "2026-06-27T00:00:00.000Z",
+        label: "SEC report date",
+      },
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
+    },
+    asOf: "2026-06-29T12:00:00.000Z",
   };
   const alerts = monitoringSecFilings(
     [

@@ -9,6 +9,7 @@ import { getOfficialMacroContext } from "../../integrations/macro-context";
 import { getOpenFigiIdentity } from "../../integrations/openfigi";
 import { historicalRisk } from "../../shared/risk";
 import { SecEdgarClient, secUserAgentFromEnv, type SecFacts } from "../../integrations/sec-edgar";
+import { normalizeTimeProvenance } from "../../shared/time-provenance";
 import { buildSecFinancialTrends } from "./sec-financial-trends";
 import { buildValuationScenarioMemo, ValuationScenarioInput } from "./valuation-scenario";
 
@@ -123,26 +124,53 @@ function selectedSecFacts(facts: SecFacts) {
   return selected;
 }
 
-export async function getCompanySecEvidence(rawSymbol: string) {
+function secContent<T extends {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: unknown;
+  asOf: string;
+}>(value: T) {
+  const {
+    retrievedAt: _retrievedAt,
+    serverRespondedAt: _serverRespondedAt,
+    time: _time,
+    asOf: _asOf,
+    ...content
+  } = value;
+  return content;
+}
+
+type SecEvidenceClient = Pick<
+  SecEdgarClient,
+  "filingEvidence" | "company" | "companyFactsResult"
+>;
+
+export async function getCompanySecEvidence(
+  rawSymbol: string,
+  sec: SecEvidenceClient = secEdgarClient(),
+  now: () => Date = () => new Date(),
+) {
   const symbol = SymbolSchema.parse(rawSymbol);
-  const sec = secEdgarClient();
   const filingEvidence = await sec.filingEvidence(symbol);
   const company = await sec.company(symbol);
-  const facts = await sec.companyFacts(company);
-  const asOf = new Date().toISOString();
+  const factsResult = await sec.companyFactsResult(company);
+  const facts = factsResult.facts;
+  const serverRespondedAt = now().toISOString();
+  const retrievedAt = [filingEvidence.retrievedAt, factsResult.retrievedAt].toSorted().at(-1)!;
+  const asOf = serverRespondedAt;
   const sections: ResearchEvidence[] = filingEvidence.sections.map(section => {
     const { id, ...data } = section;
-    return researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.retrievedAt, retrievedAt: section.retrievedAt, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data });
+    return researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: secContent(data) });
   });
   const filingUrl = `https://data.sec.gov/submissions/CIK${filingEvidence.cik}.json`;
   const factsUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`;
   const sources: ResearchEvidence[] = [
-    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf, retrievedAt: asOf, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: filingEvidence.filings, sections: filingEvidence.sections, limitations: filingEvidence.limitations } }),
+    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf: filingEvidence.asOf, retrievedAt: filingEvidence.retrievedAt, serverRespondedAt: filingEvidence.serverRespondedAt, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: filingEvidence.filings.map(secContent), sections: filingEvidence.sections.map(secContent), limitations: filingEvidence.limitations } }),
     ...sections,
-    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf, retrievedAt: asOf, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selectedSecFacts(facts), trends: buildSecFinancialTrends(company, facts) } }),
+    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf: factsResult.asOf, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selectedSecFacts(facts), trends: buildSecFinancialTrends(company, facts) } }),
   ];
   const deduped = dedupeEvidence(sources);
-  return { symbol, companyName: facts.entityName, asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
+  return { symbol, companyName: facts.entityName, retrievedAt, serverRespondedAt, time: normalizeTimeProvenance({ retrievalTime: retrievedAt, serverResponseTime: serverRespondedAt }), asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
 }
 
 export function getSecCompanyClassification(rawSymbol: string) {
@@ -163,8 +191,8 @@ export async function getComparableValuations(alpaca: Alpaca, rawSubject: string
       alpaca.marketData.getLatestPrice(symbol),
     ]);
     if (typeof price !== "number") throw new Error("Current market price is unavailable");
-    const facts = await sec.companyFacts(company);
-    return buildComparableValuationRow(company, facts, price, new Date().toISOString(), symbol === subject);
+    const factsResult = await sec.companyFactsResult(company);
+    return buildComparableValuationRow(company, factsResult.facts, price, new Date().toISOString(), symbol === subject, factsResult);
   }));
   const results: Array<ReturnType<typeof buildComparableValuationRow>> = [];
   const warnings: string[] = [];
@@ -183,8 +211,8 @@ export async function getValuationScenarios(alpaca: Alpaca, rawSymbol: string, a
   const sec = secEdgarClient();
   const [company, price] = await Promise.all([sec.company(symbol), alpaca.marketData.getLatestPrice(symbol)]);
   if (typeof price !== "number") throw new Error("Current market price is unavailable");
-  const facts = await sec.companyFacts(company);
-  const result = buildComparableValuationRow(company, facts, price, new Date().toISOString(), true);
+  const factsResult = await sec.companyFactsResult(company);
+  const result = buildComparableValuationRow(company, factsResult.facts, price, new Date().toISOString(), true, factsResult);
   return buildValuationScenarioMemo(result.row, result.sources, parsedAssumptions.data);
 }
 
@@ -227,12 +255,11 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       const evidence = await sec.filingEvidence(symbol);
       const sections = evidence.sections.map(section => {
         const { id, ...data } = section;
-        sources.push(researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.retrievedAt, retrievedAt: section.retrievedAt, entityIds: { symbol, cik: evidence.cik }, category: "filings", data }));
+        sources.push(researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: secContent(data) }));
         return { evidenceId: id, ...data };
       });
       const url = `https://data.sec.gov/submissions/CIK${evidence.cik}.json`;
-      const asOf = new Date().toISOString();
-      return addEvidence(researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${evidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} recent SEC filings`, url, asOf, retrievedAt: asOf, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: { symbol, companyName: evidence.companyName, filings: evidence.filings, sections, limitations: evidence.limitations } }));
+      return addEvidence(researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${evidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} recent SEC filings`, url, asOf: evidence.asOf, retrievedAt: evidence.retrievedAt, serverRespondedAt: evidence.serverRespondedAt, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: { symbol, companyName: evidence.companyName, filings: evidence.filings.map(secContent), sections: sections.map(secContent), limitations: evidence.limitations } }));
     },
   });
 
@@ -240,11 +267,10 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
     name: "get_sec_fundamentals", description: "Get selected company fundamentals and comparable annual and quarterly trends directly from official SEC XBRL company facts.", parameters: z.object({ symbol: SymbolSchema }), timeoutMs: 15_000,
     async execute({ symbol: requested }) {
       if (requested !== symbol) throw new Error("Only the requested company may be researched");
-      const company = await sec.company(symbol); const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`; const facts = await sec.companyFacts(company);
+      const company = await sec.company(symbol); const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`; const factsResult = await sec.companyFactsResult(company); const facts = factsResult.facts;
       const selected = selectedSecFacts(facts);
       const trends = buildSecFinancialTrends(company, facts);
-      const asOf = new Date().toISOString();
-      return addEvidence(researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url, asOf, retrievedAt: asOf, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }));
+      return addEvidence(researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url, asOf: factsResult.asOf, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }));
     },
   });
 
