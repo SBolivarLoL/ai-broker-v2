@@ -4,6 +4,7 @@ import { handleResearchRequest } from "../../backend/features/research/routes";
 import type { FinnhubCompanyEnrichment } from "../../backend/integrations/finnhub";
 import type { OpenFigiIdentity } from "../../backend/integrations/openfigi";
 import { createStore } from "../../backend/persistence/store";
+import type { getCompanySecEvidence } from "../../backend/features/research/research";
 
 type RouteOptions = {
   alpaca?: Alpaca;
@@ -14,6 +15,9 @@ type RouteOptions = {
     symbol: string,
     companyName: string,
   ) => Promise<OpenFigiIdentity>;
+  secCompanyEvidence?: (
+    symbol: string,
+  ) => ReturnType<typeof getCompanySecEvidence>;
 };
 
 const route = async (
@@ -31,6 +35,7 @@ const route = async (
     env: {},
     finnhubCompanyEnrichment: options.finnhubCompanyEnrichment,
     openFigiIdentity: options.openFigiIdentity,
+    secCompanyEvidence: options.secCompanyEvidence,
   });
 };
 
@@ -84,6 +89,42 @@ test("research routes preserve rate limits and local metrics", async () => {
   const metrics = await route("/api/research/metrics");
   expect(metrics?.status).toBe(200);
   expect(await metrics?.json()).toMatchObject({ totalRuns: 0 });
+});
+
+test("SEC research route preserves provider retrieval and server response time", async () => {
+  const retrievedAt = "2026-07-10T08:29:59.000Z";
+  const serverRespondedAt = "2026-07-10T08:30:00.000Z";
+  let requestedSymbol = "";
+  const payload = {
+    symbol: "AAPL",
+    companyName: "Apple Inc.",
+    retrievedAt,
+    serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    },
+    asOf: serverRespondedAt,
+    sources: [],
+    deduplication: { duplicates: [], revisions: [] },
+  };
+  const response = await route(
+    "/api/research/sec?symbol=aapl",
+    undefined,
+    () => true,
+    {
+      secCompanyEvidence: async (symbol) => {
+        requestedSymbol = symbol;
+        return payload;
+      },
+    },
+  );
+  expect(requestedSymbol).toBe("AAPL");
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toEqual(payload);
 });
 
 test("Finnhub research route preserves explicit missing-retrieval time provenance", async () => {

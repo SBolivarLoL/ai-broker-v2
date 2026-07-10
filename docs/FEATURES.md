@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `7489097`: 2026-07-10.
+Last reviewed against `main` commit `07e4b30`: 2026-07-10.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -58,7 +58,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 ### Research and AI
 
-- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts.
+- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts. Classification, recent-filing, filing-evidence/section, company-facts result, and alert DTOs distinguish applicable filing-date publication, report-date effective period, provider retrieval, and server response time. Cache hits retain the original provider retrieval timestamp while each normalized response receives a fresh server timestamp.
 - Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
 - Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
 - Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage.

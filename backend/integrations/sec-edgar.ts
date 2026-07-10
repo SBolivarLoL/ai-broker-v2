@@ -3,6 +3,11 @@
  * and 8-K alerts with regulator-compliant identity, caching, and retries.
  */
 import { createHash } from "node:crypto";
+import {
+  normalizeTimeProvenance,
+  type NormalizedEffectivePeriod,
+  type NormalizedTimeProvenance,
+} from "../shared/time-provenance";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -13,17 +18,23 @@ export type SecCompany = {
   title: string;
 };
 
-export type SecCompanyClassification = {
+export type SecProviderTime = {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
+  asOf: string;
+};
+
+export type SecCompanyClassification = SecProviderTime & {
   symbol: string;
   companyName: string;
   cik: string;
   sic: string | null;
   industry: string | null;
   sourceUrl: string;
-  retrievedAt: string;
 };
 
-export type SecFiling = {
+export type SecFiling = SecProviderTime & {
   form: string;
   filed: string;
   reportDate: string;
@@ -31,11 +42,13 @@ export type SecFiling = {
   primaryDocument: string;
   url: string;
   indexUrl: string;
+  publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
 };
 
 export type SecFilingSectionKind = "risk_factors" | "management_discussion";
 
-export type SecFilingSection = {
+export type SecFilingSection = SecProviderTime & {
   id: string;
   kind: SecFilingSectionKind;
   title: string;
@@ -50,16 +63,24 @@ export type SecFilingSection = {
   includedCharacterCount: number;
   truncated: boolean;
   contentHash: string;
-  retrievedAt: string;
+  publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
 };
 
-export type SecFilingEvidence = {
+export type SecFilingEvidence = SecProviderTime & {
   symbol: string;
   companyName: string;
   cik: string;
   filings: SecFiling[];
   sections: SecFilingSection[];
   limitations: string[];
+};
+
+export type SecRecentFilings = SecProviderTime & {
+  company: SecCompany;
+  companyName: string;
+  submissionsUrl: string;
+  filings: SecFiling[];
 };
 
 export type Sec8KImportance = "critical" | "high" | "standard" | "supporting";
@@ -75,7 +96,7 @@ export type Sec8KItemEvidence = {
   contentHash: string;
 };
 
-export type Sec8KAlertEvidence = {
+export type Sec8KAlertEvidence = SecProviderTime & {
   id: string;
   symbol: string;
   companyName: string;
@@ -89,10 +110,11 @@ export type Sec8KAlertEvidence = {
   primaryItem: { code: string; label: string };
   relevanceSummary: string;
   items: Sec8KItemEvidence[];
-  retrievedAt: string;
+  publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
 };
 
-export type Sec8KAlertResult = {
+export type Sec8KAlertResult = SecProviderTime & {
   symbol: string;
   companyName: string;
   cik: string;
@@ -129,7 +151,10 @@ type CacheEntry = {
   expiresAt: number;
   etag: string | null;
   lastModified: string | null;
+  retrievedAt: string;
 };
+
+type ProviderResponse<T> = { value: T; retrievedAt: string };
 
 export type SecEdgarClientOptions = {
   userAgent: string;
@@ -140,6 +165,12 @@ export type SecEdgarClientOptions = {
   maxRetries?: number;
   jsonCacheTtlMs?: number;
   filingCacheTtlMs?: number;
+};
+
+export type SecCompanyFactsResult = SecProviderTime & {
+  company: SecCompany;
+  facts: SecFacts;
+  sourceUrl: string;
 };
 
 const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
@@ -349,6 +380,62 @@ export async function extractSec8KItems(html: string, maximumCharacters = DEFAUL
 
 const importanceRank: Record<Sec8KImportance, number> = { supporting: 0, standard: 1, high: 2, critical: 3 };
 
+function secDateTime(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const time = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(time.getTime())) return null;
+  const normalized = time.toISOString();
+  return normalized.startsWith(value) ? normalized : null;
+}
+
+function secProviderTime(
+  retrievedAt: string,
+  serverRespondedAt: string,
+): SecProviderTime {
+  return {
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
+}
+
+function secFilingTime(
+  filed: string,
+  reportDate: string,
+  retrievedAt: string,
+  serverRespondedAt: string,
+) {
+  const publishedAt = secDateTime(filed);
+  const effectiveAt = secDateTime(reportDate);
+  const effectivePeriod = effectiveAt
+    ? { start: effectiveAt, end: effectiveAt, label: "SEC report date" }
+    : null;
+  return {
+    publishedAt,
+    effectivePeriod,
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: null,
+      publicationTime: publishedAt,
+      effectivePeriod,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
+}
+
+function latestRetrievalTime(values: string[]) {
+  const latest = values.toSorted().at(-1);
+  if (!latest) throw new Error("SEC retrieval time is unavailable");
+  return latest;
+}
+
 function sec8KSummary(item: Sec8KItemEvidence) {
   const sentence = item.text.match(/^.{1,520}?[.!?](?=\s|$)/)?.[0];
   const bounded = boundedText((sentence ?? item.text).trim(), 520);
@@ -399,13 +486,23 @@ export class SecEdgarClient {
     return 250 * 2 ** attempt;
   }
 
-  private request<T>(url: string, kind: "json" | "text", ttlMs: number): Promise<T> {
+  private requestResult<T>(url: string, kind: "json" | "text", ttlMs: number): Promise<ProviderResponse<T>> {
     const key = `${kind}:${url}`;
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > this.now()) return Promise.resolve(cached.value as T);
+    if (cached && cached.expiresAt > this.now()) {
+      return Promise.resolve({
+        value: cached.value as T,
+        retrievedAt: cached.retrievedAt,
+      });
+    }
     return this.enqueue(async () => {
       const recheck = this.cache.get(key);
-      if (recheck && recheck.expiresAt > this.now()) return recheck.value as T;
+      if (recheck && recheck.expiresAt > this.now()) {
+        return {
+          value: recheck.value as T,
+          retrievedAt: recheck.retrievedAt,
+        };
+      }
       for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
         await this.waitForSlot();
         const previous = this.cache.get(key);
@@ -419,13 +516,16 @@ export class SecEdgarClient {
           },
         });
         if (response.status === 304 && previous) {
+          const retrievedAt = new Date(this.now()).toISOString();
           previous.expiresAt = this.now() + ttlMs;
-          return previous.value as T;
+          previous.retrievedAt = retrievedAt;
+          return { value: previous.value as T, retrievedAt };
         }
         if (response.ok) {
           const value = kind === "json" ? await response.json() : await response.text();
-          this.cache.set(key, { value, expiresAt: this.now() + ttlMs, etag: response.headers.get("etag"), lastModified: response.headers.get("last-modified") });
-          return value as T;
+          const retrievedAt = new Date(this.now()).toISOString();
+          this.cache.set(key, { value, expiresAt: this.now() + ttlMs, etag: response.headers.get("etag"), lastModified: response.headers.get("last-modified"), retrievedAt });
+          return { value: value as T, retrievedAt };
         }
         if (!TRANSIENT_STATUS.has(response.status) || attempt === this.maxRetries) throw new Error(`SEC data request failed (${response.status})`);
         await this.sleep(this.retryDelay(response, attempt));
@@ -434,37 +534,67 @@ export class SecEdgarClient {
     });
   }
 
-  async company(symbol: string): Promise<SecCompany> {
+  private async companyResult(symbol: string): Promise<ProviderResponse<SecCompany>> {
     const requested = symbol.trim().toUpperCase();
     if (!/^[A-Z.]{1,10}$/.test(requested)) throw new Error("Invalid SEC ticker symbol");
-    const companies = await this.request<Record<string, { cik_str: number; ticker: string; title: string }>>("https://www.sec.gov/files/company_tickers.json", "json", 24 * 60 * 60_000);
-    const company = Object.values(companies).find(item => item.ticker.toUpperCase() === requested);
+    const response = await this.requestResult<Record<string, { cik_str: number; ticker: string; title: string }>>("https://www.sec.gov/files/company_tickers.json", "json", 24 * 60 * 60_000);
+    const company = Object.values(response.value).find(item => item.ticker.toUpperCase() === requested);
     if (!company) throw new Error("SEC company identifier not found");
-    return { ...company, cik: String(company.cik_str).padStart(10, "0"), cikNumber: String(company.cik_str) };
+    return {
+      value: { ...company, cik: String(company.cik_str).padStart(10, "0"), cikNumber: String(company.cik_str) },
+      retrievedAt: response.retrievedAt,
+    };
+  }
+
+  async company(symbol: string): Promise<SecCompany> {
+    return (await this.companyResult(symbol)).value;
+  }
+
+  private submissionsResult(company: SecCompany) {
+    return this.requestResult<SecSubmissions>(`https://data.sec.gov/submissions/CIK${company.cik}.json`, "json", this.jsonCacheTtlMs);
   }
 
   async submissions(company: SecCompany) {
-    return this.request<SecSubmissions>(`https://data.sec.gov/submissions/CIK${company.cik}.json`, "json", this.jsonCacheTtlMs);
+    return (await this.submissionsResult(company)).value;
   }
 
   async companyFacts(company: SecCompany) {
-    return this.request<SecFacts>(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, "json", this.jsonCacheTtlMs);
+    return (await this.companyFactsResult(company)).facts;
+  }
+
+  async companyFactsResult(company: SecCompany): Promise<SecCompanyFactsResult> {
+    const sourceUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`;
+    const result = await this.requestResult<SecFacts>(sourceUrl, "json", this.jsonCacheTtlMs);
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    return {
+      company,
+      facts: result.value,
+      sourceUrl,
+      ...secProviderTime(result.retrievedAt, serverRespondedAt),
+    };
   }
 
   async companyClassification(symbol: string): Promise<SecCompanyClassification> {
-    const company = await this.company(symbol);
-    const submission = await this.submissions(company);
+    const companyResult = await this.companyResult(symbol);
+    const company = companyResult.value;
+    const submissionResult = await this.submissionsResult(company);
+    const submission = submissionResult.value;
     const rawSic = String(submission.sic ?? "").trim();
     const sic = /^\d{1,4}$/.test(rawSic) ? rawSic.padStart(4, "0") : null;
     const industry = sic ? String(submission.sicDescription ?? "").replace(/[\t\r\n ]+/g, " ").trim().slice(0, 200) || null : null;
-    return { symbol: company.ticker, companyName: submission.name, cik: company.cik, sic, industry, sourceUrl: `https://data.sec.gov/submissions/CIK${company.cik}.json`, retrievedAt: new Date(this.now()).toISOString() };
+    const retrievedAt = latestRetrievalTime([companyResult.retrievedAt, submissionResult.retrievedAt]);
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    return { symbol: company.ticker, companyName: submission.name, cik: company.cik, sic, industry, sourceUrl: `https://data.sec.gov/submissions/CIK${company.cik}.json`, ...secProviderTime(retrievedAt, serverRespondedAt) };
   }
 
-  async recentFilings(symbol: string, limit = 12) {
+  async recentFilings(symbol: string, limit = 12): Promise<SecRecentFilings> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 40) throw new Error("SEC filing limit must be between 1 and 40");
-    const company = await this.company(symbol);
-    const submission = await this.submissions(company);
+    const companyResult = await this.companyResult(symbol);
+    const company = companyResult.value;
+    const submissionResult = await this.submissionsResult(company);
+    const submission = submissionResult.value;
     const recent = submission.filings.recent;
+    const serverRespondedAt = new Date(this.now()).toISOString();
     const filings = recent.form
       .map((form, index) => ({ form, index }))
       .filter(item => ["10-K", "10-Q", "8-K", "8-K/A"].includes(item.form))
@@ -482,9 +612,22 @@ export class SecEdgarClient {
           primaryDocument,
           url: `${base}/${primaryDocument}`,
           indexUrl: `${base}/${accession}-index.html`,
+          ...secFilingTime(
+            recent.filingDate[index]!,
+            recent.reportDate[index]!,
+            submissionResult.retrievedAt,
+            serverRespondedAt,
+          ),
         };
       });
-    return { company, companyName: submission.name, submissionsUrl: `https://data.sec.gov/submissions/CIK${company.cik}.json`, filings };
+    const retrievedAt = latestRetrievalTime([companyResult.retrievedAt, submissionResult.retrievedAt]);
+    return {
+      company,
+      companyName: submission.name,
+      submissionsUrl: `https://data.sec.gov/submissions/CIK${company.cik}.json`,
+      filings,
+      ...secProviderTime(retrievedAt, serverRespondedAt),
+    };
   }
 
   async filingEvidence(symbol: string, limit = 12, maximumSectionCharacters = DEFAULT_SECTION_CHARS): Promise<SecFilingEvidence> {
@@ -496,10 +639,12 @@ export class SecEdgarClient {
     }
     const sections: SecFilingSection[] = [];
     const limitations: string[] = [];
+    const retrievalTimes = [recent.retrievedAt];
     for (const filing of selected) {
       try {
-        const html = await this.request<string>(filing.url, "text", this.filingCacheTtlMs);
-        const extracted = await extractSecFilingSections(html, filing.form, maximumSectionCharacters);
+        const html = await this.requestResult<string>(filing.url, "text", this.filingCacheTtlMs);
+        retrievalTimes.push(html.retrievedAt);
+        const extracted = await extractSecFilingSections(html.value, filing.form, maximumSectionCharacters);
         if (!extracted.length) limitations.push(`${filing.form} ${filing.accession}: supported sections were not found in the primary document.`);
         for (const section of extracted) sections.push({
           ...section,
@@ -509,7 +654,12 @@ export class SecEdgarClient {
           reportDate: filing.reportDate,
           accession: filing.accession,
           sourceUrl: filing.url,
-          retrievedAt: new Date(this.now()).toISOString(),
+          ...secFilingTime(
+            filing.filed,
+            filing.reportDate,
+            html.retrievedAt,
+            html.retrievedAt,
+          ),
         });
       } catch (error) {
         limitations.push(`${filing.form} ${filing.accession}: ${error instanceof Error ? error.message : "section retrieval failed"}`);
@@ -517,7 +667,34 @@ export class SecEdgarClient {
     }
     if (!selected.some(filing => filing.form === "10-K")) limitations.push("No recent 10-K primary document was available in the bounded submissions window.");
     if (!selected.some(filing => filing.form === "10-Q")) limitations.push("No recent 10-Q primary document was available in the bounded submissions window.");
-    return { symbol: symbol.toUpperCase(), companyName: recent.companyName, cik: recent.company.cik, filings: recent.filings, sections, limitations };
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    const filings = recent.filings.map(filing => ({
+      ...filing,
+      ...secFilingTime(
+        filing.filed,
+        filing.reportDate,
+        filing.retrievedAt,
+        serverRespondedAt,
+      ),
+    }));
+    const responseSections = sections.map(section => ({
+      ...section,
+      ...secFilingTime(
+        section.filed,
+        section.reportDate,
+        section.retrievedAt,
+        serverRespondedAt,
+      ),
+    }));
+    return {
+      symbol: symbol.toUpperCase(),
+      companyName: recent.companyName,
+      cik: recent.company.cik,
+      filings,
+      sections: responseSections,
+      limitations,
+      ...secProviderTime(latestRetrievalTime(retrievalTimes), serverRespondedAt),
+    };
   }
 
   async recent8KAlerts(symbol: string, lookbackDays = 14, limit = 3, maximumItemCharacters = DEFAULT_8K_ITEM_CHARS): Promise<Sec8KAlertResult> {
@@ -529,10 +706,12 @@ export class SecEdgarClient {
     const filings = recent.filings.filter(filing => filing.form.startsWith("8-K") && filing.filed >= cutoff).slice(0, limit);
     const alerts: Sec8KAlertEvidence[] = [];
     const limitations: string[] = [];
+    const retrievalTimes = [recent.retrievedAt];
     for (const filing of filings) {
       try {
-        const html = await this.request<string>(filing.url, "text", this.filingCacheTtlMs);
-        const items = await extractSec8KItems(html, maximumItemCharacters);
+        const html = await this.requestResult<string>(filing.url, "text", this.filingCacheTtlMs);
+        retrievalTimes.push(html.retrievedAt);
+        const items = await extractSec8KItems(html.value, maximumItemCharacters);
         const primary = items
           .filter((item): item is Sec8KItemEvidence & { importance: Exclude<Sec8KImportance, "supporting"> } => item.importance !== "supporting")
           .sort((a, b) => importanceRank[b.importance] - importanceRank[a.importance])[0];
@@ -554,12 +733,35 @@ export class SecEdgarClient {
           primaryItem: { code: primary.code, label: primary.label },
           relevanceSummary: sec8KSummary(primary),
           items,
-          retrievedAt: new Date(this.now()).toISOString(),
+          ...secFilingTime(
+            filing.filed,
+            filing.reportDate,
+            html.retrievedAt,
+            html.retrievedAt,
+          ),
         });
       } catch (error) {
         limitations.push(`${filing.accession}: ${error instanceof Error ? error.message : "8-K retrieval failed"}`);
       }
     }
-    return { symbol: requested, companyName: recent.companyName, cik: recent.company.cik, lookbackDays, alerts, limitations };
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    const responseAlerts = alerts.map(alert => ({
+      ...alert,
+      ...secFilingTime(
+        alert.filed,
+        alert.reportDate,
+        alert.retrievedAt,
+        serverRespondedAt,
+      ),
+    }));
+    return {
+      symbol: requested,
+      companyName: recent.companyName,
+      cik: recent.company.cik,
+      lookbackDays,
+      alerts: responseAlerts,
+      limitations,
+      ...secProviderTime(latestRetrievalTime(retrievalTimes), serverRespondedAt),
+    };
   }
 }

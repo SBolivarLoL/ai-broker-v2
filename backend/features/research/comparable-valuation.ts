@@ -130,6 +130,10 @@ export function buildComparableValuationRow(
   price: number,
   retrievedAt: string,
   subject = false,
+  secTime: { retrievedAt: string; serverRespondedAt: string } = {
+    retrievedAt,
+    serverRespondedAt: retrievedAt,
+  },
 ) {
   if (!Number.isFinite(price) || price <= 0)
     throw new Error("Comparable valuation requires a positive market price");
@@ -192,7 +196,8 @@ export function buildComparableValuationRow(
     asOf: revenue
       ? new Date(`${revenue.periodEnd}T00:00:00.000Z`).toISOString()
       : asOf,
-    retrievedAt: asOf,
+    retrievedAt: secTime.retrievedAt,
+    serverRespondedAt: secTime.serverRespondedAt,
     entityIds: { symbol: company.ticker, cik: company.cik },
     data: {
       symbol: company.ticker,

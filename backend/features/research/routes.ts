@@ -36,6 +36,7 @@ import {
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
 type RateLimit = (key: string, maximum: number) => boolean;
+type SecCompanyEvidence = Awaited<ReturnType<typeof getCompanySecEvidence>>;
 
 type ResearchContext = {
   alpaca: Alpaca;
@@ -50,6 +51,7 @@ type ResearchContext = {
     symbol: string,
     companyName: string,
   ) => Promise<OpenFigiIdentity>;
+  secCompanyEvidence?: (symbol: string) => Promise<SecCompanyEvidence>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -296,7 +298,9 @@ export async function handleResearchRequest(
     const symbol = symbolFrom(url.searchParams.get("symbol"));
     if (!validSymbol(symbol))
       return json({ error: "A valid stock symbol is required" }, 400);
-    return json(await getCompanySecEvidence(symbol));
+    return json(
+      await (context.secCompanyEvidence ?? getCompanySecEvidence)(symbol),
+    );
   }
 
   if (url.pathname === "/api/research/macro" && request.method === "GET") {

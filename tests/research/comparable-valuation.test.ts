@@ -140,6 +140,10 @@ test("builds provenance-bound comparable valuation metrics from SEC facts and br
     30,
     "2026-06-29T12:00:00Z",
     true,
+    {
+      retrievedAt: "2026-06-29T11:59:58Z",
+      serverRespondedAt: "2026-06-29T11:59:59Z",
+    },
   );
   expect(result.row).toMatchObject({
     symbol: "AAPL",
@@ -170,6 +174,14 @@ test("builds provenance-bound comparable valuation metrics from SEC facts and br
   ]);
   expect(result.sources[2]?.data).toMatchObject({
     inputs: ["sec:valuation-inputs:AAPL", "market:valuation-price:AAPL"],
+  });
+  expect(result.sources[0]).toMatchObject({
+    retrievedAt: "2026-06-29T11:59:58.000Z",
+    serverRespondedAt: "2026-06-29T11:59:59.000Z",
+    time: {
+      retrievalTime: "2026-06-29T11:59:58.000Z",
+      serverResponseTime: "2026-06-29T11:59:59.000Z",
+    },
   });
 });
 

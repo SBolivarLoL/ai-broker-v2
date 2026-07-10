@@ -8,9 +8,10 @@ const symbol = (process.env.SEC_SYMBOL ?? "AAPL").trim().toUpperCase();
 const client = new SecEdgarClient({ userAgent: secUserAgentFromEnv() });
 const evidence = await client.filingEvidence(symbol, 12, 1_500);
 const company = await client.company(symbol);
+const factsResult = await client.companyFactsResult(company);
 const trends = buildSecFinancialTrends(
   company,
-  await client.companyFacts(company),
+  factsResult.facts,
 );
 const eventAlerts = await client.recent8KAlerts(symbol, 365, 2, 1_000);
 
@@ -18,11 +19,21 @@ const summary = {
   symbol: evidence.symbol,
   companyName: evidence.companyName,
   cik: evidence.cik,
+  retrievedAt: evidence.retrievedAt,
+  serverRespondedAt: evidence.serverRespondedAt,
+  time: evidence.time,
+  asOf: evidence.asOf,
   filings: evidence.filings.map((filing) => ({
     form: filing.form,
     filed: filing.filed,
     accession: filing.accession,
     url: filing.url,
+    publishedAt: filing.publishedAt,
+    effectivePeriod: filing.effectivePeriod,
+    retrievedAt: filing.retrievedAt,
+    serverRespondedAt: filing.serverRespondedAt,
+    time: filing.time,
+    asOf: filing.asOf,
   })),
   sections: evidence.sections.map((section) => ({
     kind: section.kind,
@@ -35,7 +46,19 @@ const summary = {
     sourceCharacterCount: section.sourceCharacterCount,
     truncated: section.truncated,
     contentHash: section.contentHash,
+    publishedAt: section.publishedAt,
+    effectivePeriod: section.effectivePeriod,
+    retrievedAt: section.retrievedAt,
+    serverRespondedAt: section.serverRespondedAt,
+    time: section.time,
+    asOf: section.asOf,
   })),
+  companyFactsTime: {
+    retrievedAt: factsResult.retrievedAt,
+    serverRespondedAt: factsResult.serverRespondedAt,
+    time: factsResult.time,
+    asOf: factsResult.asOf,
+  },
   financialTrends: {
     coverage: trends.coverage,
     metrics: trends.metrics.map((metric) => ({
@@ -64,6 +87,12 @@ const summary = {
     primaryItem: alert.primaryItem,
     sourceUrl: alert.sourceUrl,
     indexUrl: alert.indexUrl,
+    publishedAt: alert.publishedAt,
+    effectivePeriod: alert.effectivePeriod,
+    retrievedAt: alert.retrievedAt,
+    serverRespondedAt: alert.serverRespondedAt,
+    time: alert.time,
+    asOf: alert.asOf,
     items: alert.items.map((item) => ({
       code: item.code,
       label: item.label,
@@ -73,8 +102,32 @@ const summary = {
     })),
   })),
   eventAlertLimitations: eventAlerts.limitations,
+  eventAlertTime: {
+    retrievedAt: eventAlerts.retrievedAt,
+    serverRespondedAt: eventAlerts.serverRespondedAt,
+    time: eventAlerts.time,
+    asOf: eventAlerts.asOf,
+  },
   limitations: evidence.limitations,
 };
 
 console.log(JSON.stringify(summary, null, 2));
-if (!evidence.sections.length || !trends.metrics.length) process.exitCode = 1;
+const validProviderTime = (value: {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: { retrievalTime: string; serverResponseTime: string };
+  asOf: string;
+}) =>
+  value.time.retrievalTime === value.retrievedAt &&
+  value.time.serverResponseTime === value.serverRespondedAt &&
+  value.asOf === value.serverRespondedAt;
+if (
+  !evidence.sections.length ||
+  !trends.metrics.length ||
+  !validProviderTime(evidence) ||
+  !validProviderTime(factsResult) ||
+  !validProviderTime(eventAlerts) ||
+  !evidence.filings.every(validProviderTime) ||
+  !evidence.sections.every(validProviderTime) ||
+  !eventAlerts.alerts.every(validProviderTime)
+) process.exitCode = 1;
