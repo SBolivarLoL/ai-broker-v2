@@ -177,6 +177,10 @@ export function createApp({
       "/research.js",
       ["frontend/research.js", "text/javascript; charset=utf-8"],
     ],
+    [
+      "/data-quality.js",
+      ["frontend/data-quality.js", "text/javascript; charset=utf-8"],
+    ],
     ["/app.js", ["frontend/app.js", "text/javascript; charset=utf-8"]],
   ] as const);
   const fetch = async (request: Request) => {

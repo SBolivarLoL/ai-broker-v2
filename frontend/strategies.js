@@ -5,7 +5,8 @@
 let strategyRuns = [],
   activeStrategyRunId = null,
   activeTraceId = null,
-  latestStrategyBacktestId = null;
+  latestStrategyBacktestId = null,
+  recentStrategyBacktestIds = [];
 const strategyLabels = {
   cash: "Cash baseline",
   "buy-and-hold": "Buy and hold",
@@ -54,6 +55,107 @@ const strategyDefaultParams = {
     exposure: 1,
   },
 };
+const strategyParameterLabels = {
+  fast: "Fast window",
+  slow: "Slow window",
+  exposure: "Maximum exposure",
+  maxExposure: "Maximum exposure",
+  slices: "Accumulation slices",
+  lookback: "Signal lookback",
+  volumeLookback: "Volume lookback",
+  volumeMultiple: "Minimum volume multiple",
+  stopLossPercent: "Stop loss (%)",
+  minVolatilityPercent: "Minimum volatility (%)",
+  maxVolatilityPercent: "Maximum volatility (%)",
+  minRelativeStrengthPercent: "Minimum relative strength (%)",
+  maxSpreadBps: "Maximum spread (bps)",
+  minVisibleAskNotional: "Minimum visible asks ($)",
+  minVisibleBidNotional: "Minimum visible bids ($)",
+  maxDepthLevels: "Maximum depth levels",
+  entryZScore: "Entry Z-score",
+  exitZScore: "Exit Z-score",
+};
+const strategyParameterBounds = {
+  slices: [1, 10_000],
+  maxExposure: [0, 1],
+  fast: [2, 10_000],
+  slow: [3, 10_000],
+  exposure: [0, 1],
+  lookback: [1, 10_000],
+  entryZScore: [-20, 20],
+  exitZScore: [-20, 20],
+  volumeLookback: [2, 10_000],
+  volumeMultiple: [0.01, 100],
+  stopLossPercent: [0, 100],
+  minVolatilityPercent: [0, 1_000],
+  maxVolatilityPercent: [0, 1_000],
+  minRelativeStrengthPercent: [-1_000, 1_000],
+  maxSpreadBps: [1, 10_000],
+  minVisibleAskNotional: [0, 1_000_000_000_000],
+  minVisibleBidNotional: [0, 1_000_000_000_000],
+  maxDepthLevels: [1, 100],
+};
+
+function strategyParamBounds(key) {
+  if (key === "lookback") {
+    const strategyId = $("#strategy-id").value;
+    if (strategyId === "btc-eth-relative-strength") return [1, 10_000];
+    if (strategyId === "mean-reversion") return [3, 10_000];
+    return [2, 10_000];
+  }
+  return strategyParameterBounds[key] || ["", ""];
+}
+
+function strategyParamStep(key, value) {
+  if (/exposure|multiple|score/i.test(key)) return "0.05";
+  if (/percent/i.test(key)) return "0.1";
+  return Number.isInteger(value) ? "1" : "0.01";
+}
+
+function renderStrategyParameterFields(params) {
+  const root = $("#strategy-parameter-fields"),
+    entries = Object.entries(params || {});
+  root.innerHTML = entries.length
+    ? entries
+        .map(([key, value]) => {
+          const [minimum, maximum] = strategyParamBounds(key);
+          return `<label class="control-label"><span>${esc(strategyParameterLabels[key] || key.replace(/([A-Z])/g, " $1"))}</span><input class="field strategy-param-input" type="number" step="${strategyParamStep(key, value)}" min="${esc(minimum)}" max="${esc(maximum)}" data-param="${esc(key)}" value="${esc(value)}" /></label>`;
+        })
+        .join("")
+    : '<div class="muted">This baseline has no configurable parameters.</div>';
+}
+
+function syncStrategyJsonFromFields() {
+  const params = {};
+  document.querySelectorAll(".strategy-param-input").forEach((input) => {
+    params[input.dataset.param] = Number(input.value);
+  });
+  $("#strategy-params").value = JSON.stringify(params);
+  invalidateStrategyBacktest();
+}
+
+function strategyPresetParams(strategyId, preset) {
+  const params = structuredClone(strategyDefaultParams[strategyId] || {}),
+    exposureKey = Object.hasOwn(params, "exposure")
+      ? "exposure"
+      : Object.hasOwn(params, "maxExposure")
+        ? "maxExposure"
+        : null;
+  if (exposureKey) params[exposureKey] = preset === "conservative" ? 0.5 : 1;
+  if (Object.hasOwn(params, "maxSpreadBps"))
+    params.maxSpreadBps =
+      preset === "conservative" ? 50 : preset === "aggressive" ? 150 : 100;
+  if (Object.hasOwn(params, "stopLossPercent"))
+    params.stopLossPercent =
+      preset === "conservative" ? 5 : preset === "aggressive" ? 10 : 8;
+  return params;
+}
+
+function applyStrategyParams(params) {
+  $("#strategy-params").value = JSON.stringify(params);
+  renderStrategyParameterFields(params);
+  invalidateStrategyBacktest();
+}
 function strategyParams() {
   // Keep the free-form editor flexible, but reject non-object JSON before it
   // reaches the stricter plugin schemas on the server.
@@ -78,6 +180,56 @@ function strategyPayload() {
     intervalMinutes: Number($("#strategy-interval").value || 0),
     params: strategyParams(),
   };
+}
+function activeStrategyRun() {
+  return strategyRuns.find((run) => run.id === activeStrategyRunId) || null;
+}
+
+function localDateTimeValue(date) {
+  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
+}
+
+function syncStrategyLifecycleControls() {
+  const run = activeStrategyRun(),
+    protocol = run?.config?.experimentProtocol,
+    protocolAllowed = run && ["shadow", "paused"].includes(run.status),
+    protocolButton = $("#strategy-protocol-submit"),
+    approvalButton = $("#strategy-paper-approve"),
+    pauseButton = $("#strategy-pause-button"),
+    killButton = $("#strategy-kill-button"),
+    reviewButton = $("#strategy-review-submit"),
+    now = new Date();
+  protocolButton.disabled = !protocolAllowed;
+  approvalButton.disabled = !protocolAllowed || !protocol;
+  pauseButton.disabled =
+    !run || ["paused", "completed", "killed", "retired"].includes(run.status);
+  killButton.disabled =
+    !run || ["completed", "killed", "retired"].includes(run.status);
+  reviewButton.disabled = !run;
+  $("#strategy-protocol-badge").textContent = protocol
+    ? `v${protocol.version} registered`
+    : "Required";
+  $("#strategy-protocol-badge").className =
+    `pill ${protocol ? "gain" : "loss"}`;
+  $("#strategy-paper-readiness").textContent = protocol
+    ? "Protocol ready"
+    : "Blocked";
+  $("#strategy-paper-readiness").className =
+    `pill ${protocol ? "gain" : "loss"}`;
+  $("#strategy-protocol-status").textContent = !run
+    ? "Select a run to register its required protocol."
+    : protocol
+      ? `Version ${protocol.version} · ${new Date(protocol.startAt).toLocaleString()} to ${new Date(protocol.stopAt).toLocaleString()} · maximum ${money.format(protocol.maximumBudget)}.`
+      : protocolAllowed
+        ? "Register a falsifiable protocol before paper approval. Parameters are frozen to the reviewed backtest."
+        : `Protocol registration is unavailable while the run is ${run.status}.`;
+  if (!protocol) {
+    $("#strategy-protocol-start").value ||= localDateTimeValue(now);
+    $("#strategy-protocol-stop").value ||= localDateTimeValue(
+      new Date(now.getTime() + 31 * 86_400_000),
+    );
+  }
 }
 function strategyLineChart(points) {
   return equityChart(points.map((point) => ({ equity: point.equity })));
@@ -112,6 +264,27 @@ function renderBacktest(data) {
   $("#strategy-backtest-chart").innerHTML = latest
     ? `${strategyLineChart(result.points)}<div class="chart-note">${esc(data.symbol)} · ${esc(data.timeframe)} · ${esc(result.points.length)} bars · backtest ${esc(data.backtestId.slice(0, 8))} · data ${esc(provenance.datasetHash.slice(7, 19))}${esc(dirty)}</div>`
     : '<div class="empty">No backtest points returned.</div>';
+  const metrics = result.tradeMetrics || {},
+    uncertainty = result.uncertainty || {},
+    returnRange = uncertainty.totalReturnPercent,
+    drawdownRange = uncertainty.maxDrawdownPercent;
+  $("#strategy-backtest-evidence").hidden = false;
+  $("#strategy-trade-metrics").innerHTML =
+    `<div class="metric"><strong>${esc(metrics.tradeCount ?? "—")}</strong><span class="muted">Simulated trades</span></div><div class="metric"><strong>${esc(metrics.roundTripCount ?? "—")}</strong><span class="muted">Closed round trips</span></div><div class="metric"><strong>${metrics.sortinoRatio === null || metrics.sortinoRatio === undefined ? "—" : esc(strategyNumber(metrics.sortinoRatio, 2))}</strong><span class="muted">Sortino ratio</span></div><div class="metric"><strong>${metrics.calmarRatio === null || metrics.calmarRatio === undefined ? "—" : esc(strategyNumber(metrics.calmarRatio, 2))}</strong><span class="muted">Calmar ratio</span></div><div class="metric"><strong>${metrics.profitFactor === null || metrics.profitFactor === undefined ? "—" : esc(strategyNumber(metrics.profitFactor, 2))}</strong><span class="muted">Profit factor</span></div><div class="metric"><strong>${metrics.hitRatePercent === null || metrics.hitRatePercent === undefined ? "—" : esc(pct(metrics.hitRatePercent))}</strong><span class="muted">Hit rate</span></div><div class="metric"><strong>${esc(pct(metrics.turnoverPercent ?? result.turnoverPercent))}</strong><span class="muted">Turnover</span></div><div class="metric"><strong>${esc(money.format(result.totalCost || 0))}</strong><span class="muted">Modeled costs</span></div>`;
+  $("#strategy-capacity-warnings").innerHTML = metrics.capacityWarnings?.length
+    ? `<div class="warnings">${metrics.capacityWarnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>`
+    : '<div class="muted">No capacity warnings for this sample.</div>';
+  $("#strategy-uncertainty").innerHTML =
+    uncertainty.status === "available"
+      ? `<div class="metric"><strong>${esc(pct(returnRange.lowerPercentile))} to ${esc(pct(returnRange.upperPercentile))}</strong><span class="muted">90% bootstrap return range</span></div><div class="metric"><strong>${esc(pct(drawdownRange.lowerPercentile))} to ${esc(pct(drawdownRange.upperPercentile))}</strong><span class="muted">90% max-drawdown range</span></div><div class="metric"><strong>${esc(uncertainty.sampleSize)}</strong><span class="muted">Scored returns · not rankable</span></div>`
+      : `<div class="empty">${esc(uncertainty.reason || "Not enough observations for uncertainty ranges.")}</div>`;
+  $("#strategy-assumptions").textContent =
+    `Execution ${result.assumptions?.execution || "close"} · ${result.assumptions?.feeBps ?? 0} bps fees · ${result.assumptions?.slippageBps ?? 0} bps slippage · uncertainty is evidence, not a ranking.`;
+  recentStrategyBacktestIds = [
+    data.backtestId,
+    ...recentStrategyBacktestIds.filter((id) => id !== data.backtestId),
+  ].slice(0, 20);
+  $("#strategy-compare-ids").value = recentStrategyBacktestIds.join("\n");
 }
 function strategyDecisionQuery() {
   const params = new URLSearchParams(),
@@ -330,6 +503,7 @@ function renderStrategyRuns() {
     : '<div class="empty">No shadow strategy runs yet. Run and review a backtest before creating one.</div>';
   $("#strategy-tick-button").disabled = !activeStrategyRunId;
   $("#strategy-report-button").disabled = !activeStrategyRunId;
+  syncStrategyLifecycleControls();
 }
 function renderDecisions(decisions) {
   $("#strategy-decisions").innerHTML = decisions.length
@@ -424,6 +598,7 @@ function invalidateStrategyBacktest() {
   $("#strategy-create-button").disabled = true;
 }
 async function runStrategyBacktest() {
+  if (!$("#strategy-form").reportValidity()) return;
   const button = $("#strategy-backtest-button");
   try {
     invalidateStrategyBacktest();
@@ -436,7 +611,8 @@ async function runStrategyBacktest() {
       body: JSON.stringify({
         ...strategyPayload(),
         initialCash: 10000,
-        slippageBps: 5,
+        feeBps: Number($("#strategy-fee-bps").value),
+        slippageBps: Number($("#strategy-slippage-bps").value),
       }),
     });
     latestStrategyBacktestId = data.backtestId;
@@ -457,16 +633,62 @@ async function runStrategyBacktest() {
 }
 $("#strategy-backtest-button").onclick = runStrategyBacktest;
 $("#strategy-form").addEventListener("input", invalidateStrategyBacktest);
+$("#strategy-parameter-fields").addEventListener(
+  "input",
+  syncStrategyJsonFromFields,
+);
+$("#strategy-params").addEventListener("change", () => {
+  try {
+    const params = strategyParams();
+    renderStrategyParameterFields(params);
+  } catch (error) {
+    notify(error.message);
+  }
+});
+$("#strategy-preset").addEventListener("change", (event) =>
+  applyStrategyParams(
+    strategyPresetParams($("#strategy-id").value, event.target.value),
+  ),
+);
 $("#strategy-id").addEventListener("change", (event) => {
-  invalidateStrategyBacktest();
-  $("#strategy-params").value = JSON.stringify(
-    strategyDefaultParams[event.target.value] ?? {},
-  );
+  $("#strategy-preset").value = "balanced";
+  applyStrategyParams(strategyPresetParams(event.target.value, "balanced"));
   if (event.target.value === "btc-eth-relative-strength")
     $("#strategy-symbol").value = "BTC/USD,ETH/USD";
   else if ($("#strategy-symbol").value.includes(","))
     $("#strategy-symbol").value = "BTC/USD";
 });
+
+$("#strategy-compare-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const ids = $("#strategy-compare-ids")
+    .value.split(/[\s,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (ids.length < 2)
+    return notify("Add at least two backtest IDs to compare.");
+  const button = $("#strategy-compare-button");
+  try {
+    button.disabled = true;
+    button.textContent = "Comparing…";
+    const comparison = await api("/api/strategy/backtests/compare", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ backtestIds: ids }),
+    });
+    $("#strategy-comparison").innerHTML =
+      `<div class="section-head"><div><h3>Comparison cohort</h3><div class="muted">${comparison.compatible ? "Compatible evidence" : "Compatibility warnings require review"}</div></div><span class="pill ${comparison.compatible ? "gain" : "loss"}">${comparison.compatible ? "Comparable" : "Not rankable"}</span></div>${comparison.warnings.length ? `<div class="warnings">${comparison.warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>` : ""}<div class="comparison-table">${comparison.rows.map((row) => `<div class="comparison-row"><div><strong>${esc(strategyLabels[row.strategyId] || row.strategyId)}</strong><span class="muted">${esc(row.backtestId.slice(0, 8))}</span></div><strong class="${Number(row.metrics.totalReturnPercent) >= 0 ? "gain" : "loss"}">${row.metrics.totalReturnPercent === null ? "—" : esc(pct(row.metrics.totalReturnPercent))}</strong><span>${row.metrics.maxDrawdownPercent === null ? "—" : esc(pct(row.metrics.maxDrawdownPercent))} drawdown</span><span>${row.metrics.tradeCount ?? "—"} trades</span></div>`).join("")}</div>`;
+  } catch (error) {
+    $("#strategy-comparison").innerHTML = cardError(
+      "Comparison unavailable",
+      error,
+      "Use persisted backtests produced by the same actor.",
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = "Compare backtests";
+  }
+};
 $("#strategy-form").onsubmit = async (event) => {
   event.preventDefault();
   if (!latestStrategyBacktestId)
@@ -592,9 +814,56 @@ $("#strategy-report-button").onclick = async (event) => {
     button.disabled = false;
   }
 };
+$("#strategy-protocol-form").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!activeStrategyRunId) return notify("Select a strategy run first.");
+  const button = $("#strategy-protocol-submit"),
+    criteria = $("#strategy-protocol-invalidation")
+      .value.split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  let startAt, stopAt;
+  try {
+    startAt = new Date($("#strategy-protocol-start").value).toISOString();
+    stopAt = new Date($("#strategy-protocol-stop").value).toISOString();
+  } catch {
+    return notify("Add valid protocol start and stop dates.");
+  }
+  try {
+    button.disabled = true;
+    button.textContent = "Registering…";
+    await api(
+      `/api/strategy/runs/${encodeURIComponent(activeStrategyRunId)}/experiment-protocol`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          hypothesis: $("#strategy-protocol-hypothesis").value.trim(),
+          startAt,
+          stopAt,
+          minimumObservations: Number(
+            $("#strategy-protocol-observations").value,
+          ),
+          maximumBudget: Number($("#strategy-protocol-budget").value),
+          invalidationCriteria: criteria,
+          reviewCadenceDays: Number($("#strategy-protocol-cadence").value),
+        }),
+      },
+    );
+    notify("Paper experiment protocol registered.");
+    await loadStrategyRuns();
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    button.textContent = "Register protocol";
+    syncStrategyLifecycleControls();
+  }
+};
 $("#strategy-paper-form").onsubmit = async (event) => {
   event.preventDefault();
   if (!activeStrategyRunId) return notify("Select a strategy run first.");
+  if (!activeStrategyRun()?.config?.experimentProtocol)
+    return notify("Register the paper experiment protocol first.");
   const body = {
     budget: Number($("#strategy-paper-budget").value),
     maxPositionNotional: Number($("#strategy-paper-max-position").value),
@@ -609,8 +878,9 @@ $("#strategy-paper-form").onsubmit = async (event) => {
     errorCooldownMinutes: Number($("#strategy-paper-cooldown").value),
   };
   if (
-    !(await reviewDialog(
+    !(await dangerReviewDialog(
       `Approve this selected strategy for PAPER crypto automation?\n\nBudget: ${money.format(body.budget)}\nMax position: ${money.format(body.maxPositionNotional)}\nMax order: ${money.format(body.maxOrderNotional)}\nMax spread: ${body.maxSpreadBps} bps\nMax daily loss: ${body.maxDailyLossPercent}%\nMax drawdown: ${body.maxDrawdownPercent}%\nMax daily turnover: ${body.maxDailyTurnoverPercent}%\nError cooldown: ${body.errorCooldownMinutes} minutes\nExpires in: ${body.expiresHours} hours\nTime in force: ${body.timeInForce.toUpperCase()}\n\nApproved ticks may submit bounded Alpaca paper crypto market orders. Live trading remains unavailable.`,
+      "Approve paper automation",
     ))
   )
     return;
@@ -632,7 +902,7 @@ $("#strategy-paper-form").onsubmit = async (event) => {
   } catch (error) {
     notify(error.message);
   } finally {
-    button.disabled = false;
+    syncStrategyLifecycleControls();
   }
 };
 $("#strategy-review-form").onsubmit = async (event) => {
@@ -706,8 +976,9 @@ $("#strategy-pause-button").onclick = async () => {
 $("#strategy-kill-button").onclick = async () => {
   if (!activeStrategyRunId) return notify("Select a strategy run first.");
   if (
-    !(await reviewDialog(
+    !(await dangerReviewDialog(
       "Activate the kill switch and retire this strategy run? This cannot submit more scheduled strategy paper orders.",
+      "Kill and retire run",
     ))
   )
     return;
@@ -891,3 +1162,19 @@ if (location.hash === "#strategies")
   queueMicrotask(() =>
     loadStrategyRuns().catch((error) => notify(error.message)),
   );
+
+[...document.querySelectorAll("#strategy-paper-form .field")].forEach(
+  (field) => {
+    if (field.closest(".control-label")) return;
+    const label = document.createElement("label"),
+      caption = document.createElement("span");
+    label.className = "control-label";
+    caption.textContent = field.getAttribute("aria-label") || "Value";
+    field.replaceWith(label);
+    label.append(caption, field);
+  },
+);
+applyStrategyParams(
+  strategyPresetParams($("#strategy-id").value, $("#strategy-preset").value),
+);
+syncStrategyLifecycleControls();

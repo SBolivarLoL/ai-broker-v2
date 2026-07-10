@@ -543,6 +543,11 @@ function renderOptionChain() {
         )
         .join("")
     : '<div class="empty">No contracts pass these liquidity filters.</div>';
+  if (rows.length && optionData.contracts.length > rows.length)
+    $("#options-chain").insertAdjacentHTML(
+      "beforeend",
+      `<div class="option-chain-limit muted">Showing ${esc(rows.length)} of ${esc(optionData.contracts.length)} available contracts. Tighten liquidity or type filters to narrow the chain.</div>`,
+    );
   const nearest = rows.toSorted(
     (a, b) =>
       Math.abs(a.strike - optionData.underlyingPrice) -
@@ -569,7 +574,33 @@ async function loadOptions() {
       )
       .join("");
     $("#options-metrics").innerHTML =
-      `<div class="metric"><strong>${esc(money.format(optionData.underlyingPrice))}</strong><span class="muted">${esc(symbol)} underlying</span></div><div class="metric"><strong>${esc(optionData.contracts.length)}</strong><span class="muted">Bounded contracts</span></div><div class="metric"><strong>Level ${esc(optionData.account.tradingLevel)}</strong><span class="muted">Paper options permission</span></div><div class="metric"><strong>${optionData.account.buyingPower === null ? "—" : esc(money.format(optionData.account.buyingPower))}</strong><span class="muted">Options buying power</span></div>`;
+      `<div class="metric"><strong>${esc(money.format(optionData.underlyingPrice))}</strong><span class="muted">${esc(symbol)} underlying</span></div><div class="metric"><strong>${esc(optionData.contracts.length)}</strong><span class="muted">Available contracts · 120 display cap</span></div><div class="metric"><strong>Level ${esc(optionData.account.tradingLevel)}</strong><span class="muted">Paper options permission</span></div><div class="metric"><strong>${optionData.account.buyingPower === null ? "—" : esc(money.format(optionData.account.buyingPower))}</strong><span class="muted">Options buying power</span></div>`;
+    const quoteCount = optionData.contracts.filter((contract) => {
+        const bid = Number(contract.bid),
+          ask = Number(contract.ask);
+        return (
+          Number.isFinite(bid) && bid > 0 && Number.isFinite(ask) && ask >= bid
+        );
+      }).length,
+      ivCount = optionData.contracts.filter(
+        (contract) =>
+          Number.isFinite(Number(contract.impliedVolatility)) &&
+          Number(contract.impliedVolatility) > 0,
+      ).length,
+      greekCount = optionData.contracts.filter((contract) =>
+        ["delta", "gamma", "theta", "vega", "rho"].every((key) => {
+          const value = contract.greeks?.[key];
+          return (
+            value !== null &&
+            value !== undefined &&
+            Number.isFinite(Number(value))
+          );
+        }),
+      ).length,
+      responseTime =
+        optionData.time?.serverResponseTime || optionData.serverRespondedAt;
+    $("#options-coverage").innerHTML =
+      `<div class="coverage-strip"><div><strong>Snapshot coverage</strong><span class="muted">${esc(quoteCount)}/${esc(optionData.contracts.length)} two-sided quotes · ${esc(ivCount)}/${esc(optionData.contracts.length)} IV · ${esc(greekCount)}/${esc(optionData.contracts.length)} Greeks</span></div><span class="pill ${greekCount === optionData.contracts.length ? "gain" : "loss"}">${greekCount === optionData.contracts.length ? "Complete" : "Partial data"}</span></div>${greekCount < optionData.contracts.length ? `<div class="warnings"><div>Greeks are unavailable for ${esc(optionData.contracts.length - greekCount)} contracts. Delta filters and model comparisons cannot be relied on for those rows.</div></div>` : ""}${responseTime ? `<div class="muted coverage-time">Server response ${esc(new Date(responseTime).toLocaleString())}</div>` : ""}`;
     renderOptionChain();
   } catch (error) {
     notify(error.message);

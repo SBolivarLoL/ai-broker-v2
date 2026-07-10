@@ -36,20 +36,18 @@ function frictionModel(backtest: StrategyBacktestRecord) {
   return {
     initialCash: Number(backtest.request?.initialCash),
     feeBps: Number(assumptions.feeBps ?? backtest.request?.feeBps),
-    slippageBps: Number(assumptions.slippageBps ?? backtest.request?.slippageBps),
+    slippageBps: Number(
+      assumptions.slippageBps ?? backtest.request?.slippageBps,
+    ),
     execution: assumptions.execution ?? null,
   };
 }
 
-function compatibilityCheck(
-  name: string,
-  values: string[],
-  warning: string,
-) {
+function compatibilityCheck(name: string, values: string[], warning: string) {
   const distinct = unique(values);
   return {
     name,
-    status: distinct.length <= 1 ? "pass" as const : "warning" as const,
+    status: distinct.length <= 1 ? ("pass" as const) : ("warning" as const),
     distinctValues: distinct,
     warning: distinct.length <= 1 ? null : warning,
   };
@@ -64,8 +62,8 @@ function metric(backtest: StrategyBacktestRecord) {
     turnover: result.turnover ?? null,
     tradeCount: result.tradeMetrics?.tradeCount ?? null,
     profitFactor: result.tradeMetrics?.profitFactor ?? null,
-    sortino: result.tradeMetrics?.sortino ?? null,
-    calmar: result.tradeMetrics?.calmar ?? null,
+    sortino: result.tradeMetrics?.sortinoRatio ?? null,
+    calmar: result.tradeMetrics?.calmarRatio ?? null,
     uncertaintyStatus: result.uncertainty?.status ?? null,
   };
 }
@@ -82,8 +80,12 @@ export function buildStrategyBacktestComparison(input: {
       "period",
       backtests.map((backtest) =>
         stable({
-          start: compactDate(backtest.provenance?.query?.start ?? backtest.result?.start),
-          end: compactDate(backtest.provenance?.query?.end ?? backtest.result?.end),
+          start: compactDate(
+            backtest.provenance?.query?.start ?? backtest.result?.start,
+          ),
+          end: compactDate(
+            backtest.provenance?.query?.end ?? backtest.result?.end,
+          ),
           timeframe:
             backtest.provenance?.query?.timeframe ?? backtest.result?.timeframe,
           symbols:
@@ -94,7 +96,9 @@ export function buildStrategyBacktestComparison(input: {
     ),
     compatibilityCheck(
       "dataset",
-      backtests.map((backtest) => String(backtest.provenance?.datasetHash ?? "")),
+      backtests.map((backtest) =>
+        String(backtest.provenance?.datasetHash ?? ""),
+      ),
       "Backtests use different dataset hashes; provider history, corrections, or query inputs differ.",
     ),
     compatibilityCheck(
@@ -150,7 +154,8 @@ export function buildStrategyBacktestComparison(input: {
       walkForward: backtest.result?.walkForwardEvaluation
         ? {
             foldCount:
-              backtest.result.walkForwardEvaluation.aggregate?.foldCount ?? null,
+              backtest.result.walkForwardEvaluation.aggregate?.foldCount ??
+              null,
             testBars:
               backtest.result.walkForwardEvaluation.aggregate?.testBars ?? null,
             totalReturnPercent:
@@ -170,10 +175,22 @@ export function buildStrategyBacktestComparison(input: {
       checks,
     },
     cohortKey: {
-      period: checks[0]!.distinctValues.length === 1 ? checks[0]!.distinctValues[0] : null,
-      datasetHash: checks[1]!.distinctValues.length === 1 ? checks[1]!.distinctValues[0] : null,
-      frictionModel: checks[2]!.distinctValues.length === 1 ? checks[2]!.distinctValues[0] : null,
-      baselines: checks[3]!.distinctValues.length === 1 ? checks[3]!.distinctValues[0] : null,
+      period:
+        checks[0]!.distinctValues.length === 1
+          ? checks[0]!.distinctValues[0]
+          : null,
+      datasetHash:
+        checks[1]!.distinctValues.length === 1
+          ? checks[1]!.distinctValues[0]
+          : null,
+      frictionModel:
+        checks[2]!.distinctValues.length === 1
+          ? checks[2]!.distinctValues[0]
+          : null,
+      baselines:
+        checks[3]!.distinctValues.length === 1
+          ? checks[3]!.distinctValues[0]
+          : null,
     },
     rows,
     warnings,

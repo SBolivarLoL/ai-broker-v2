@@ -5,7 +5,7 @@ import type { createStore } from "../../persistence/store";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import {
   benchmarkAttribution,
-  diversificationScore,
+  diversificationScopes,
   performancePoints,
   performanceSummary,
   stressTests,
@@ -157,9 +157,10 @@ export async function handlePortfolioRequest(
       ...valueAtRisk95(snapshot.equity, history),
       advanced,
       liquidity,
-      diversification: diversificationScore(
+      diversification: diversificationScopes(
         snapshot.hhi,
         snapshot.largestPositionPercent,
+        positions.map((position) => Number(position.marketValue)),
       ),
       stressTests: stressTests(
         snapshot.equity,

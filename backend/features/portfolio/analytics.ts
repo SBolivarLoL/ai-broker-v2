@@ -76,12 +76,10 @@ export function moneyWeightedReturn(points: PerformancePoint[]) {
     last = points.at(-1)!;
   const flows = [
     { timestamp: first.timestamp, amount: -first.equity },
-    ...points
-      .slice(1)
-      .map((point) => ({
-        timestamp: point.timestamp,
-        amount: -point.externalCashFlow,
-      })),
+    ...points.slice(1).map((point) => ({
+      timestamp: point.timestamp,
+      amount: -point.externalCashFlow,
+    })),
   ];
   flows.push({ timestamp: last.timestamp, amount: last.equity });
   const years = (timestamp: number) =>
@@ -288,5 +286,36 @@ export function diversificationScore(
         : score >= 50
           ? "Moderately concentrated"
           : "Highly concentrated",
+  };
+}
+
+export function diversificationScopes(
+  wholeAccountHhi: number,
+  wholeAccountLargestPositionPercent: number,
+  positionMarketValues: number[],
+) {
+  const grossInvested = positionMarketValues.reduce(
+    (sum, value) => sum + Math.abs(value),
+    0,
+  );
+  const investedWeights = grossInvested
+    ? positionMarketValues.map((value) => Math.abs(value) / grossInvested)
+    : [];
+  const investedAssets = diversificationScore(
+    investedWeights.reduce((sum, weight) => sum + weight ** 2, 0),
+    (Math.max(0, ...investedWeights) || 0) * 100,
+  );
+  const wholeAccount = diversificationScore(
+    wholeAccountHhi,
+    wholeAccountLargestPositionPercent,
+  );
+  return {
+    ...wholeAccount,
+    wholeAccount,
+    investedAssets: {
+      ...investedAssets,
+      grossInvested,
+      positionCount: positionMarketValues.length,
+    },
   };
 }
