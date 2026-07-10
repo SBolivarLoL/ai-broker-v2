@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { buildStrategyBacktestComparison } from "../../backend/features/strategies/strategy-compare";
-import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "../../backend/features/strategies/strategy-provenance";
+import {
+  canonicalHash,
+  STRATEGY_FEATURE_SCHEMA_VERSION,
+} from "../../backend/features/strategies/strategy-provenance";
 
 const definitionHash = canonicalHash({
   symbols: ["BTC/USD"],
@@ -51,8 +54,17 @@ function backtest(id: string, overrides: Record<string, any> = {}) {
       maxDrawdownPercent: 1,
       exposureTimePercent: 75,
       turnover: 1.5,
-      assumptions: { feeBps: request.feeBps, slippageBps: request.slippageBps, execution: "close" },
-      tradeMetrics: { tradeCount: 3, profitFactor: 1.8, sortino: 1.2, calmar: 2 },
+      assumptions: {
+        feeBps: request.feeBps,
+        slippageBps: request.slippageBps,
+        execution: "close",
+      },
+      tradeMetrics: {
+        tradeCount: 3,
+        profitFactor: 1.8,
+        sortinoRatio: 1.2,
+        calmarRatio: 2,
+      },
       uncertainty: { status: "available" },
       ...overrides.innerResult,
     },
@@ -80,7 +92,10 @@ test("strategy comparison marks a matched cohort as compatible", () => {
     backtests: [
       backtest("bt-1"),
       backtest("bt-2", {
-        request: { strategyId: "mean-reversion", params: { lookback: 20, entryZ: 2, exitZ: 0.5, exposure: 1 } },
+        request: {
+          strategyId: "mean-reversion",
+          params: { lookback: 20, entryZ: 2, exitZ: 0.5, exposure: 1 },
+        },
         innerResult: { strategyId: "mean-reversion", totalReturnPercent: 5 },
       }),
     ],
@@ -92,8 +107,20 @@ test("strategy comparison marks a matched cohort as compatible", () => {
     compatibility: { allPassed: true },
     backtestIds: ["bt-1", "bt-2"],
     rows: [
-      { backtestId: "bt-1", metrics: { totalReturnPercent: 4 }, baselines: { cash: { totalReturnPercent: 0 } } },
-      { backtestId: "bt-2", strategyId: "mean-reversion", metrics: { totalReturnPercent: 5 } },
+      {
+        backtestId: "bt-1",
+        metrics: {
+          totalReturnPercent: 4,
+          sortino: 1.2,
+          calmar: 2,
+        },
+        baselines: { cash: { totalReturnPercent: 0 } },
+      },
+      {
+        backtestId: "bt-2",
+        strategyId: "mean-reversion",
+        metrics: { totalReturnPercent: 5 },
+      },
     ],
     warnings: [],
   });
@@ -124,12 +151,11 @@ test("strategy comparison warns on incompatible period dataset friction and base
 
   expect(comparison.compatible).toBe(false);
   expect(comparison.compatibility.allPassed).toBe(false);
-  expect(comparison.compatibility.checks.filter((check) => check.status === "warning").map((check) => check.name)).toEqual([
-    "period",
-    "dataset",
-    "friction_model",
-    "baselines",
-  ]);
+  expect(
+    comparison.compatibility.checks
+      .filter((check) => check.status === "warning")
+      .map((check) => check.name),
+  ).toEqual(["period", "dataset", "friction_model", "baselines"]);
   expect(comparison.warnings).toEqual(
     expect.arrayContaining([
       expect.stringContaining("different periods"),

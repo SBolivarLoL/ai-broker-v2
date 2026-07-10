@@ -35,6 +35,50 @@ const notify = (message) => {
   toast.style.display = "block";
   setTimeout(() => (toast.style.display = "none"), 4000);
 };
+toast.setAttribute("role", "status");
+toast.setAttribute("aria-live", "polite");
+toast.setAttribute("aria-atomic", "true");
+function markDynamicStatus(root) {
+  if (!(root instanceof Element)) return;
+  const regions = [
+    ...(root.matches(".spin, .error-state") ? [root] : []),
+    ...root.querySelectorAll(".spin, .error-state"),
+  ];
+  regions.forEach((region) => {
+    region.setAttribute(
+      "role",
+      region.classList.contains("error-state") ? "alert" : "status",
+    );
+    region.setAttribute("aria-live", "polite");
+    region.setAttribute("aria-atomic", "true");
+  });
+}
+function markPrivateValues(root) {
+  if (!(root instanceof Element)) return;
+  const candidates = [
+    ...(root.matches("strong, span, .price, .balance, .sub") ? [root] : []),
+    ...root.querySelectorAll("strong, span, .price, .balance, .sub"),
+  ];
+  candidates.forEach((element) => {
+    if (
+      element.closest(
+        "#home-view, #portfolio-view, #options-view, #advisor-view",
+      ) &&
+      /[$€£]\s?-?[\d,.]+/.test(element.textContent || "")
+    )
+      element.classList.add("private-value");
+  });
+}
+markDynamicStatus(document.body);
+markPrivateValues(document.body);
+new MutationObserver((records) => {
+  records.forEach((record) =>
+    record.addedNodes.forEach((node) => {
+      markDynamicStatus(node);
+      markPrivateValues(node);
+    }),
+  );
+}).observe(document.body, { childList: true, subtree: true });
 function modalRequest({
   title = "Review action",
   body = "",
@@ -45,10 +89,12 @@ function modalRequest({
 }) {
   return new Promise((resolve) => {
     const backdrop = $("#modal-backdrop"),
+      dialog = backdrop.querySelector(".modal"),
       input = $("#modal-input"),
       field = $("#modal-field"),
       confirm = $("#modal-confirm"),
-      cancel = $("#modal-cancel");
+      cancel = $("#modal-cancel"),
+      previouslyFocused = document.activeElement;
     $("#modal-title").textContent = title;
     $("#modal-body").textContent = body;
     confirm.textContent = confirmText;
@@ -56,15 +102,42 @@ function modalRequest({
     field.hidden = !inputLabel;
     $("#modal-label").textContent = inputLabel;
     input.value = inputValue ?? "";
+    dialog.setAttribute("aria-describedby", "modal-body");
     backdrop.hidden = false;
+    let finished = false;
     const finish = (value) => {
+      if (finished) return;
+      finished = true;
       backdrop.hidden = true;
       confirm.onclick = cancel.onclick = backdrop.onclick = null;
       removeEventListener("keydown", onKey);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
       resolve(value);
     };
     const onKey = (event) => {
-      if (event.key === "Escape") finish(null);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(null);
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = [...dialog.querySelectorAll("button, input")].filter(
+          (element) => !element.disabled && !element.closest("[hidden]"),
+        );
+        if (!focusable.length) return;
+        const first = focusable[0],
+          last = focusable.at(-1);
+        if (!dialog.contains(document.activeElement)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
       if (
         event.key === "Enter" &&
         inputLabel &&
@@ -87,6 +160,13 @@ const reviewDialog = (message) =>
     body: message,
     confirmText: "Confirm",
   });
+const dangerReviewDialog = (message, confirmText = "Confirm") =>
+  modalRequest({
+    title: String(message).split("\n")[0].slice(0, 80) || "Review action",
+    body: message,
+    confirmText,
+    danger: true,
+  });
 const promptDialog = (label, value = "") =>
   modalRequest({
     title: label,
@@ -100,7 +180,7 @@ const cardError = (
   error,
   detail = "Try again in a moment or check broker/data entitlements.",
 ) =>
-  `<div class="empty error-state"><strong>${esc(title)}</strong><div>${esc(error?.message || error || "The request failed.")}</div><span class="muted">${esc(detail)}</span></div>`;
+  `<div class="empty error-state" role="alert"><strong>${esc(title)}</strong><div>${esc(error?.message || error || "The request failed.")}</div><span class="muted">${esc(detail)}</span></div>`;
 async function safeLoad(name, fn, target, detail) {
   // Independent dashboard cards should fail locally; one unavailable provider
   // must not prevent the rest of the workspace from rendering.
@@ -212,6 +292,7 @@ function activateView(view) {
   });
   if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   scrollTo({ top: 0, behavior: "smooth" });
+  dispatchEvent(new CustomEvent("workspaceactivated", { detail: { view } }));
 }
 document.querySelector(".nav").onclick = (event) => {
   const button = event.target.closest("button[data-view]");
@@ -246,6 +327,20 @@ function installSectionNav(viewId, items) {
       .querySelectorAll(".section-jump a")
       .forEach((item) => item.classList.toggle("active", item === link));
   };
+  const sectionNav = view.querySelector(".section-jump"),
+    overflowHint = document.createElement("span"),
+    syncOverflowHint = () => {
+      overflowHint.hidden =
+        sectionNav.scrollWidth <= sectionNav.clientWidth + 2 ||
+        sectionNav.scrollLeft > 8;
+    };
+  overflowHint.className = "section-jump-hint";
+  overflowHint.textContent = "Swipe sections →";
+  overflowHint.setAttribute("aria-hidden", "true");
+  sectionNav.after(overflowHint);
+  sectionNav.addEventListener("scroll", syncOverflowHint, { passive: true });
+  new ResizeObserver(syncOverflowHint).observe(sectionNav);
+  requestAnimationFrame(syncOverflowHint);
 }
 function makeCollapsible(card, collapsed = false) {
   if (!card || card.dataset.collapsible) return;
@@ -395,17 +490,18 @@ installSectionNav("advisor-view", [
   },
   { id: "advisor-journal-card", label: "Journal", heading: "Trade journal" },
 ]);
-const homeView = $("#home-view"),
-  privacyToggle = $("#privacy-toggle");
+const privacyToggle = $("#privacy-toggle");
 let privacyEnabled = false;
 try {
   privacyEnabled = localStorage.getItem("privacy-mode") === "true";
 } catch {}
 function setPrivacy(enabled) {
   privacyEnabled = enabled;
-  homeView.classList.toggle("privacy-mode", enabled);
+  document.documentElement.classList.toggle("privacy-mode", enabled);
   privacyToggle.setAttribute("aria-pressed", String(enabled));
-  privacyToggle.textContent = enabled ? "Show balances" : "Hide balances";
+  privacyToggle.textContent = enabled
+    ? "Show private data"
+    : "Hide private data";
   try {
     localStorage.setItem("privacy-mode", String(enabled));
   } catch {}
@@ -454,7 +550,8 @@ $("#operations-kill-toggle").onclick = async () => {
   const message = active
     ? "Clear the global kill switch? New order previews and paper strategy submissions will be allowed again under the configured caps."
     : `Activate the global kill switch?\n\n${reason}\n\nNew equity, basket, option, crypto and approved strategy paper orders will be blocked until cleared.`;
-  if (!(await reviewDialog(message))) return;
+  if (!(await (active ? reviewDialog(message) : dangerReviewDialog(message))))
+    return;
   try {
     const result = await api("/api/operations/kill-switch", {
       method: "POST",
@@ -793,7 +890,7 @@ $("#watchlists").addEventListener("click", async (event) => {
     }
   } else if (event.target.closest(".delete-watchlist")) {
     if (
-      !(await reviewDialog(
+      !(await dangerReviewDialog(
         `Permanently delete the “${list.name}” Alpaca watchlist?`,
       ))
     )
@@ -811,7 +908,8 @@ $("#watchlists").addEventListener("click", async (event) => {
     const remove = event.target.closest(".remove-watchlist-asset");
     if (!remove) return;
     const symbol = remove.dataset.symbol;
-    if (!(await reviewDialog(`Remove ${symbol} from “${list.name}”?`))) return;
+    if (!(await dangerReviewDialog(`Remove ${symbol} from “${list.name}”?`)))
+      return;
     try {
       await api(
         `/api/watchlists/${encodeURIComponent(list.id)}/assets/${encodeURIComponent(symbol)}`,
@@ -829,18 +927,4 @@ $("#markets-view").addEventListener("click", (event) => {
   if (!button) return;
   $("#research-symbol").value = button.dataset.symbol;
   activateView("research");
-  loadCompanyMarket(button.dataset.symbol);
-  loadOpenFigiIdentity(button.dataset.symbol).catch((error) =>
-    notify(error.message),
-  );
-  loadSecEvidence(button.dataset.symbol).catch((error) =>
-    notify(error.message),
-  );
-  loadGdeltSignals(button.dataset.symbol).catch((error) =>
-    notify(error.message),
-  );
-  loadFinnhubEnrichment(button.dataset.symbol).catch((error) =>
-    notify(error.message),
-  );
-  loadMacroContext().catch((error) => notify(error.message));
 });

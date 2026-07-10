@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `1a8e5fd`: 2026-07-10.
+Last reviewed against `main` commit `5e16347`: 2026-07-10.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -78,7 +78,7 @@ not treated as market observation time.
 
 ### Parameters
 
-The UI currently accepts a JSON object. The same strict server schema applies the defaults below to backtests and saved runs. Unknown fields, strings in numeric fields, non-finite values, contradictory thresholds, and out-of-range values are rejected before a plugin is constructed.
+The UI defaults to labeled, strategy-specific numeric controls and keeps the canonical JSON object in an expandable advanced view. Balanced, conservative, and aggressive presets provide deliberate starting points; changing any visible field updates the JSON representation and invalidates a stale backtest. The same strict server schema applies the defaults below to backtests and saved runs. Unknown fields, strings in numeric fields, non-finite values, contradictory thresholds, and out-of-range values are rejected before a plugin is constructed.
 
 ```json
 { "fast": 5, "slow": 20, "exposure": 1 }
@@ -127,20 +127,20 @@ The UI currently accepts a JSON object. The same strict server schema applies th
 
 Cash and buy-and-hold use `{}`.
 
-| Parameter                                        | Meaning                                                            |
-| ------------------------------------------------ | ------------------------------------------------------------------ |
-| `fast`, `slow`                                   | Moving-average windows; slow must exceed fast                      |
-| `lookback`                                       | Rolling z-score, breakout, volatility, or relative-strength window |
-| `entryZScore`, `exitZScore`                      | Mean-reversion activation and exit boundaries                      |
-| `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                       |
-| `stopLossPercent`                                | Breakout exit relative to recorded entry price                     |
-| `minVolatilityPercent`, `maxVolatilityPercent`   | Allowed realized-volatility band                                   |
+| Parameter                                        | Meaning                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `fast`, `slow`                                   | Moving-average windows; slow must exceed fast                                              |
+| `lookback`                                       | Rolling z-score, breakout, volatility, or relative-strength window                         |
+| `entryZScore`, `exitZScore`                      | Mean-reversion activation and exit boundaries                                              |
+| `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                                               |
+| `stopLossPercent`                                | Breakout exit relative to recorded entry price                                             |
+| `minVolatilityPercent`, `maxVolatilityPercent`   | Allowed realized-volatility band                                                           |
 | `minRelativeStrengthPercent`                     | Minimum primary-versus-peer return edge; the peer is derived from the ordered BTC/ETH pair |
-| `maxSpreadBps`                                   | Maximum order-book or paper-approval spread                        |
-| `minVisibleAskNotional`, `minVisibleBidNotional` | Required visible depth                                             |
-| `maxDepthLevels`                                 | Maximum order-book levels used                                     |
-| `slices`, `maxExposure`                          | Accumulation schedule and final exposure                           |
-| `exposure`                                       | Target exposure from 0 to 1 when the signal is active              |
+| `maxSpreadBps`                                   | Maximum order-book or paper-approval spread                                                |
+| `minVisibleAskNotional`, `minVisibleBidNotional` | Required visible depth                                                                     |
+| `maxDepthLevels`                                 | Maximum order-book levels used                                                             |
+| `slices`, `maxExposure`                          | Accumulation schedule and final exposure                                                   |
+| `exposure`                                       | Target exposure from 0 to 1 when the signal is active                                      |
 
 ### Schedule
 
@@ -176,6 +176,8 @@ Treat a backtest as a screening tool. A stored hash proves which input was used,
 
 Compare cohorts with `POST /api/strategy/backtests/compare` and 2-20 immutable `backtestIds`. The comparison report is compatible only when every selected artifact has the same period, symbols, timeframe, dataset hash, friction model, baseline set, code/provider identity, and feed. Mixed evidence still returns rows and warnings, but `compatible:false` prevents treating the metrics as an apples-to-apples ranking.
 
+The browser retains recent backtest IDs and accepts one ID per line in its comparison control. It displays the compatibility verdict, named warnings, return/drawdown/turnover/Sortino/Calmar metrics, modeled costs, and capacity warnings. Aligned cohort charts and richer promotion-blocker visualization remain roadmap work.
+
 The selection objective is fixed: highest train total return, then lower train drawdown, lower train turnover, and candidate hash. This is reproducible, not automatically statistically sound. Test-fold results never influence selection within that fold, but repeated human edits after seeing test output still contaminate the experiment.
 
 Walk-forward fold winners are evaluation evidence. The ordinary full-period result and any linked shadow run continue to use the top-level `params`; the API does not silently promote a fold-specific winner into execution configuration.
@@ -187,6 +189,8 @@ Backtest artifacts are immutable and actor-scoped at retrieval. Run creation che
 Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.
 
 Pre-register a paper experiment with `POST /api/strategy/runs/{runId}/experiment-protocol` before paper approval. The payload must include a falsifiable `hypothesis`, the frozen run `parameters`, `startAt`/`stopAt`, `minimumObservations`, `maximumBudget`, one to ten `invalidationCriteria`, and `reviewCadenceDays`. Re-registering appends a new protocol version to `config.experimentProtocols`; it does not erase prior versions. Parameters must match the reviewed run parameters, so a real parameter change requires a new reviewed backtest/run rather than hidden mutation inside an active paper experiment.
+
+The selected-run browser workflow exposes these protocol fields before the paper-approval controls and reports `Required`, `Ready`, or `Blocked` status. Approval stays disabled until a current protocol exists; the server remains authoritative and rejects attempts that bypass the browser.
 
 Promotion review is evidence-gated. A `promote` review returns `promotionEvidence.status:"needs_evidence"` and leaves the run in paper mode until the run has paper status, at least 30 paper days, enough recorded decisions, and at least 20 filled paper orders. Only `promotionEvidence.status:"pass"` can move a paper run to `completed`, and that evidence is stored in the review history.
 
@@ -336,16 +340,16 @@ Before continuing or increasing a paper experiment:
 
 ## Troubleshooting
 
-| Problem                   | Check                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Dataset ingest rejected   | Actor role, supported symbols/timeframe, UTC date range, future-date rule, 3,650-day range, 500,000-bar estimate, provider response, and valid bars |
-| Backtest rejected         | Paper credentials; or actor-owned `datasetId`; symbol, timeframe, JSON, finite parameters, and the direct-query 1-90 day bound                      |
+| Problem                   | Check                                                                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dataset ingest rejected   | Actor role, supported symbols/timeframe, UTC date range, future-date rule, 3,650-day range, 500,000-bar estimate, provider response, and valid bars       |
+| Backtest rejected         | Paper credentials; or actor-owned `datasetId`; symbol, timeframe, JSON, finite parameters, and the direct-query 1-90 day bound                            |
 | Walk-forward rejected     | Canonical unique candidates, complete train/test fold, synchronized symbols, 20-candidate/100-fold/2,000,000-evaluated-bar limits, and no legacy-size mix |
-| Run creation rejected     | Clean current commit, actor-owned `backtestId` and optional `datasetId`, exact strategy/parameters/timeframe/history match, and valid symbol set    |
-| Tick blocked              | Run status, fresh bars/snapshot, approval expiry, spread, budget, loss/drawdown/turnover, cooldown, and kill switch                              |
-| Scheduled tick missing    | Nonzero interval, running server process, due timestamp, and `STRATEGY_SCHEDULER_DISABLED`                                                       |
-| Features unavailable      | Increase history; indicators remain null until enough valid bars exist                                                                           |
-| Performance unavailable   | Filled strategy order, positive budget, and post-fill bars are all required                                                                      |
-| Order-book replay missing | The decision-time snapshot did not include usable depth; the app will not infer it                                                               |
+| Run creation rejected     | Clean current commit, actor-owned `backtestId` and optional `datasetId`, exact strategy/parameters/timeframe/history match, and valid symbol set          |
+| Tick blocked              | Run status, fresh bars/snapshot, approval expiry, spread, budget, loss/drawdown/turnover, cooldown, and kill switch                                       |
+| Scheduled tick missing    | Nonzero interval, running server process, due timestamp, and `STRATEGY_SCHEDULER_DISABLED`                                                                |
+| Features unavailable      | Increase history; indicators remain null until enough valid bars exist                                                                                    |
+| Performance unavailable   | Filled strategy order, positive budget, and post-fill bars are all required                                                                               |
+| Order-book replay missing | The decision-time snapshot did not include usable depth; the app will not infer it                                                                        |
 
 For implementation priorities and the next strategy catalog, see `roadmap.md`. For current automated evidence and its boundaries, see `VALIDATION.md`.

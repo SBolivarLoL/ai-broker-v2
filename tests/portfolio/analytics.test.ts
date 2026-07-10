@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   benchmarkAttribution,
   diversificationScore,
+  diversificationScopes,
   moneyWeightedReturn,
   performancePoints,
   performanceSummary,
@@ -126,6 +127,17 @@ describe("portfolio analytics", () => {
     expect(diversificationScore(0.1, 20)).toEqual({
       score: 75,
       label: "Well diversified",
+    });
+    expect(diversificationScopes(0.01, 7, [7_000, 4_000, 1_000])).toEqual({
+      score: 99,
+      label: "Well diversified",
+      wholeAccount: { score: 99, label: "Well diversified" },
+      investedAssets: {
+        score: 0,
+        label: "Highly concentrated",
+        grossInvested: 12_000,
+        positionCount: 3,
+      },
     });
   });
 });

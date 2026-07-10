@@ -14,7 +14,7 @@ async function loadRisk() {
   $("#risk-asof").textContent =
     `As of ${new Date(risk.asOf).toLocaleString()} · ${pct(risk.cashPercent)} cash`;
   $("#diversification").innerHTML =
-    `<strong>${esc(risk.diversification.score)}/100</strong><span class="muted">${esc(risk.diversification.label)}</span>`;
+    `<strong>${esc(risk.diversification.investedAssets?.score ?? risk.diversification.score)}/100</strong><span class="muted">Invested assets · ${esc(risk.diversification.investedAssets?.label ?? risk.diversification.label)}</span><span class="muted">Whole account ${esc(risk.diversification.wholeAccount?.score ?? risk.diversification.score)}/100 including cash</span>`;
   const weights = [
     ...risk.weights,
     { symbol: "Cash", percent: risk.cashPercent },
@@ -631,8 +631,9 @@ $("#cancel-all-orders").onclick = async (event) => {
         )
         .join("\n");
     if (
-      !(await reviewDialog(
+      !(await dangerReviewDialog(
         `Cancel exactly these ${preview.orders.length} reviewed paper orders?\n\n${summary}\n\nOrders created after this preview will not be canceled. Fills may race cancellation.`,
+        "Cancel reviewed orders",
       ))
     )
       return;
@@ -658,8 +659,9 @@ $("#orders").onclick = async (event) => {
   const button = event.target.closest(".cancel-order");
   if (!button) return;
   if (
-    !(await reviewDialog(
+    !(await dangerReviewDialog(
       `Request cancellation of the working ${button.dataset.symbol} paper order? A fill may race this request.`,
+      "Request cancellation",
     ))
   )
     return;

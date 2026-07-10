@@ -61,3 +61,58 @@ test("portfolio routes reject invalid inputs before broker calls", async () => {
   });
   expect(rebalance?.status).toBe(400);
 });
+
+test("portfolio risk distinguishes whole-account and invested-asset diversification", async () => {
+  const positions = [
+    { symbol: "AAPL", qty: "70", marketValue: "7000", unrealizedPl: "100" },
+    { symbol: "MSFT", qty: "40", marketValue: "4000", unrealizedPl: "50" },
+    { symbol: "NVDA", qty: "10", marketValue: "1000", unrealizedPl: "25" },
+  ];
+  const bars = Array.from({ length: 90 }, (_, index) => ({
+    close: 100 + index,
+    volume: 100_000,
+  }));
+  const alpaca = {
+    trading: {
+      account: {
+        getAccount: async () => ({ equity: "100000", cash: "88000" }),
+      },
+      positions: { getAllOpenPositions: async () => positions },
+    },
+    marketData: {
+      getStockBarsFor: async () => bars,
+      stocks: {
+        stockSnapshotSingle: async () => ({
+          latestQuote: { bp: 99, ap: 101 },
+        }),
+      },
+    },
+  } as unknown as Alpaca;
+  const request = new Request("http://localhost/api/portfolio/risk");
+  const response = await handlePortfolioRequest(request, new URL(request.url), {
+    alpaca,
+    store: createStore(":memory:"),
+    actor: "test-operator",
+    allow: () => true,
+    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    currentPortfolioExposure: async () => {
+      throw new Error("unexpected exposure request");
+    },
+    capturePortfolioSnapshot: async () => {
+      throw new Error("unexpected snapshot capture");
+    },
+  });
+
+  expect(response?.status).toBe(200);
+  const body = (await response?.json()) as {
+    diversification: {
+      score: number;
+      wholeAccount: { score: number };
+      investedAssets: { score: number; grossInvested: number };
+    };
+  };
+  expect(body.diversification.score).toBe(99);
+  expect(body.diversification.wholeAccount.score).toBe(99);
+  expect(body.diversification.investedAssets.score).toBe(0);
+  expect(body.diversification.investedAssets.grossInvested).toBe(12_000);
+});

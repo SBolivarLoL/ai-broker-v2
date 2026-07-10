@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `1a8e5fd`: 2026-07-10.
+Last reviewed against `main` commit `5e16347`: 2026-07-10.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -10,15 +10,17 @@ AI Broker is a single-user, paper-only investing and strategy-research workstati
 
 The browser exposes seven workspaces:
 
-| Workspace  | Current capability                                                                                                                                               |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home       | Paper account, holdings, operations policy, kill switch, closed-beta evidence, and order entry                                                                   |
-| Markets    | Market session, watchlists, movers, most active stocks, monitored news/events, 8-K alerts, and multi-asset capability status                                     |
-| Portfolio  | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management             |
+| Workspace  | Current capability                                                                                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home       | Paper account, holdings, operations policy, kill switch, closed-beta evidence, and order entry                                                                          |
+| Markets    | Market session, watchlists, movers, most active stocks, monitored news/events, 8-K alerts, and multi-asset capability status                                            |
+| Portfolio  | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management                    |
 | Strategies | Crypto backtests, shadow/scheduled runs, protocol-gated paper approvals, manual crypto tickets, traces, metrics, alerts, performance, attribution, reviews, and reports |
-| Research   | Company market data, SEC evidence, macro context, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research                    |
-| Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                |
-| AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                        |
+| Research   | Company market data, SEC evidence, macro context, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research                           |
+| Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                       |
+| AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                               |
+
+The shared browser shell exposes a persistent, locally evidenced data-health status and expandable provider/dataset panel, a paper-environment indicator, and a global private-value mask. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions.
 
 ## Capability map
 
@@ -47,6 +49,7 @@ The browser exposes seven workspaces:
 - Cashflow-adjusted performance, benchmark attribution, drawdown, volatility, Sharpe-style summary metrics, and persisted daily snapshots.
 - FIFO activity ledger for fills, fees, dividends, interest, transfers, splits, symbol changes, and broker-provided corporate-action basis allocations. Unsupported basis changes remain unresolved rather than guessed.
 - Historical and parametric 95% daily VaR, historical expected shortfall, covariance risk contribution, correlation, liquidity, and SPY benchmark diagnostics.
+- Diversification reports both whole-account concentration, including cash, and invested-asset concentration over gross position value so a cash-heavy account does not make a concentrated invested sleeve appear diversified.
 - Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps.
 - Deterministic rate, technology, volatility, and user-entered held-symbol scenarios.
 - Read-only risk-parity and shrunk mean-variance proposals. Targets flow into a constrained rebalance planner before the normal basket preview.
@@ -73,6 +76,7 @@ The browser exposes seven workspaces:
 - Backtest results include deterministic trade metrics: material simulated order count, position episodes, closed round trips, average holding bars/days, gross and net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings for high turnover, high trade frequency, or high exposure.
 - Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
 - Backtest cohorts can be compared through a deterministic compatibility report. It requires 2-20 immutable backtests and flags mismatched period, symbols, timeframe, dataset hash, initial cash, fee/slippage/execution model, baseline set, code identity, provider, or feed before any operator treats the metrics as comparable.
+- The browser defaults to labeled, strategy-specific numeric inputs with balanced/conservative/aggressive presets; advanced JSON remains available for inspection. Backtest results surface costs, trade/capacity evidence, bootstrap uncertainty, provenance, and comparison compatibility. Paper approval remains disabled until the selected run has a registered experiment protocol.
 - Genuine rolling or anchored walk-forward evaluation over a caller-declared set of 1-20 canonical parameter candidates. Each fold ranks candidates only on its training bars, freezes the winner, warms indicators without scoring train execution, evaluates only the untouched test bars, and reports candidate scores, exact boundaries, out-of-sample results/aggregates, and leakage checks. Optional final holdouts are excluded from all fold selection and then scored once with parameters selected from pre-holdout history; optional caller-declared regime slices summarize validation and holdout observations separately. Work is bounded to 100 folds and 2,000,000 evaluated bars; multi-symbol histories must be timestamp-synchronized.
 - Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, retrieval/server-response provenance in normalized bar DTOs, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
 - Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
@@ -148,6 +152,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - The explicit time taxonomy is not yet present on every normalized provider DTO or browser-facing object. `asOf`, `timestamp`, and `quoteAt` remain legacy compatibility fields while call sites migrate to observation/publication/effective/retrieval/server-response fields.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
+- Option chains are capped at 120 rendered contracts and show the number displayed versus available, two-sided quote/IV/Greek coverage, and an explicit partial-data warning when model-dependent fields are absent.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Ordered migrations, rollback/upgrade fixtures, and serialized backup restore with audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.

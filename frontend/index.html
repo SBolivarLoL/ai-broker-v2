@@ -17,8 +17,40 @@
         ><button data-view="options" aria-selected="false">Options</button
         ><button data-view="advisor" aria-selected="false">AI Advisor</button>
       </nav>
-      <div class="paper"><i class="dot"></i>Alpaca paper</div>
+      <div class="status-cluster">
+        <button
+          class="data-health-button"
+          id="data-quality-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="data-quality-panel"
+        >
+          <i class="dot"></i><span id="data-quality-label">Data health</span>
+        </button>
+        <div class="paper"><i class="dot"></i>Alpaca paper</div>
+      </div>
     </header>
+    <aside class="data-quality-panel" id="data-quality-panel" hidden>
+      <div class="section-head">
+        <div>
+          <h2>Data health and coverage</h2>
+          <div class="muted" id="data-quality-asof">
+            Loading local provider evidence…
+          </div>
+        </div>
+        <button class="ghost" id="data-quality-refresh" type="button">
+          Refresh
+        </button>
+      </div>
+      <div class="metrics" id="data-quality-summary">
+        <div class="empty">Loading data quality…</div>
+      </div>
+      <div class="data-quality-list" id="data-quality-list"></div>
+      <div class="muted data-quality-note">
+        Health is derived from local success, failure, stale-data and throttle
+        evidence. Unobserved means unknown, not healthy.
+      </div>
+    </aside>
     <div class="view" id="home-view">
       <section class="hero">
         <div class="hero-head">
@@ -882,66 +914,121 @@
           <div class="strategy-layout">
             <form class="strategy-form" id="strategy-form">
               <div class="ticket-row">
-                <input
-                  class="field"
-                  id="strategy-symbol"
-                  value="BTC/USD"
-                  aria-label="Crypto symbol"
-                /><select class="field" id="strategy-id" aria-label="Strategy">
-                  <option value="moving-average-trend">
-                    Moving average trend
-                  </option>
-                  <option value="breakout-momentum">Breakout momentum</option>
-                  <option value="volatility-filter">Volatility filter</option>
-                  <option value="btc-eth-relative-strength">
-                    BTC/ETH relative strength
-                  </option>
-                  <option value="order-book-liquidity-scout">
-                    Order-book liquidity scout
-                  </option>
-                  <option value="mean-reversion">Mean reversion</option>
-                  <option value="time-sliced-accumulation">
-                    Time-sliced accumulation
-                  </option>
-                  <option value="buy-and-hold">Buy and hold</option>
-                  <option value="cash">Cash baseline</option>
-                </select>
-              </div>
-              <div class="ticket-row">
-                <select
-                  class="field"
-                  id="strategy-timeframe"
-                  aria-label="Timeframe"
+                <label class="control-label"
+                  ><span>Symbols</span
+                  ><input
+                    class="field"
+                    id="strategy-symbol"
+                    value="BTC/USD"
+                    aria-label="Crypto symbol" /></label
+                ><label class="control-label"
+                  ><span>Strategy</span
+                  ><select class="field" id="strategy-id" aria-label="Strategy">
+                    <option value="moving-average-trend">
+                      Moving average trend
+                    </option>
+                    <option value="breakout-momentum">Breakout momentum</option>
+                    <option value="volatility-filter">Volatility filter</option>
+                    <option value="btc-eth-relative-strength">
+                      BTC/ETH relative strength
+                    </option>
+                    <option value="order-book-liquidity-scout">
+                      Order-book liquidity scout
+                    </option>
+                    <option value="mean-reversion">Mean reversion</option>
+                    <option value="time-sliced-accumulation">
+                      Time-sliced accumulation
+                    </option>
+                    <option value="buy-and-hold">Buy and hold</option>
+                    <option value="cash">Cash baseline</option>
+                  </select></label
                 >
-                  <option value="1Hour">1 hour bars</option>
-                  <option value="1Day">1 day bars</option>
-                  <option value="15Min">15 minute bars</option></select
-                ><input
-                  class="field"
-                  id="strategy-days"
-                  type="number"
-                  min="1"
-                  max="90"
-                  value="30"
-                  aria-label="Lookback days"
-                />
               </div>
               <div class="ticket-row">
-                <input
-                  class="field"
-                  id="strategy-interval"
-                  type="number"
-                  min="0"
-                  max="1440"
-                  step="1"
-                  value="0"
-                  aria-label="Schedule interval minutes"
-                /><textarea
+                <label class="control-label"
+                  ><span>Timeframe</span
+                  ><select
+                    class="field"
+                    id="strategy-timeframe"
+                    aria-label="Timeframe"
+                  >
+                    <option value="1Hour">1 hour bars</option>
+                    <option value="1Day">1 day bars</option>
+                    <option value="15Min">15 minute bars</option>
+                  </select></label
+                ><label class="control-label"
+                  ><span>Lookback days</span
+                  ><input
+                    class="field"
+                    id="strategy-days"
+                    type="number"
+                    min="1"
+                    max="90"
+                    value="30"
+                    aria-label="Lookback days"
+                /></label>
+              </div>
+              <div class="ticket-row">
+                <label class="control-label"
+                  ><span>Schedule interval (minutes)</span
+                  ><input
+                    class="field"
+                    id="strategy-interval"
+                    type="number"
+                    min="0"
+                    max="1440"
+                    step="1"
+                    value="0"
+                    aria-label="Schedule interval minutes" /></label
+                ><label class="control-label"
+                  ><span>Preset</span
+                  ><select
+                    class="field"
+                    id="strategy-preset"
+                    aria-label="Strategy preset"
+                  >
+                    <option value="balanced">Balanced</option>
+                    <option value="conservative">Conservative</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select></label
+                >
+              </div>
+              <div
+                class="strategy-parameter-fields"
+                id="strategy-parameter-fields"
+              ></div>
+              <details class="advanced-disclosure">
+                <summary>Advanced JSON parameters</summary>
+                <textarea
                   class="field"
                   id="strategy-params"
                   aria-label="Strategy parameters JSON"
                 >
 {"fast":5,"slow":20,"exposure":1}</textarea>
+              </details>
+              <div class="ticket-row">
+                <label class="control-label"
+                  ><span>Fee assumption (bps)</span
+                  ><input
+                    class="field"
+                    id="strategy-fee-bps"
+                    type="number"
+                    min="0"
+                    max="1000"
+                    step="0.1"
+                    value="0"
+                /></label>
+                <label class="control-label"
+                  ><span>Slippage assumption (bps)</span
+                  ><input
+                    class="field"
+                    id="strategy-slippage-bps"
+                    type="number"
+                    min="0"
+                    max="1000"
+                    step="0.1"
+                    value="5"
+                /></label>
               </div>
               <div class="ticket-row">
                 <button
@@ -971,6 +1058,37 @@
               >
                 <div class="muted">No strategy equity curve yet.</div>
               </div>
+              <div
+                id="strategy-backtest-evidence"
+                class="strategy-evidence"
+                hidden
+              >
+                <h3>Trade and capacity evidence</h3>
+                <div class="metrics" id="strategy-trade-metrics"></div>
+                <div id="strategy-capacity-warnings"></div>
+                <h3>Uncertainty</h3>
+                <div class="metrics" id="strategy-uncertainty"></div>
+                <div class="muted" id="strategy-assumptions"></div>
+              </div>
+              <form class="compare-form" id="strategy-compare-form">
+                <label class="control-label"
+                  ><span>Compare backtest IDs</span
+                  ><textarea
+                    class="field"
+                    id="strategy-compare-ids"
+                    placeholder="One backtest ID per line"
+                    aria-label="Backtest IDs to compare"
+                  ></textarea>
+                </label>
+                <button
+                  class="ghost"
+                  id="strategy-compare-button"
+                  type="submit"
+                >
+                  Compare backtests
+                </button>
+              </form>
+              <div id="strategy-comparison"></div>
             </div>
           </div>
         </section>
@@ -1175,11 +1293,119 @@
               <div id="strategy-decisions" class="trace-table"></div>
               <div id="strategy-trace-detail"></div>
               <form
-                class="strategy-form"
+                class="strategy-form lifecycle-form"
+                id="strategy-protocol-form"
+                style="margin-top: 16px"
+              >
+                <div class="lifecycle-heading">
+                  <div>
+                    <h3>1. Paper experiment protocol</h3>
+                    <div class="muted" id="strategy-protocol-status">
+                      Select a run to register its required protocol.
+                    </div>
+                  </div>
+                  <span class="pill" id="strategy-protocol-badge"
+                    >Required</span
+                  >
+                </div>
+                <label class="control-label"
+                  ><span>Falsifiable hypothesis</span
+                  ><textarea
+                    class="field"
+                    id="strategy-protocol-hypothesis"
+                    minlength="10"
+                    maxlength="1000"
+                    required
+                    placeholder="This strategy will outperform cash after costs over the registered paper window."
+                  ></textarea>
+                </label>
+                <div class="ticket-row">
+                  <label class="control-label"
+                    ><span>Start</span
+                    ><input
+                      class="field"
+                      id="strategy-protocol-start"
+                      type="datetime-local"
+                      required
+                  /></label>
+                  <label class="control-label"
+                    ><span>Stop</span
+                    ><input
+                      class="field"
+                      id="strategy-protocol-stop"
+                      type="datetime-local"
+                      required
+                  /></label>
+                  <label class="control-label"
+                    ><span>Minimum observations</span
+                    ><input
+                      class="field"
+                      id="strategy-protocol-observations"
+                      type="number"
+                      min="1"
+                      max="100000"
+                      value="30"
+                      required
+                  /></label>
+                </div>
+                <div class="ticket-row">
+                  <label class="control-label"
+                    ><span>Maximum budget</span
+                    ><input
+                      class="field"
+                      id="strategy-protocol-budget"
+                      type="number"
+                      min="1"
+                      max="100000"
+                      value="250"
+                      required
+                  /></label>
+                  <label class="control-label"
+                    ><span>Review cadence (days)</span
+                    ><input
+                      class="field"
+                      id="strategy-protocol-cadence"
+                      type="number"
+                      min="1"
+                      max="90"
+                      value="7"
+                      required
+                  /></label>
+                </div>
+                <label class="control-label"
+                  ><span>Invalidation criteria (one per line)</span
+                  ><textarea
+                    class="field"
+                    id="strategy-protocol-invalidation"
+                    required
+                    placeholder="Stop if maximum drawdown breaches the registered limit."
+                  ></textarea>
+                </label>
+                <button
+                  class="primary"
+                  id="strategy-protocol-submit"
+                  type="submit"
+                >
+                  Register protocol
+                </button>
+              </form>
+              <form
+                class="strategy-form lifecycle-form"
                 id="strategy-paper-form"
                 style="margin-top: 16px"
               >
-                <h3>Paper automation approval</h3>
+                <div class="lifecycle-heading">
+                  <div>
+                    <h3>2. Paper automation approval</h3>
+                    <div class="muted">
+                      Available only after a current experiment protocol is
+                      registered.
+                    </div>
+                  </div>
+                  <span class="pill" id="strategy-paper-readiness"
+                    >Blocked</span
+                  >
+                </div>
                 <div class="ticket-row">
                   <input
                     class="field"
@@ -1380,32 +1606,40 @@
               Open this workspace to load a bounded chain.
             </div>
           </div>
+          <div id="options-coverage"></div>
           <div class="ticket-row" style="margin-top: 16px">
-            <select
-              class="field"
-              id="options-type"
-              aria-label="Option type filter"
-            >
-              <option value="all">Calls and puts</option>
-              <option value="call">Calls</option>
-              <option value="put">Puts</option></select
-            ><input
-              class="field"
-              id="options-open-interest"
-              type="number"
-              min="0"
-              value="0"
-              aria-label="Minimum open interest"
-              placeholder="Minimum open interest"
-            /><input
-              class="field"
-              id="options-spread"
-              type="number"
-              min="0"
-              value="1000"
-              aria-label="Maximum spread bps"
-              placeholder="Maximum spread bps"
-            />
+            <label class="control-label"
+              ><span>Contract type</span
+              ><select
+                class="field"
+                id="options-type"
+                aria-label="Option type filter"
+              >
+                <option value="all">Calls and puts</option>
+                <option value="call">Calls</option>
+                <option value="put">Puts</option>
+              </select></label
+            ><label class="control-label"
+              ><span>Minimum open interest</span
+              ><input
+                class="field"
+                id="options-open-interest"
+                type="number"
+                min="0"
+                value="0"
+                aria-label="Minimum open interest"
+                placeholder="Minimum open interest" /></label
+            ><label class="control-label"
+              ><span>Maximum spread (bps)</span
+              ><input
+                class="field"
+                id="options-spread"
+                type="number"
+                min="0"
+                value="1000"
+                aria-label="Maximum spread bps"
+                placeholder="Maximum spread bps"
+            /></label>
           </div>
           <div class="analytics-grid" style="margin-top: 18px">
             <div class="chart" id="options-payoff">
@@ -1931,5 +2165,6 @@
   <script src="/strategies.js"></script>
   <script src="/market-detail.js"></script>
   <script src="/research.js"></script>
+  <script src="/data-quality.js"></script>
   <script src="/app.js"></script>
 </html>
