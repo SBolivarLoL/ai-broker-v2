@@ -10,7 +10,11 @@ import type { Preview } from "./orders";
 type Store = ReturnType<typeof createStore>;
 
 /** Owns broker order state, recovery, placement, and trade-update reconciliation. */
-export function createOrderRuntime(alpaca: Alpaca, store: Store) {
+export function createOrderRuntime(
+  alpaca: Alpaca,
+  store: Store,
+  now = () => new Date(),
+) {
   const tracker = new OrderTracker();
   let recoveryRequest: Promise<void> | null = null;
   let started = false;
@@ -19,10 +23,11 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
     // Broker order ids are canonical after acceptance. During the brief
     // pre-acceptance window, the client id still identifies the reservation.
     if (order.id && order.status) {
+      const reconciledAt = now();
       store.reconcileOrder(order.id, order.status);
       store.reconcileStrategyOrder(order.id, order.status, {
-        broker: managedOrderDto(order),
-        brokerReconciledAt: new Date().toISOString(),
+        broker: managedOrderDto(order, reconciledAt, reconciledAt),
+        brokerReconciledAt: reconciledAt.toISOString(),
       });
     }
     if (!order.status) return;
@@ -44,7 +49,7 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
         direction: "desc",
         nested: true,
       });
-      tracker.recover(brokerOrders);
+      tracker.recover(brokerOrders, now());
       for (const order of brokerOrders) reconcile(order);
     })().finally(() => {
       recoveryRequest = null;
@@ -223,7 +228,12 @@ export function createOrderRuntime(alpaca: Alpaca, store: Store) {
         console.error("order stream error", error);
       });
       updates.onTradeUpdate((update) => {
-        tracker.update(update.order, update.timestamp ?? new Date());
+        const retrievedAt = now();
+        tracker.update(
+          update.order,
+          retrievedAt,
+          update.timestamp ?? retrievedAt,
+        );
         reconcile(update.order);
         store.event("order.stream.update", "alpaca-stream", {
           event: update.event,

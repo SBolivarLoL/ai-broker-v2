@@ -235,14 +235,18 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   };
 }
 
-function testApp(env: Record<string, string | undefined> = {}, options: FakeAlpacaOptions = {}) {
+function testApp(
+  env: Record<string, string | undefined> = {},
+  options: FakeAlpacaOptions = {},
+  now?: () => Date,
+) {
   const store = createStore(":memory:");
   stores.push(store);
   const fake = fakeAlpaca(options);
   // Relaxed auth is opt-in; default test apps to the development/test path so
   // demo-identity contracts hold unless a test supplies its own NODE_ENV.
   const resolvedEnv = { NODE_ENV: "test", ...env };
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0 }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0, now }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -285,7 +289,11 @@ test("createApp is side-effect free and exposes basic HTTP contracts", async () 
 });
 
 test("account API accepts the post-PDT broker shape and exposes only allow-listed fields", async () => {
-  const app = testApp();
+  const times = [
+    new Date("2026-07-11T10:00:00Z"),
+    new Date("2026-07-11T10:00:01Z"),
+  ];
+  const app = testApp({}, {}, () => times.shift()!);
   const response = await app.fetch(new Request("http://local/api/account"));
 
   expect(response.status).toBe(200);
@@ -296,9 +304,35 @@ test("account API accepts the post-PDT broker shape and exposes only allow-liste
       buyingPower: 1_000,
       currency: "USD",
       status: "ACTIVE",
+      observedAt: null,
+      publishedAt: null,
+      effectivePeriod: null,
+      retrievedAt: "2026-07-11T10:00:00.000Z",
+      serverRespondedAt: "2026-07-11T10:00:01.000Z",
+      time: {
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: "2026-07-11T10:00:00.000Z",
+        serverResponseTime: "2026-07-11T10:00:01.000Z",
+      },
+      asOf: "2026-07-11T10:00:01.000Z",
     },
     positions: [],
     orders: [],
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: "2026-07-11T10:00:00.000Z",
+    serverRespondedAt: "2026-07-11T10:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-07-11T10:00:00.000Z",
+      serverResponseTime: "2026-07-11T10:00:01.000Z",
+    },
+    asOf: "2026-07-11T10:00:01.000Z",
   });
 });
 

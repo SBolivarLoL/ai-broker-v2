@@ -4,17 +4,68 @@ import { createOrderRoutes } from "../../backend/features/orders/routes";
 import { createOrderRuntime } from "../../backend/features/orders/runtime";
 import { createStore } from "../../backend/persistence/store";
 
-function routes(allow = () => true, alpaca = {} as Alpaca) {
+function routes(
+  allow = () => true,
+  alpaca = {} as Alpaca,
+  now: () => Date = () => new Date(),
+) {
   const store = createStore(":memory:");
   return createOrderRoutes({
     alpaca,
     store,
-    runtime: createOrderRuntime(alpaca, store),
+    runtime: createOrderRuntime(alpaca, store, now),
     allow,
     previewSecret: "p".repeat(32),
     getMarketClock: async () => ({}),
+    now,
   });
 }
+
+test("order list separates broker observation, retrieval, and response times", async () => {
+  const alpaca = {
+    trading: {
+      orders: {
+        getAllOrders: async () => [
+          {
+            id: "123e4567-e89b-12d3-a456-426614174000",
+            symbol: "AAPL",
+            side: "buy",
+            qty: "2",
+            filledQty: "0",
+            notional: null,
+            type: "limit",
+            timeInForce: "day",
+            status: "new",
+            updatedAt: new Date("2026-07-11T09:59:59Z"),
+          },
+        ],
+      },
+    },
+  } as unknown as Alpaca;
+  const times = [
+    new Date("2026-07-11T10:00:00Z"),
+    new Date("2026-07-11T10:00:00.500Z"),
+    new Date("2026-07-11T10:00:01Z"),
+  ];
+  const handle = routes(() => true, alpaca, () => times.shift()!);
+  const request = new Request("http://localhost/api/orders");
+  const response = await handle(request, new URL(request.url), "test");
+
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    observedAt: null,
+    retrievedAt: "2026-07-11T10:00:00.000Z",
+    serverRespondedAt: "2026-07-11T10:00:01.000Z",
+    asOf: "2026-07-11T10:00:01.000Z",
+    orders: [
+      {
+        observedAt: "2026-07-11T09:59:59.000Z",
+        retrievedAt: "2026-07-11T10:00:00.000Z",
+        serverRespondedAt: "2026-07-11T10:00:01.000Z",
+      },
+    ],
+  });
+});
 
 test("order routes reject invalid requests before broker calls", async () => {
   const handle = routes();

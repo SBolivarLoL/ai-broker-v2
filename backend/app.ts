@@ -7,8 +7,8 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { normalizeActivity } from "./features/portfolio/ledger";
 import { createPortfolioExposureService } from "./features/portfolio/exposure-service";
+import { accountStateDto } from "./features/portfolio/account-state";
 import { createMarketService } from "./features/markets/service";
-import { managedOrderDto } from "./features/orders/order-management";
 import { createOrderRoutes } from "./features/orders/routes";
 import { createOrderRuntime } from "./features/orders/runtime";
 import {
@@ -42,6 +42,7 @@ export type AppDependencies = {
   env?: AppEnvironment;
   indexPath?: string;
   setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
+  now?: () => Date;
 };
 
 export function createApp({
@@ -51,34 +52,13 @@ export function createApp({
   env = process.env,
   indexPath = "frontend/index.html",
   setIntervalFn = setInterval,
+  now = () => new Date(),
 }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
-  type BrokerAccount = Awaited<
-    ReturnType<typeof alpaca.trading.account.getAccount>
-  >;
-  type BrokerPosition = Awaited<
-    ReturnType<typeof alpaca.trading.positions.getAllOpenPositions>
-  >[number];
-  const accountDto = (account: BrokerAccount) => ({
-    equity: account.equity,
-    cash: account.cash,
-    buyingPower: account.buyingPower,
-    currency: account.currency,
-    status: account.status,
-  });
-  const positionDto = (position: BrokerPosition) => ({
-    symbol: position.symbol,
-    qty: position.qty,
-    avgEntryPrice: position.avgEntryPrice,
-    currentPrice: position.currentPrice,
-    marketValue: position.marketValue,
-    unrealizedPl: position.unrealizedPl,
-    unrealizedPlpc: position.unrealizedPlpc,
-  });
   const allow = rateLimiter();
   const market = createMarketService({ alpaca, store, allow });
   const strategies = createStrategyRuntime(alpaca, store, codeIdentity);
-  const orderRuntime = createOrderRuntime(alpaca, store);
+  const orderRuntime = createOrderRuntime(alpaca, store, now);
   const currentPortfolioExposure = createPortfolioExposureService(alpaca);
   const orderRoutes = createOrderRoutes({
     alpaca,
@@ -87,6 +67,7 @@ export function createApp({
     allow,
     previewSecret,
     getMarketClock: market.getClock,
+    now,
   });
 
   let activitySync: {
@@ -149,6 +130,7 @@ export function createApp({
         positions,
         risk,
         orderRuntime.tracker.metadata(),
+        now(),
       );
       store.portfolioSnapshot(snapshot);
       return snapshot;
@@ -255,11 +237,16 @@ export function createApp({
           alpaca.trading.positions.getAllOpenPositions(),
           alpaca.trading.orders.getAllOrders({ status: "open", limit: 100 }),
         ]);
-        return json({
-          account: accountDto(account),
-          positions: positions.map(positionDto),
-          orders: orders.map(managedOrderDto),
-        });
+        const retrievedAt = now();
+        return json(
+          accountStateDto({
+            account,
+            positions,
+            orders,
+            retrievedAt,
+            serverRespondedAt: now(),
+          }),
+        );
       }
       // Handlers return null when a route is outside their feature boundary;
       // the first matching feature owns the response.

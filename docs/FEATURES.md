@@ -26,7 +26,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 ### Broker and market state
 
-- Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness.
+- Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness. The account aggregate, account, position, managed-order, nested-leg, order-list, and cancel-all-preview DTOs distinguish broker observation from local retrieval and server response time. Account and position observations remain explicitly null because Alpaca does not provide an event timestamp on those current-state responses; order observation uses the most recent available broker order timestamp.
 - Alpaca watchlist create, rename, symbol add/remove, and delete workflows.
 - NASDAQ clock/calendar, early-close information, session-aware order guidance, SIP discovery panels where entitled, and an IEX quote/bar SSE bridge.
 - Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback. The single-symbol quote route, market monitoring news/corporate-action/SEC alert DTOs, company-market snapshot, market workspace discovery/calendar DTOs, equity quote/bar stream DTOs, and multi-asset index/FX/crypto DTO distinguish provider observation, publication, effective-period, retrieval, and server response time where applicable; the quote route reports `observedAt:null` when the provider helper exposes no event timestamp, and cached company-market and market-monitoring responses preserve provider retrieval time while refreshing server response time.
@@ -41,7 +41,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Explicit paper short workflow with margin, marginability, easy-to-borrow, DAY, quantity, concentration, and fresh-state checks.
 - Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable. Option-chain and option-portfolio Greek DTOs preserve provider observation, retrieval, and server-response provenance where provider timestamps are available.
 - Standalone paper crypto market, limit, and stop-limit tickets. Approved strategy automation submits only bounded paper crypto market orders.
-- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders.
+- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders. The shared order tracker retains each accepted REST or stream receipt time and prevents an older recovery snapshot from overwriting a newer streamed order or its retrieval provenance.
 - HMAC-signed two-minute previews, exact confirmation, fresh broker/market revalidation, idempotency keys, local risk reservations, broker reconciliation, and decision receipts.
 
 ### Portfolio intelligence
