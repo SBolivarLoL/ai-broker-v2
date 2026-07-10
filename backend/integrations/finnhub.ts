@@ -9,6 +9,12 @@ import {
   dedupeEvidence,
   type CanonicalEvidence,
 } from "../shared/evidence";
+import {
+  normalizeIsoTime,
+  normalizeTimeProvenance,
+  type NormalizedEffectivePeriod,
+  type NormalizedTimeProvenance,
+} from "../shared/time-provenance";
 
 type FetchLike = (
   input: string | URL | Request,
@@ -23,8 +29,18 @@ type EndpointResult<T> = {
   retrievedAt: string;
 };
 type CacheEntry = { expiresAt: number; value: EndpointResult<unknown> };
+type FinnhubEndpoint = "profile" | "earnings" | "news";
+type FinnhubProviderTime = {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
+};
+type FinnhubCompanyTimeProvenance = Omit<
+  NormalizedTimeProvenance,
+  "retrievalTime"
+> & { retrievalTime: string | null };
 
-export type FinnhubProfile = {
+type FinnhubProfileRecord = {
   name: string;
   ticker: string;
   country: string | null;
@@ -34,8 +50,9 @@ export type FinnhubProfile = {
   ipoDate: string | null;
   webUrl: string | null;
 };
+export type FinnhubProfile = FinnhubProfileRecord & FinnhubProviderTime;
 
-export type FinnhubEarningsSurprise = {
+type FinnhubEarningsSurpriseRecord = {
   period: string;
   actual: number;
   estimate: number;
@@ -44,8 +61,10 @@ export type FinnhubEarningsSurprise = {
   quarter: number | null;
   year: number | null;
 };
+export type FinnhubEarningsSurprise = FinnhubEarningsSurpriseRecord &
+  FinnhubProviderTime & { effectivePeriod: NormalizedEffectivePeriod };
 
-export type FinnhubNewsArticle = {
+type FinnhubNewsArticleRecord = {
   id: string;
   evidenceId: string;
   headline: string;
@@ -56,6 +75,7 @@ export type FinnhubNewsArticle = {
   url: string;
   publishedAt: string;
 };
+export type FinnhubNewsArticle = FinnhubNewsArticleRecord & FinnhubProviderTime;
 
 export type FinnhubEvidence = CanonicalEvidence<
   unknown,
@@ -70,7 +90,11 @@ export type FinnhubCompanyEnrichment = {
   news: FinnhubNewsArticle[];
   sources: FinnhubEvidence[];
   coverage: Record<"profile" | "earnings" | "news", FinnhubCoverageStatus>;
+  endpointTimes: Record<FinnhubEndpoint, FinnhubProviderTime | null>;
   warnings: string[];
+  retrievedAt: string | null;
+  serverRespondedAt: string;
+  time: FinnhubCompanyTimeProvenance;
   asOf: string;
 };
 
@@ -128,6 +152,57 @@ const periodDate = (value: unknown) => {
 };
 const unique = (values: string[]) => [...new Set(values)];
 
+function providerTime(
+  retrievedAt: string,
+  serverRespondedAt: string,
+  input: {
+    publicationTime?: string | null;
+    effectivePeriod?: {
+      start?: string | null;
+      end?: string | null;
+      label?: string | null;
+    } | null;
+  } = {},
+): FinnhubProviderTime {
+  return {
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      publicationTime: input.publicationTime,
+      effectivePeriod: input.effectivePeriod,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+  };
+}
+
+function companyTime(
+  retrievedAt: string | null,
+  serverRespondedAt: string,
+): FinnhubCompanyTimeProvenance {
+  if (retrievedAt)
+    return normalizeTimeProvenance({
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    });
+  return {
+    observationTime: null,
+    publicationTime: null,
+    effectivePeriod: null,
+    retrievalTime: null,
+    serverResponseTime: normalizeIsoTime(
+      serverRespondedAt,
+      "Finnhub server response time",
+    ),
+  };
+}
+
+function latestTime(values: string[]) {
+  return values.reduce((latest, value) =>
+    value.localeCompare(latest) > 0 ? value : latest,
+  );
+}
+
 function retryAfterMs(response: Response, now: number) {
   const value = response.headers.get("retry-after")?.trim();
   if (!value) return null;
@@ -137,7 +212,10 @@ function retryAfterMs(response: Response, now: number) {
   return Number.isFinite(date) ? Math.max(0, date - now) : null;
 }
 
-function profileFrom(payload: unknown, symbol: string): FinnhubProfile | null {
+function profileFrom(
+  payload: unknown,
+  symbol: string,
+): FinnhubProfileRecord | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload))
     return null;
   const item = payload as Record<string, unknown>;
@@ -179,7 +257,7 @@ function earningsFrom(payload: unknown) {
           quarter:
             quarter !== null && Number.isInteger(quarter) ? quarter : null,
           year: year !== null && Number.isInteger(year) ? year : null,
-        } satisfies FinnhubEarningsSurprise,
+        } satisfies FinnhubEarningsSurpriseRecord,
       ];
     })
     .sort((a, b) => b.period.localeCompare(a.period))
@@ -225,7 +303,7 @@ function newsFrom(payload: unknown, symbol: string) {
           relatedSymbols: unique(relatedSymbols),
           url,
           publishedAt: published.toISOString(),
-        } satisfies FinnhubNewsArticle,
+        } satisfies FinnhubNewsArticleRecord,
       ];
     })
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
@@ -399,22 +477,29 @@ export class FinnhubClient {
       newsLookbackDays > 30
     )
       throw new Error("Finnhub news lookback must be 1 to 30 days");
-    const asOf = new Date(this.now()).toISOString();
+    const requestedAt = new Date(this.now()).toISOString();
     const empty = (
       status: "missing_key" | "misconfigured",
       warning: string,
-    ): FinnhubCompanyEnrichment => ({
-      symbol,
-      configured: false,
-      status,
-      profile: null,
-      earnings: [],
-      news: [],
-      sources: [],
-      coverage: { profile: status, earnings: status, news: status },
-      warnings: [warning],
-      asOf,
-    });
+    ): FinnhubCompanyEnrichment => {
+      const serverRespondedAt = new Date(this.now()).toISOString();
+      return {
+        symbol,
+        configured: false,
+        status,
+        profile: null,
+        earnings: [],
+        news: [],
+        sources: [],
+        coverage: { profile: status, earnings: status, news: status },
+        endpointTimes: { profile: null, earnings: null, news: null },
+        warnings: [warning],
+        retrievedAt: null,
+        serverRespondedAt,
+        time: companyTime(null, serverRespondedAt),
+        asOf: serverRespondedAt,
+      };
+    };
     const key = this.env.FINNHUB_API_KEY?.trim() ?? "";
     if (!key)
       return empty(
@@ -427,7 +512,7 @@ export class FinnhubClient {
         "Finnhub enrichment is unavailable because FINNHUB_API_KEY has an invalid format.",
       );
 
-    const to = asOf.slice(0, 10);
+    const to = requestedAt.slice(0, 10);
     const from = new Date(this.now() - newsLookbackDays * 86_400_000)
       .toISOString()
       .slice(0, 10);
@@ -454,6 +539,17 @@ export class FinnhubClient {
         this.newsTtlMs,
       ),
     ]);
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    const retrievedAt = latestTime([
+      profileResult.retrievedAt,
+      earningsResult.retrievedAt,
+      newsResult.retrievedAt,
+    ]);
+    const endpointTimes: FinnhubCompanyEnrichment["endpointTimes"] = {
+      profile: providerTime(profileResult.retrievedAt, serverRespondedAt),
+      earnings: providerTime(earningsResult.retrievedAt, serverRespondedAt),
+      news: providerTime(newsResult.retrievedAt, serverRespondedAt),
+    };
     const coverage: FinnhubCompanyEnrichment["coverage"] = {
       profile: profileResult.status,
       earnings: earningsResult.status,
@@ -462,12 +558,18 @@ export class FinnhubClient {
     const warnings: string[] = [];
     const sources: FinnhubEvidence[] = [];
     let profile: FinnhubProfile | null = null;
+    let earningsRecords: FinnhubEarningsSurpriseRecord[] = [];
     let earnings: FinnhubEarningsSurprise[] = [];
+    let newsRecords: FinnhubNewsArticleRecord[] = [];
     let news: FinnhubNewsArticle[] = [];
 
     if (profileResult.status === "available") {
-      profile = profileFrom(profileResult.value, symbol);
-      if (profile)
+      const profileRecord = profileFrom(profileResult.value, symbol);
+      if (profileRecord) {
+        profile = {
+          ...profileRecord,
+          ...providerTime(profileResult.retrievedAt, serverRespondedAt),
+        };
         sources.push(
           canonicalEvidence({
             id: `finnhub:profile:${symbol}`,
@@ -476,15 +578,16 @@ export class FinnhubClient {
             category: "identity",
             authority: "licensed_provider",
             claimStatus: "provider_record",
-            title: `${profile.name} Finnhub company profile`,
+            title: `${profileRecord.name} Finnhub company profile`,
             url: profileUrl,
             asOf: profileResult.retrievedAt,
             retrievedAt: profileResult.retrievedAt,
+            serverRespondedAt,
             entityIds: { symbol },
-            data: { symbol, ...profile },
+            data: { symbol, ...profileRecord },
           }),
         );
-      else {
+      } else {
         coverage.profile = "unavailable";
         warnings.push(
           "Finnhub returned no matching company profile; no identity fields were used.",
@@ -494,7 +597,28 @@ export class FinnhubClient {
 
     if (earningsResult.status === "available") {
       try {
-        earnings = earningsFrom(earningsResult.value);
+        earningsRecords = earningsFrom(earningsResult.value);
+        earnings = earningsRecords.map((record) => {
+          const effectiveAt = new Date(
+            `${record.period}T00:00:00.000Z`,
+          ).toISOString();
+          const timing = providerTime(
+            earningsResult.retrievedAt,
+            serverRespondedAt,
+            {
+              effectivePeriod: {
+                start: effectiveAt,
+                end: effectiveAt,
+                label: `Finnhub earnings period ${record.period}`,
+              },
+            },
+          );
+          return {
+            ...record,
+            ...timing,
+            effectivePeriod: timing.time.effectivePeriod!,
+          };
+        });
       } catch {
         coverage.earnings = "unavailable";
         warnings.push(
@@ -515,11 +639,17 @@ export class FinnhubClient {
             url: earningsUrl,
             asOf: new Date(`${latestPeriod}T00:00:00.000Z`).toISOString(),
             retrievedAt: earningsResult.retrievedAt,
+            serverRespondedAt,
+            effectivePeriod: {
+              start: `${latestPeriod}T00:00:00.000Z`,
+              end: `${latestPeriod}T00:00:00.000Z`,
+              label: `Latest Finnhub earnings period ${latestPeriod}`,
+            },
             entityIds: { symbol },
             data: {
               symbol,
               limit: 4,
-              earnings,
+              earnings: earningsRecords,
               note: "Provider-reported values; no surprise metrics were recalculated.",
             },
           }),
@@ -532,14 +662,20 @@ export class FinnhubClient {
 
     if (newsResult.status === "available") {
       try {
-        news = newsFrom(newsResult.value, symbol);
+        newsRecords = newsFrom(newsResult.value, symbol);
+        news = newsRecords.map((record) => ({
+          ...record,
+          ...providerTime(newsResult.retrievedAt, serverRespondedAt, {
+            publicationTime: record.publishedAt,
+          }),
+        }));
       } catch {
         coverage.news = "unavailable";
         warnings.push(
           "Finnhub company news returned an invalid payload and was omitted.",
         );
       }
-      for (const article of news)
+      for (const article of newsRecords)
         sources.push(
           canonicalEvidence({
             id: article.evidenceId,
@@ -552,6 +688,7 @@ export class FinnhubClient {
             url: article.url,
             asOf: article.publishedAt,
             retrievedAt: newsResult.retrievedAt,
+            serverRespondedAt,
             publishedAt: article.publishedAt,
             entityIds: { symbol },
             data: {
@@ -608,8 +745,12 @@ export class FinnhubClient {
       news,
       sources: deduped.records,
       coverage,
+      endpointTimes,
       warnings: unique(warnings),
-      asOf: new Date(this.now()).toISOString(),
+      retrievedAt,
+      serverRespondedAt,
+      time: companyTime(retrievedAt, serverRespondedAt),
+      asOf: serverRespondedAt,
     };
   }
 }

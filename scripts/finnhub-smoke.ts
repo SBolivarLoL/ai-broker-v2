@@ -6,7 +6,9 @@ if (!keyConfigured) {
   if (
     result.configured ||
     result.status !== "missing_key" ||
-    result.sources.length
+    result.sources.length ||
+    result.retrievedAt !== null ||
+    Object.values(result.endpointTimes).some(Boolean)
   )
     throw new Error("Finnhub missing-key fallback is invalid");
 } else {
@@ -18,6 +20,13 @@ if (!keyConfigured) {
     );
   if (result.sources.some((source) => source.authority !== "licensed_provider"))
     throw new Error("Finnhub evidence authority is invalid");
+  if (
+    !result.retrievedAt ||
+    Object.values(result.endpointTimes).some(
+      (time) => !time?.retrievedAt || !time.serverRespondedAt,
+    )
+  )
+    throw new Error("Finnhub endpoint time provenance is incomplete");
   if (
     result.sources.some((source) =>
       source.category === "news"
@@ -41,6 +50,8 @@ console.log(
       news: result.news.length,
       evidence: result.sources.length,
       warnings: result.warnings,
+      retrievedAt: result.retrievedAt,
+      serverRespondedAt: result.serverRespondedAt,
       asOf: result.asOf,
     },
     null,

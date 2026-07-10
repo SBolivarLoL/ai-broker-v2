@@ -1,6 +1,9 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { ClientError, json, requestJson } from "../../http/http";
-import { getFinnhubCompanyEnrichment } from "../../integrations/finnhub";
+import {
+  getFinnhubCompanyEnrichment,
+  type FinnhubCompanyEnrichment,
+} from "../../integrations/finnhub";
 import { getGdeltCompanySignals } from "../../integrations/gdelt";
 import { getOfficialMacroContext } from "../../integrations/macro-context";
 import { getOpenFigiIdentity } from "../../integrations/openfigi";
@@ -37,6 +40,9 @@ type ResearchContext = {
   actor: string;
   allow: RateLimit;
   env?: Env;
+  finnhubCompanyEnrichment?: (
+    symbol: string,
+  ) => Promise<FinnhubCompanyEnrichment>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -317,7 +323,11 @@ export async function handleResearchRequest(
     const symbol = symbolFrom(url.searchParams.get("symbol"));
     if (!validSymbol(symbol))
       return json({ error: "A valid stock symbol is required" }, 400);
-    return json(await getFinnhubCompanyEnrichment(symbol));
+    return json(
+      await (
+        context.finnhubCompanyEnrichment ?? getFinnhubCompanyEnrichment
+      )(symbol),
+    );
   }
 
   if (url.pathname === "/api/research/openfigi" && request.method === "GET") {
