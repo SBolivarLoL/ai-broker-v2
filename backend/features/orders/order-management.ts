@@ -4,6 +4,7 @@
  */
 import type { trading } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
+import { providerTimeFields } from "../../shared/time-provenance";
 import { signToken, verifyToken } from "./orders";
 
 const cancellable = new Set([
@@ -167,8 +168,10 @@ export function verifyCancelAllPreview(
 
 export class OrderTracker {
   private orders = new Map<string, trading.Order>();
+  private retrievedAtByOrderId = new Map<string, string>();
   private streamState = "connecting";
   private lastEventAt: string | null = null;
+  private lastStreamReceiptAt: string | null = null;
   private lastRecoveryAt: string | null = null;
   private lastError: string | null = null;
   recover(orders: trading.Order[], now = new Date()) {
@@ -181,14 +184,24 @@ export class OrderTracker {
         recoveredAt = Number(order.updatedAt ?? order.submittedAt ?? 0);
       // Recovery must not overwrite a newer event already received from the
       // stream with an older REST snapshot.
-      if (!streamed || recoveredAt >= streamedAt)
+      if (!streamed || recoveredAt >= streamedAt) {
         this.orders.set(order.id, order);
+        this.retrievedAtByOrderId.set(order.id, now.toISOString());
+      }
     }
     this.lastRecoveryAt = now.toISOString();
   }
-  update(order: trading.Order, now = new Date()) {
-    if (order.id) this.orders.set(order.id, order);
-    this.lastEventAt = now.toISOString();
+  update(
+    order: trading.Order,
+    retrievedAt = new Date(),
+    eventAt = retrievedAt,
+  ) {
+    if (order.id) {
+      this.orders.set(order.id, order);
+      this.retrievedAtByOrderId.set(order.id, retrievedAt.toISOString());
+    }
+    this.lastEventAt = eventAt.toISOString();
+    this.lastStreamReceiptAt = retrievedAt.toISOString();
   }
   setStreamState(state: string, error: string | null = null) {
     this.streamState = state;
@@ -223,15 +236,41 @@ export class OrderTracker {
       lastError: this.lastError,
     };
   }
+  retrievedAt(orderId: string) {
+    return this.retrievedAtByOrderId.get(orderId) ?? this.lastRecoveryAt;
+  }
+  latestRetrievedAt() {
+    if (!this.lastStreamReceiptAt) return this.lastRecoveryAt;
+    if (!this.lastRecoveryAt) return this.lastStreamReceiptAt;
+    return Date.parse(this.lastStreamReceiptAt) >= Date.parse(this.lastRecoveryAt)
+      ? this.lastStreamReceiptAt
+      : this.lastRecoveryAt;
+  }
   get size() {
     return this.orders.size;
   }
 }
 
-export function managedOrderDto(order: trading.Order): Record<string, unknown> {
+export function managedOrderDto(
+  order: trading.Order,
+  retrievalTime: string | Date | number = new Date(),
+  serverResponseTime: string | Date | number = retrievalTime,
+): Record<string, unknown> {
   const qty =
     order.qty === null || order.qty === undefined ? null : Number(order.qty);
   const filledQty = Number(order.filledQty ?? 0);
+  const timeFields = providerTimeFields({
+    observationTime:
+      order.updatedAt ??
+      order.filledAt ??
+      order.submittedAt ??
+      order.createdAt ??
+      null,
+    publicationTime: null,
+    effectivePeriod: null,
+    retrievalTime,
+    serverResponseTime,
+  });
   return {
     id: order.id,
     clientOrderId: order.clientOrderId,
@@ -266,6 +305,10 @@ export function managedOrderDto(order: trading.Order): Record<string, unknown> {
     replaces: order.replaces,
     cancelable: canCancelOrder(order.status),
     replaceable: canReplaceOrder(order),
-    legs: order.legs?.map((leg) => managedOrderDto(leg as trading.Order)) ?? [],
+    legs:
+      order.legs?.map((leg) =>
+        managedOrderDto(leg as trading.Order, retrievalTime, serverResponseTime),
+      ) ?? [],
+    ...timeFields,
   };
 }

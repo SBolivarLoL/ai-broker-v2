@@ -103,6 +103,13 @@ The order boundary is deliberately split by responsibility:
 
 These modules share one runtime and preserve the safety pipeline above.
 
+`portfolio/account-state.ts` owns the allow-listed account/position composite
+returned to the browser. It applies the shared time taxonomy to account,
+position, and managed-order state without treating request receipt time as a
+provider observation. The order runtime retains per-order REST/stream receipt
+times so route normalization can preserve the provenance of the state that
+actually won reconciliation.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.

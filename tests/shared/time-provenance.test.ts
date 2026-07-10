@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { normalizeTimeProvenance } from "../../backend/shared/time-provenance";
+import {
+  normalizeTimeProvenance,
+  providerTimeFields,
+} from "../../backend/shared/time-provenance";
 
 test("normalizes explicit provider time provenance", () => {
   expect(
@@ -42,4 +45,37 @@ test("rejects invalid timestamp provenance", () => {
       },
     }),
   ).toThrow("start cannot be after end");
+});
+
+test("builds explicit provider DTO time fields", () => {
+  const fields = providerTimeFields({
+    observationTime: null,
+    publicationTime: "2026-06-28",
+    effectivePeriod: { end: "2026-06-27", label: "report date" },
+    retrievalTime: "2026-06-29T12:00:00Z",
+    serverResponseTime: "2026-06-29T12:00:01Z",
+  });
+  expect(fields).toEqual({
+    observedAt: null,
+    publishedAt: "2026-06-28T00:00:00.000Z",
+    effectivePeriod: {
+      start: null,
+      end: "2026-06-27T00:00:00.000Z",
+      label: "report date",
+    },
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: "2026-06-28T00:00:00.000Z",
+      effectivePeriod: {
+        start: null,
+        end: "2026-06-27T00:00:00.000Z",
+        label: "report date",
+      },
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:01.000Z",
+    },
+    asOf: "2026-06-29T12:00:01.000Z",
+  });
 });

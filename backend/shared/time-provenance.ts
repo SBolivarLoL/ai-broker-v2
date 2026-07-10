@@ -27,6 +27,16 @@ export type TimeProvenanceInput = {
   serverResponseTime?: string | Date | number | null;
 };
 
+export type ProviderTimeFields = {
+  observedAt: string | null;
+  publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
+  asOf: string;
+};
+
 export function normalizeIsoTime(value: string | Date | number, label: string) {
   const time = new Date(value);
   if (!String(value) || !Number.isFinite(time.getTime()))
@@ -76,5 +86,20 @@ export function normalizeTimeProvenance(
       input.serverResponseTime ?? retrievalTime,
       "Server response time",
     ),
+  };
+}
+
+export function providerTimeFields(
+  input: TimeProvenanceInput,
+): ProviderTimeFields {
+  const time = normalizeTimeProvenance(input);
+  return {
+    observedAt: time.observationTime,
+    publishedAt: time.publicationTime,
+    effectivePeriod: time.effectivePeriod,
+    retrievedAt: time.retrievalTime,
+    serverRespondedAt: time.serverResponseTime,
+    time,
+    asOf: time.serverResponseTime,
   };
 }

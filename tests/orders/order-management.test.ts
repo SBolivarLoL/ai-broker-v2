@@ -25,32 +25,37 @@ test("only stable working states expose cancellation", () => {
     expect(canCancelOrder(status), status).toBe(false);
 });
 
-test("order management DTO calculates remaining quantity and preserves nested legs", () => {
-  const order = managedOrderDto({
-    id: "order-1",
-    symbol: "AAPL",
-    side: "buy",
-    qty: "10",
-    filledQty: "4",
-    notional: null,
-    type: "limit",
-    timeInForce: "day",
-    status: "partially_filled",
-    limitPrice: "200",
-    legs: [
-      {
-        id: "leg-1",
-        symbol: "AAPL",
-        side: "sell",
-        qty: "10",
-        filledQty: "0",
-        notional: null,
-        type: "stop",
-        timeInForce: "gtc",
-        status: "new",
-      },
-    ],
-  } as any);
+test("order management DTO calculates quantities and preserves nested time provenance", () => {
+  const order = managedOrderDto(
+    {
+      id: "order-1",
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+      filledQty: "4",
+      notional: null,
+      type: "limit",
+      timeInForce: "day",
+      status: "partially_filled",
+      limitPrice: "200",
+      updatedAt: new Date("2026-07-11T09:59:59Z"),
+      legs: [
+        {
+          id: "leg-1",
+          symbol: "AAPL",
+          side: "sell",
+          qty: "10",
+          filledQty: "0",
+          notional: null,
+          type: "stop",
+          timeInForce: "gtc",
+          status: "new",
+        },
+      ],
+    } as any,
+    new Date("2026-07-11T10:00:00Z"),
+    new Date("2026-07-11T10:00:01Z"),
+  );
   expect(order).toMatchObject({
     id: "order-1",
     qty: 10,
@@ -58,7 +63,19 @@ test("order management DTO calculates remaining quantity and preserves nested le
     remainingQty: 6,
     limitPrice: 200,
     cancelable: true,
-    legs: [{ id: "leg-1", remainingQty: 10, cancelable: true }],
+    observedAt: "2026-07-11T09:59:59.000Z",
+    retrievedAt: "2026-07-11T10:00:00.000Z",
+    serverRespondedAt: "2026-07-11T10:00:01.000Z",
+    legs: [
+      {
+        id: "leg-1",
+        remainingQty: 10,
+        cancelable: true,
+        observedAt: null,
+        retrievedAt: "2026-07-11T10:00:00.000Z",
+        serverRespondedAt: "2026-07-11T10:00:01.000Z",
+      },
+    ],
   });
 });
 
@@ -177,13 +194,15 @@ test("order tracker applies stream updates and reports recovery freshness", () =
       notional: null,
     } as any,
     new Date(2_000),
+    new Date(1_500),
   );
   expect(tracker.list("open", 10)).toHaveLength(0);
   expect(tracker.metadata(100_000)).toMatchObject({
     streamState: "authenticated",
-    lastEventAt: new Date(2_000).toISOString(),
+    lastEventAt: new Date(1_500).toISOString(),
     stale: false,
   });
+  expect(tracker.retrievedAt("one")).toBe(new Date(2_000).toISOString());
   tracker.setStreamState("disconnected", "socket closed");
   expect(tracker.metadata(100_000)).toMatchObject({
     stale: true,
@@ -201,7 +220,7 @@ test("recovery polling cannot overwrite a newer stream event", () => {
     timeInForce: "day",
     notional: null,
     updatedAt: new Date(2_000),
-  } as any);
+  } as any, new Date(3_000));
   tracker.recover([
     {
       id: "one",
@@ -212,6 +231,8 @@ test("recovery polling cannot overwrite a newer stream event", () => {
       notional: null,
       updatedAt: new Date(1_000),
     },
-  ] as any);
+  ] as any, new Date(4_000));
   expect(tracker.list("closed", 10)).toMatchObject([{ status: "filled" }]);
+  expect(tracker.retrievedAt("one")).toBe(new Date(3_000).toISOString());
+  expect(tracker.latestRetrievedAt()).toBe(new Date(4_000).toISOString());
 });

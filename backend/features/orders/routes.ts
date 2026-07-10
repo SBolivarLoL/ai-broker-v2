@@ -1,6 +1,7 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { ClientError, json, requestJson } from "../../http/http";
 import type { createStore } from "../../persistence/store";
+import { providerTimeFields } from "../../shared/time-provenance";
 import {
   buildReplacementPreview,
   canCancelOrder,
@@ -27,6 +28,7 @@ type OrderRouteDependencies = {
   allow: RateLimit;
   previewSecret: string;
   getMarketClock: () => Promise<any>;
+  now?: () => Date;
 };
 
 /** Builds order-management, receipt, and audit routes and composes execution routes. */
@@ -37,6 +39,7 @@ export function createOrderRoutes({
   allow,
   previewSecret,
   getMarketClock,
+  now = () => new Date(),
 }: OrderRouteDependencies) {
   const optionRoutes = createOptionRoutes({
     alpaca,
@@ -102,11 +105,27 @@ export function createOrderRoutes({
         status as "open" | "closed" | "all",
         limit,
       );
+      const serverRespondedAt = now();
+      const retrievedAt =
+        runtime.tracker.latestRetrievedAt() ?? serverRespondedAt.toISOString();
+      const timeFields = providerTimeFields({
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: retrievedAt,
+        serverResponseTime: serverRespondedAt,
+      });
       return json({
         status,
-        orders: orders.map(managedOrderDto),
-        sync: runtime.tracker.metadata(),
-        asOf: new Date().toISOString(),
+        orders: orders.map((order) =>
+          managedOrderDto(
+            order,
+            (order.id && runtime.tracker.retrievedAt(order.id)) ?? retrievedAt,
+            serverRespondedAt,
+          ),
+        ),
+        sync: runtime.tracker.metadata(serverRespondedAt.getTime()),
+        ...timeFields,
       });
     }
     if (
@@ -120,17 +139,28 @@ export function createOrderRoutes({
           nested: true,
         })
       ).filter((order) => order.id && canCancelOrder(order.status));
+      const retrievedAt = now();
       if (!orders.length)
         return json({ error: "There are no cancelable working orders" }, 409);
-      const expiresAt = Date.now() + 60_000,
+      const expiresAt = retrievedAt.getTime() + 60_000,
         orderIds = orders.map((order) => order.id!);
+      const serverRespondedAt = now();
       return json({
-        orders: orders.map(managedOrderDto),
+        orders: orders.map((order) =>
+          managedOrderDto(order, retrievedAt, serverRespondedAt),
+        ),
         expiresAt,
         previewToken: signCancelAllPreview(
           { orderIds, expiresAt },
           previewSecret,
         ),
+        ...providerTimeFields({
+          observationTime: null,
+          publicationTime: null,
+          effectivePeriod: null,
+          retrievalTime: retrievedAt,
+          serverResponseTime: serverRespondedAt,
+        }),
       });
     }
     if (url.pathname === "/api/orders" && request.method === "DELETE") {
