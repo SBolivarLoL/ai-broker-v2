@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `5e16347`: 2026-07-10.
+Last reviewed against `main` commit `d188e0c`: 2026-07-10.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 355 lines; `backend/persistence/store.ts` 906 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 14 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `5e16347`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `d188e0c`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -47,14 +47,14 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                                                                                                                                                                                                                                                                                                     | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                                                                                                                                                                                                                                                                                   | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
-| Browser UI                  | Targeted interaction confidence                    | Earlier Strategy Lab and all-workspace checks plus the 2026-07-10 read-only broker smoke rendered the refined Strategy Lab at 1440×1000, 768×1000, and 390×844; verified structured inputs, cost/trade/uncertainty evidence, global data health, option quote/IV/Greek coverage, responsive navigation, private-value controls, dialog focus trap/Escape/trigger restoration, and a clean console                                                                                                           | No maintained automated accessibility/responsive regression suite                                                                         |
+| Browser UI                  | Targeted interaction confidence                    | Earlier interaction checks plus the 2026-07-10 Option A workstation pass rendered all seven workspaces, the populated Strategy Lab, the data-health drawer, private-value state, and confirmation dialogs. The persistent desktop rail, compact tablet rail, active-item-centered mobile navigation, sticky status strip, and evidence layouts were checked at 1440×1000, 768×1000, and 390×844 with no page-level horizontal overflow.                                                                     | No maintained automated accessibility/responsive regression suite                                                                         |
 | Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                                                                                                                                                                                                                                                                                                       | No production-sized or closed-beta restore drill, deployment, real participants, or external approval                                     |
 
 ## Full documentation and repository audit
 
 The 2026-07-07 review inspected the affected documentation and checked its
 commands, paths, configuration names, counts, capability statements, and status
-language against `5e16347` plus fresh command output.
+language against `d188e0c` plus fresh command output.
 
 | File                          | Audit disposition                                                                                                                            |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -515,8 +515,11 @@ async function loadReceipts() {
 async function load() {
   const { account, positions } = await api("/api/account");
   $("#equity").textContent = money.format(account.equity);
-  $("#buying-power").textContent =
-    `${money.format(account.buyingPower)} available to trade`;
+  $("#buying-power").textContent = money.format(account.buyingPower);
+  $("#cash-balance").textContent = money.format(account.cash);
+  $("#account-status").textContent = String(account.status || "unknown")
+    .replaceAll("_", " ")
+    .replace(/^./, (character) => character.toUpperCase());
   $("#positions").innerHTML = positions.length
     ? positions
         .map(

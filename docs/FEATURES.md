@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `5e16347`: 2026-07-10.
+Last reviewed against `main` commit `d188e0c`: 2026-07-10.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -20,7 +20,7 @@ The browser exposes seven workspaces:
 | Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                       |
 | AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                               |
 
-The shared browser shell exposes a persistent, locally evidenced data-health status and expandable provider/dataset panel, a paper-environment indicator, and a global private-value mask. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions.
+The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions.
 
 ## Capability map
 
