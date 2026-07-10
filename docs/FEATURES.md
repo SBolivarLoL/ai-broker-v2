@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `2ea494a`: 2026-07-07.
+Last reviewed against `main` commit `1a8e5fd`: 2026-07-10.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -59,7 +59,7 @@ The browser exposes seven workspaces:
 - Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
 - Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
 - Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage.
-- Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states. GDELT media-signal root and article DTOs preserve publication, provider-retrieval, and server-response time, and cached GDELT responses preserve the provider retrieval time while refreshing the per-response server time.
+- Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states. GDELT media-signal root/article DTOs and Finnhub root/endpoint/profile/earnings/news DTOs preserve applicable publication or effective-period, provider-retrieval, and server-response time. Cached provider data keeps its original retrieval time while refreshing per-response server time; unqueried Finnhub states report `retrievedAt:null` instead of inventing a provider fetch.
 - Comparable valuation tables from current Alpaca price plus directly reported SEC revenue, net income, diluted EPS, equity, and shares. Missing or invalid inputs remain unavailable.
 - User-authored bull/base/bear assumptions converted into deterministic 12-month valuation scenarios. They are scenarios, not forecasts.
 - Company research and portfolio Q&A agents with typed read-only tools, bounded outputs, evidence-ID validation, numeric grounding checks, and unsafe-certainty rejection.

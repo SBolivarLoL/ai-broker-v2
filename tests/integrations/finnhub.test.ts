@@ -71,6 +71,17 @@ test("Finnhub stays optional and does not fetch without a valid key", async () =
       earnings: "missing_key",
       news: "missing_key",
     },
+    endpointTimes: { profile: null, earnings: null, news: null },
+    retrievedAt: null,
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    asOf: "2026-06-29T12:00:00.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: null,
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
+    },
   });
   const invalid = new FinnhubClient({
     env: { FINNHUB_API_KEY: "bad key" },
@@ -89,9 +100,10 @@ test("Finnhub stays optional and does not fetch without a valid key", async () =
 
 test("Finnhub normalizes free profile, earnings, and news into typed canonical evidence", async () => {
   const urls: string[] = [];
+  let clock = now;
   const client = new FinnhubClient({
     env: { FINNHUB_API_KEY: "valid_key_123" },
-    now: () => now,
+    now: () => clock,
     minIntervalMs: 0,
     fetchImpl: async (input, init) => {
       const url = new URL(String(input));
@@ -113,6 +125,25 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
       ticker: "AAPL",
       industry: "Technology",
       ipoDate: "1980-12-12",
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+      time: {
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: "2026-06-29T12:00:00.000Z",
+        serverResponseTime: "2026-06-29T12:00:00.000Z",
+      },
+    },
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    asOf: "2026-06-29T12:00:00.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
     },
   });
   expect(result.profile).not.toHaveProperty("phone");
@@ -126,6 +157,24 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
       surprisePercent: 1.227,
       quarter: 2,
       year: 2026,
+      effectivePeriod: {
+        start: "2026-03-31T00:00:00.000Z",
+        end: "2026-03-31T00:00:00.000Z",
+        label: "Finnhub earnings period 2026-03-31",
+      },
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+      time: {
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: {
+          start: "2026-03-31T00:00:00.000Z",
+          end: "2026-03-31T00:00:00.000Z",
+          label: "Finnhub earnings period 2026-03-31",
+        },
+        retrievalTime: "2026-06-29T12:00:00.000Z",
+        serverResponseTime: "2026-06-29T12:00:00.000Z",
+      },
     },
   ]);
   expect(result.news).toEqual([
@@ -133,8 +182,32 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
       id: "41",
       headline: "Apple supplier update",
       relatedSymbols: ["AAPL", "MSFT"],
+      publishedAt: "2026-06-29T11:00:00.000Z",
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+      time: {
+        observationTime: null,
+        publicationTime: "2026-06-29T11:00:00.000Z",
+        effectivePeriod: null,
+        retrievalTime: "2026-06-29T12:00:00.000Z",
+        serverResponseTime: "2026-06-29T12:00:00.000Z",
+      },
     }),
   ]);
+  expect(result.endpointTimes).toEqual({
+    profile: expect.objectContaining({
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    }),
+    earnings: expect.objectContaining({
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    }),
+    news: expect.objectContaining({
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    }),
+  });
   expect(result.sources).toHaveLength(3);
   expect(
     result.sources.find((source) => source.id === "finnhub:profile:AAPL"),
@@ -142,21 +215,66 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
     authority: "licensed_provider",
     claimStatus: "provider_record",
     category: "identity",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
   });
   expect(
     result.sources.find((source) => source.id === "finnhub:earnings:AAPL"),
-  ).toMatchObject({ claimStatus: "provider_record", category: "fundamentals" });
+  ).toMatchObject({
+    claimStatus: "provider_record",
+    category: "fundamentals",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    effectivePeriod: {
+      start: "2026-03-31T00:00:00.000Z",
+      end: "2026-03-31T00:00:00.000Z",
+      label: "Latest Finnhub earnings period 2026-03-31",
+    },
+  });
   expect(
     result.sources.find((source) => source.id === "finnhub:news:41"),
   ).toMatchObject({
     claimStatus: "media_signal",
     category: "news",
     canonicalUrl: "https://news.example/apple",
+    publishedAt: "2026-06-29T11:00:00.000Z",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
   });
   expect(JSON.stringify(result)).not.toContain("valid_key_123");
   expect(urls).toHaveLength(3);
-  await client.companyEnrichment("AAPL");
+  clock += 60_000;
+  const cached = await client.companyEnrichment("AAPL");
   expect(urls).toHaveLength(3);
+  expect(cached.retrievedAt).toBe(result.retrievedAt);
+  expect(cached.serverRespondedAt).toBe("2026-06-29T12:01:00.000Z");
+  expect(cached.asOf).toBe(cached.serverRespondedAt);
+  expect(cached.time.retrievalTime).toBe(result.retrievedAt);
+  expect(cached.time.serverResponseTime).toBe(cached.serverRespondedAt);
+  expect(cached.profile?.retrievedAt).toBe(result.profile?.retrievedAt);
+  expect(cached.profile?.serverRespondedAt).toBe(cached.serverRespondedAt);
+  expect(cached.earnings[0]?.retrievedAt).toBe(
+    result.earnings[0]?.retrievedAt,
+  );
+  expect(cached.earnings[0]?.serverRespondedAt).toBe(
+    cached.serverRespondedAt,
+  );
+  expect(cached.news[0]?.retrievedAt).toBe(result.news[0]?.retrievedAt);
+  expect(cached.news[0]?.serverRespondedAt).toBe(cached.serverRespondedAt);
+  expect(cached.endpointTimes.profile?.retrievedAt).toBe(
+    result.endpointTimes.profile?.retrievedAt,
+  );
+  expect(cached.endpointTimes.profile?.serverRespondedAt).toBe(
+    cached.serverRespondedAt,
+  );
+  expect(cached.sources.map((source) => source.contentHash)).toEqual(
+    result.sources.map((source) => source.contentHash),
+  );
+  expect(
+    cached.sources.every(
+      (source) => source.serverRespondedAt === cached.serverRespondedAt,
+    ),
+  ).toBe(true);
 });
 
 test("Finnhub preserves partial results and makes throttling explicit", async () => {
@@ -188,6 +306,20 @@ test("Finnhub preserves partial results and makes throttling explicit", async ()
     },
   });
   expect(result.profile?.name).toBe("Apple Inc");
+  expect(result.endpointTimes).toMatchObject({
+    profile: {
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    },
+    earnings: {
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    },
+    news: {
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    },
+  });
   expect(result.warnings.join(" ")).toContain("rate limited");
   expect(calls.get("/api/v1/stock/earnings")).toBe(2);
   expect(calls.get("/api/v1/company-news")).toBe(2);
@@ -213,6 +345,14 @@ test("Finnhub rejects a mismatched profile and serializes calls below the free-t
   });
   const result = await client.companyEnrichment("AAPL");
   expect(requestedAt).toEqual([100_000, 101_100, 102_200]);
+  const endpointRetrievals = Object.values(result.endpointTimes).map((item) =>
+    Date.parse(item!.retrievedAt),
+  );
+  expect(endpointRetrievals.every((value) =>
+    value >= requestedAt[0]! && value <= clock
+  )).toBe(true);
+  expect(Date.parse(result.retrievedAt!)).toBe(Math.max(...endpointRetrievals));
+  expect(result.serverRespondedAt).toBe(new Date(102_200).toISOString());
   expect(result.coverage.profile).toBe("unavailable");
   expect(result.profile).toBeNull();
   expect(result.warnings.join(" ")).toContain("no matching company profile");
