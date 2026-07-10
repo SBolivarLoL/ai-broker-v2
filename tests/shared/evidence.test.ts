@@ -53,6 +53,13 @@ test("builds deterministic canonical evidence with normalized identity and URL",
   expect(() => record({ data: { value: Number.NaN } })).toThrow("non-finite");
 });
 
+test("canonical evidence preserves an explicitly unavailable observation time", () => {
+  const evidence = record({ observedAt: null });
+  expect(evidence.observedAt).toBeNull();
+  expect(evidence.time.observationTime).toBeNull();
+  expect(evidence.retrievedAt).toBe("2026-06-29T12:00:00.000Z");
+});
+
 test("deduplicates exact evidence conservatively and records source revisions", () => {
   const original = record();
   const revision = record({

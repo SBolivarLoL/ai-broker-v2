@@ -306,7 +306,7 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       toolCalls++;
       const context = await getOfficialMacroContext();
       sources.push(...context.sources);
-      return { asOf: context.asOf, indicators: context.indicators, regime: context.regime, warnings: context.warnings, coverage: context.coverage, evidence: context.sources.map(source => ({ evidenceId: source.id, title: source.title, sourceUrl: source.url, asOf: source.asOf })) };
+      return { retrievedAt: context.retrievedAt, serverRespondedAt: context.serverRespondedAt, time: context.time, asOf: context.asOf, indicators: context.indicators, regime: context.regime, warnings: context.warnings, coverage: context.coverage, evidence: context.sources.map(source => ({ evidenceId: source.id, title: source.title, sourceUrl: source.url, retrievedAt: source.retrievedAt, serverRespondedAt: source.serverRespondedAt, time: source.time, asOf: source.asOf })) };
     },
   });
 

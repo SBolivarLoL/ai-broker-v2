@@ -3,6 +3,7 @@ import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { handleResearchRequest } from "../../backend/features/research/routes";
 import type { FinnhubCompanyEnrichment } from "../../backend/integrations/finnhub";
 import type { OpenFigiIdentity } from "../../backend/integrations/openfigi";
+import type { MacroContext } from "../../backend/integrations/macro-context";
 import { createStore } from "../../backend/persistence/store";
 import type { getCompanySecEvidence } from "../../backend/features/research/research";
 
@@ -18,6 +19,7 @@ type RouteOptions = {
   secCompanyEvidence?: (
     symbol: string,
   ) => ReturnType<typeof getCompanySecEvidence>;
+  officialMacroContext?: () => Promise<MacroContext>;
 };
 
 const route = async (
@@ -36,6 +38,7 @@ const route = async (
     finnhubCompanyEnrichment: options.finnhubCompanyEnrichment,
     openFigiIdentity: options.openFigiIdentity,
     secCompanyEvidence: options.secCompanyEvidence,
+    officialMacroContext: options.officialMacroContext,
   });
 };
 
@@ -123,6 +126,48 @@ test("SEC research route preserves provider retrieval and server response time",
     },
   );
   expect(requestedSymbol).toBe("AAPL");
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toEqual(payload);
+});
+
+test("macro research route preserves explicit unavailable retrieval time", async () => {
+  const serverRespondedAt = "2026-07-10T08:30:00.000Z";
+  const unavailableTime = {
+    retrievedAt: null,
+    serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: null,
+      serverResponseTime: serverRespondedAt,
+    },
+    asOf: serverRespondedAt,
+  } as const;
+  const payload = {
+    ...unavailableTime,
+    indicators: [],
+    regime: {
+      summary: "Official macro context is currently unavailable.",
+      dimensions: [],
+      evidence: [],
+    },
+    sources: [],
+    warnings: ["Official macro providers are temporarily unavailable."],
+    coverage: {
+      fred: { status: "missing_key", indicators: 0, ...unavailableTime },
+      treasury: { status: "unavailable", indicators: 0, ...unavailableTime },
+      bls: { status: "unavailable", indicators: 0, ...unavailableTime },
+      bea: { status: "missing_key", indicators: 0, ...unavailableTime },
+    },
+    disclosures: [],
+  } satisfies MacroContext;
+  const response = await route(
+    "/api/research/macro",
+    undefined,
+    () => true,
+    { officialMacroContext: async () => payload },
+  );
   expect(response?.status).toBe(200);
   expect(await response?.json()).toEqual(payload);
 });

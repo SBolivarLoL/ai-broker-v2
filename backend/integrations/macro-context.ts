@@ -7,24 +7,58 @@ import {
   dedupeEvidence,
   type CanonicalEvidence,
 } from "../shared/evidence";
+import {
+  normalizeIsoTime,
+  normalizeTimeProvenance,
+  type NormalizedEffectivePeriod,
+  type NormalizedTimeProvenance,
+} from "../shared/time-provenance";
 
 type FetchLike = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>;
 
-export type MacroIndicator = {
+export type MacroProvider = "fred" | "treasury" | "bls" | "bea";
+
+export type MacroProviderTime = {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
+  asOf: string;
+};
+
+export type MacroResponseTimeProvenance = Omit<
+  NormalizedTimeProvenance,
+  "retrievalTime"
+> & { retrievalTime: string | null };
+
+export type MacroResponseTime = {
+  retrievedAt: string | null;
+  serverRespondedAt: string;
+  time: MacroResponseTimeProvenance;
+  asOf: string;
+};
+
+export type MacroIndicatorValue = {
   id: string;
   label: string;
   value: number;
   unit: string;
   period: string;
-  provider: "fred" | "treasury" | "bls" | "bea";
+  provider: MacroProvider;
   evidenceId: string;
   previousValue?: number;
   change?: number;
   calculation?: string;
 };
+
+export type MacroIndicator = MacroIndicatorValue &
+  MacroProviderTime & {
+    observedAt: string | null;
+    publishedAt: string | null;
+    effectivePeriod: NormalizedEffectivePeriod | null;
+  };
 
 export type MacroRegimeDimension = {
   id: "rates" | "inflation" | "labor" | "growth" | "fiscal";
@@ -36,13 +70,12 @@ export type MacroRegimeDimension = {
 
 export type MacroCoverageStatus =
   "available" | "missing_key" | "misconfigured" | "unavailable";
-export type MacroProviderCoverage = {
+export type MacroProviderCoverage = MacroResponseTime & {
   status: MacroCoverageStatus;
   indicators: number;
 };
 export type MacroEvidence = CanonicalEvidence<unknown, "macro">;
-export type MacroContext = {
-  asOf: string;
+export type MacroContext = MacroResponseTime & {
   indicators: MacroIndicator[];
   regime: {
     summary: string;
@@ -55,11 +88,18 @@ export type MacroContext = {
   disclosures: Array<{ provider: string; text: string; url: string }>;
 };
 
-type CacheEntry = { expiresAt: number; value: unknown };
+type CacheEntry = { expiresAt: number; value: unknown; retrievedAt: string };
+type ProviderResponse<T> = { value: T; retrievedAt: string };
 type ProviderData = {
   indicators: MacroIndicator[];
   sources: MacroEvidence[];
   warnings?: string[];
+  retrievedAt: string;
+};
+type ProviderCoverageState = {
+  status: MacroCoverageStatus;
+  indicators: number;
+  retrievedAt: string | null;
 };
 
 export type MacroContextClientOptions = {
@@ -121,13 +161,135 @@ const quarterEnd = (period: string) =>
   ).toISOString();
 const unique = (values: string[]) => [...new Set(values)];
 
+const datePeriod = (date: string): NormalizedEffectivePeriod => ({
+  start: dateTime(date),
+  end: dateTime(date),
+  label: date,
+});
+const monthPeriod = (item: { year: string; period: string }) => ({
+  start: new Date(
+    Date.UTC(Number(item.year), Number(item.period.slice(1)) - 1, 1),
+  ).toISOString(),
+  end: monthEnd(item),
+  label: `${item.year}-${item.period}`,
+});
+const quarterPeriod = (period: string) => ({
+  start: new Date(
+    Date.UTC(Number(period.slice(0, 4)), (Number(period.slice(-1)) - 1) * 3, 1),
+  ).toISOString(),
+  end: quarterEnd(period),
+  label: period,
+});
+
+function providerTime(
+  retrievedAt: string,
+  serverRespondedAt: string,
+  eventTime: {
+    observedAt?: string | null;
+    publishedAt?: string | null;
+    effectivePeriod?: NormalizedEffectivePeriod | null;
+  } = {},
+): MacroProviderTime {
+  return {
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      observationTime: eventTime.observedAt ?? null,
+      publicationTime: eventTime.publishedAt ?? null,
+      effectivePeriod: eventTime.effectivePeriod ?? null,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+    asOf: serverRespondedAt,
+  };
+}
+
+function responseTime(
+  retrievedAt: string | null,
+  serverRespondedAtInput: string,
+): MacroResponseTime {
+  const serverRespondedAt = normalizeIsoTime(
+    serverRespondedAtInput,
+    "Macro server response time",
+  );
+  const time: MacroResponseTimeProvenance = retrievedAt
+    ? normalizeTimeProvenance({
+        retrievalTime: retrievedAt,
+        serverResponseTime: serverRespondedAt,
+      })
+    : {
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: null,
+        serverResponseTime: serverRespondedAt,
+      };
+  return { retrievedAt, serverRespondedAt, time, asOf: serverRespondedAt };
+}
+
+function providerCoverage(
+  value: ProviderCoverageState,
+  serverRespondedAt: string,
+): MacroProviderCoverage {
+  return {
+    status: value.status,
+    indicators: value.indicators,
+    ...responseTime(value.retrievedAt, serverRespondedAt),
+  };
+}
+
+function indicatorTime(
+  indicator: MacroIndicator,
+  serverRespondedAt: string,
+): MacroIndicator {
+  return {
+    ...indicator,
+    ...providerTime(
+      indicator.retrievedAt,
+      serverRespondedAt,
+      indicator,
+    ),
+  };
+}
+
+function macroIndicator(
+  value: MacroIndicatorValue,
+  eventTime: {
+    observedAt?: string | null;
+    publishedAt?: string | null;
+    effectivePeriod?: NormalizedEffectivePeriod | null;
+  },
+  retrievedAt: string,
+): MacroIndicator {
+  const observedAt = eventTime.observedAt ?? null;
+  const publishedAt = eventTime.publishedAt ?? null;
+  const effectivePeriod = eventTime.effectivePeriod ?? null;
+  return {
+    ...value,
+    observedAt,
+    publishedAt,
+    effectivePeriod,
+    ...providerTime(retrievedAt, retrievedAt, {
+      observedAt,
+      publishedAt,
+      effectivePeriod,
+    }),
+  };
+}
+
+function latestTime(values: string[]) {
+  const latest = values.toSorted().at(-1);
+  if (!latest) throw new Error("Macro retrieval time is unavailable");
+  return latest;
+}
+
 function directionSummary(value: number, previous: number | undefined) {
   if (previous === undefined) return "";
   const change = round(value - previous);
   return `, ${change > 0 ? "up" : change < 0 ? "down" : "unchanged"} ${Math.abs(change).toFixed(2)} from the previous observation`;
 }
 
-export function describeMacroRegime(indicators: MacroIndicator[]) {
+export function describeMacroRegime(indicators: MacroIndicatorValue[]) {
   const byId = new Map(indicators.map((item) => [item.id, item]));
   const dimensions: MacroRegimeDimension[] = [];
   const fedFunds = byId.get("effective_federal_funds_rate");
@@ -259,9 +421,14 @@ export class MacroContextClient {
       throw new Error("Macro client options are invalid");
   }
 
-  private async request(key: string, input: string, init?: RequestInit) {
+  private async request<T>(
+    key: string,
+    input: string,
+    init?: RequestInit,
+  ): Promise<ProviderResponse<T>> {
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > this.now()) return cached.value;
+    if (cached && cached.expiresAt > this.now())
+      return { value: cached.value as T, retrievedAt: cached.retrievedAt };
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
@@ -282,8 +449,13 @@ export class MacroContextClient {
           );
         }
         const value = await response.json();
-        this.cache.set(key, { value, expiresAt: this.now() + this.cacheTtlMs });
-        return value;
+        const retrievedAt = new Date(this.now()).toISOString();
+        this.cache.set(key, {
+          value,
+          expiresAt: this.now() + this.cacheTtlMs,
+          retrievedAt,
+        });
+        return { value: value as T, retrievedAt };
       } catch (error) {
         lastError = error;
         if (attempt < this.maxRetries) await this.sleep(250 * 2 ** attempt);
@@ -294,11 +466,13 @@ export class MacroContextClient {
       : new Error("Official macro provider request failed");
   }
 
-  private async treasury(retrievedAt: string): Promise<ProviderData> {
-    const payload = (await this.request(
+  private async treasury(): Promise<ProviderData> {
+    const response = await this.request<{ data?: Array<Record<string, string>> }>(
       "treasury:debt-to-penny",
       TREASURY_URL,
-    )) as { data?: Array<Record<string, string>> };
+    );
+    const payload = response.value;
+    const retrievedAt = response.retrievedAt;
     const rows = payload.data;
     if (!rows?.length)
       throw new Error("Treasury returned no debt observations");
@@ -346,46 +520,46 @@ export class MacroContextClient {
       title: "U.S. Treasury Debt to the Penny",
       url: TREASURY_URL,
       asOf: dateTime(latest.record_date),
+      observedAt: null,
+      publishedAt: dateTime(latest.record_date),
       retrievedAt,
-      effectivePeriod: {
-        start: dateTime(latest.record_date),
-        end: dateTime(latest.record_date),
-        label: latest.record_date,
-      },
+      serverRespondedAt: retrievedAt,
+      effectivePeriod: null,
       entityIds: {},
       data,
     });
     const indicators = fields.map(([id, label, field]) => {
       const value = number(latest[field]);
       const previousValue = previous ? number(previous[field]) : undefined;
-      return {
-        id,
-        label,
-        value,
-        unit: "USD",
-        period: latest.record_date,
-        provider: "treasury" as const,
-        evidenceId,
-        ...(previousValue === undefined
-          ? {}
-          : { previousValue, change: round(value - previousValue, 2) }),
-      };
+      const publishedAt = dateTime(latest.record_date);
+      return macroIndicator(
+        {
+          id,
+          label,
+          value,
+          unit: "USD",
+          period: latest.record_date,
+          provider: "treasury" as const,
+          evidenceId,
+          ...(previousValue === undefined
+            ? {}
+            : { previousValue, change: round(value - previousValue, 2) }),
+        },
+        { publishedAt },
+        retrievedAt,
+      );
     });
-    return { indicators, sources: [source] };
+    return { indicators, sources: [source], retrievedAt };
   }
 
-  private async bls(retrievedAt: string): Promise<ProviderData> {
+  private async bls(): Promise<ProviderData> {
     const year = new Date(this.now()).getUTCFullYear();
     const body = JSON.stringify({
       seriesid: ["CUUR0000SA0", "LNS14000000"],
       startyear: String(year - 2),
       endyear: String(year),
     });
-    const payload = (await this.request(`bls:${year}`, BLS_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-    })) as {
+    const response = await this.request<{
       status?: string;
       message?: string[];
       Results?: {
@@ -399,7 +573,13 @@ export class MacroContextClient {
           }>;
         }>;
       };
-    };
+    }>(`bls:${year}`, BLS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    const payload = response.value;
+    const retrievedAt = response.retrievedAt;
     if (payload.status !== "REQUEST_SUCCEEDED")
       throw new Error(
         `BLS request failed${payload.message?.length ? `: ${payload.message.join(" ")}` : ""}`,
@@ -437,11 +617,10 @@ export class MacroContextClient {
       title: "BLS CPI for All Urban Consumers: All Items",
       url: BLS_URL,
       asOf: monthEnd(latestCpi),
+      observedAt: null,
       retrievedAt,
-      effectivePeriod: {
-        end: monthEnd(latestCpi),
-        label: `${latestCpi.year}-${latestCpi.period}`,
-      },
+      serverRespondedAt: retrievedAt,
+      effectivePeriod: monthPeriod(latestCpi),
       entityIds: {},
       data: {
         seriesId: "CUUR0000SA0",
@@ -461,11 +640,10 @@ export class MacroContextClient {
       title: "BLS unemployment rate",
       url: BLS_URL,
       asOf: monthEnd(latestLabor),
+      observedAt: null,
       retrievedAt,
-      effectivePeriod: {
-        end: monthEnd(latestLabor),
-        label: `${latestLabor.year}-${latestLabor.period}`,
-      },
+      serverRespondedAt: retrievedAt,
+      effectivePeriod: monthPeriod(latestLabor),
       entityIds: {},
       data: {
         seriesId: "LNS14000000",
@@ -478,40 +656,51 @@ export class MacroContextClient {
     const previousUnemployment = previousLabor
       ? number(previousLabor.value)
       : undefined;
+    const cpiEffectivePeriod = monthPeriod(latestCpi);
+    const laborEffectivePeriod = monthPeriod(latestLabor);
     return {
       indicators: [
-        {
-          id: "cpi_all_items_yoy",
-          label: "CPI all items, year over year",
-          value: round((cpiValue / cpiYearAgo - 1) * 100),
-          unit: "%",
-          period: `${latestCpi.periodName} ${latestCpi.year}`,
-          provider: "bls",
-          evidenceId: cpiEvidenceId,
-          calculation:
-            "Calculated from official BLS latest and year-ago CPI index values.",
-        },
-        {
-          id: "unemployment_rate",
-          label: "Unemployment rate",
-          value: unemployment,
-          unit: "%",
-          period: `${latestLabor.periodName} ${latestLabor.year}`,
-          provider: "bls",
-          evidenceId: laborEvidenceId,
-          ...(previousUnemployment === undefined
-            ? {}
-            : {
-                previousValue: previousUnemployment,
-                change: round(unemployment - previousUnemployment),
-              }),
-        },
+        macroIndicator(
+          {
+            id: "cpi_all_items_yoy",
+            label: "CPI all items, year over year",
+            value: round((cpiValue / cpiYearAgo - 1) * 100),
+            unit: "%",
+            period: `${latestCpi.periodName} ${latestCpi.year}`,
+            provider: "bls",
+            evidenceId: cpiEvidenceId,
+            calculation:
+              "Calculated from official BLS latest and year-ago CPI index values.",
+          },
+          { effectivePeriod: cpiEffectivePeriod },
+          retrievedAt,
+        ),
+        macroIndicator(
+          {
+            id: "unemployment_rate",
+            label: "Unemployment rate",
+            value: unemployment,
+            unit: "%",
+            period: `${latestLabor.periodName} ${latestLabor.year}`,
+            provider: "bls",
+            evidenceId: laborEvidenceId,
+            ...(previousUnemployment === undefined
+              ? {}
+              : {
+                  previousValue: previousUnemployment,
+                  change: round(unemployment - previousUnemployment),
+                }),
+          },
+          { effectivePeriod: laborEffectivePeriod },
+          retrievedAt,
+        ),
       ],
       sources: [cpiSource, laborSource],
+      retrievedAt,
     };
   }
 
-  private async fred(retrievedAt: string, key: string): Promise<ProviderData> {
+  private async fred(key: string): Promise<ProviderData> {
     const definitions = [
       [
         "DFF",
@@ -535,10 +724,14 @@ export class MacroContextClient {
     const settled = await Promise.allSettled(
       definitions.map(async ([seriesId, id, label, unit]) => {
         const publicUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&file_type=json&sort_order=desc&limit=4`;
-        const payload = (await this.request(
+        const response = await this.request<{
+          observations?: Array<{ date: string; value: string }>;
+        }>(
           `fred:${seriesId}`,
           `${publicUrl}&api_key=${encodeURIComponent(key)}`,
-        )) as { observations?: Array<{ date: string; value: string }> };
+        );
+        const payload = response.value;
+        const retrievedAt = response.retrievedAt;
         const observations = (payload.observations ?? []).filter((item) =>
           Number.isFinite(Number(item.value)),
         );
@@ -559,28 +752,31 @@ export class MacroContextClient {
           title: `FRED ${label}`,
           url: publicUrl,
           asOf: dateTime(latest.date),
+          observedAt: dateTime(latest.date),
           retrievedAt,
-          effectivePeriod: {
-            start: dateTime(latest.date),
-            end: dateTime(latest.date),
-            label: latest.date,
-          },
+          serverRespondedAt: retrievedAt,
+          effectivePeriod: datePeriod(latest.date),
           entityIds: {},
           data: { seriesId, latest, previous: previous ?? null },
         });
-        const indicator: MacroIndicator = {
-          id,
-          label,
-          value,
-          unit,
-          period: latest.date,
-          provider: "fred",
-          evidenceId,
-          ...(previousValue === undefined
-            ? {}
-            : { previousValue, change: round(value - previousValue) }),
-        };
-        return { source, indicator };
+        const effectivePeriod = datePeriod(latest.date);
+        const indicator = macroIndicator(
+          {
+            id,
+            label,
+            value,
+            unit,
+            period: latest.date,
+            provider: "fred",
+            evidenceId,
+            ...(previousValue === undefined
+              ? {}
+              : { previousValue, change: round(value - previousValue) }),
+          },
+          { observedAt: dateTime(latest.date), effectivePeriod },
+          retrievedAt,
+        );
+        return { source, indicator, retrievedAt };
       }),
     );
     const indicators: MacroIndicator[] = [];
@@ -597,13 +793,19 @@ export class MacroContextClient {
     });
     if (!indicators.length)
       throw new Error("FRED returned no rate observations");
-    return { indicators, sources, warnings };
+    return {
+      indicators,
+      sources,
+      warnings,
+      retrievedAt: latestTime(
+        settled.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value.retrievedAt] : [],
+        ),
+      ),
+    };
   }
 
-  private async bea(
-    retrievedAt: string,
-    userId: string,
-  ): Promise<ProviderData> {
+  private async bea(userId: string): Promise<ProviderData> {
     const year = new Date(this.now()).getUTCFullYear();
     const publicParams = new URLSearchParams({
       method: "GetData",
@@ -614,10 +816,7 @@ export class MacroContextClient {
       ResultFormat: "JSON",
     });
     const publicUrl = `https://apps.bea.gov/api/data?${publicParams}`;
-    const payload = (await this.request(
-      `bea:gdp:${year}`,
-      `${publicUrl}&UserID=${encodeURIComponent(userId)}`,
-    )) as {
+    const response = await this.request<{
       BEAAPI?: {
         Results?: {
           Data?: Array<{
@@ -631,7 +830,12 @@ export class MacroContextClient {
           Error?: { APIErrorDescription?: string };
         };
       };
-    };
+    }>(
+      `bea:gdp:${year}`,
+      `${publicUrl}&UserID=${encodeURIComponent(userId)}`,
+    );
+    const payload = response.value;
+    const retrievedAt = response.retrievedAt;
     const results = payload.BEAAPI?.Results;
     if (results?.Error)
       throw new Error(
@@ -668,11 +872,10 @@ export class MacroContextClient {
       title: "BEA percent change from preceding period in real GDP",
       url: publicUrl,
       asOf: quarterEnd(latest.TimePeriod),
+      observedAt: null,
       retrievedAt,
-      effectivePeriod: {
-        end: quarterEnd(latest.TimePeriod),
-        label: latest.TimePeriod,
-      },
+      serverRespondedAt: retrievedAt,
+      effectivePeriod: quarterPeriod(latest.TimePeriod),
       entityIds: {},
       data: {
         dataset: "NIPA",
@@ -682,47 +885,52 @@ export class MacroContextClient {
         previous: previous ?? null,
       },
     });
+    const effectivePeriod = quarterPeriod(latest.TimePeriod);
     return {
       indicators: [
-        {
-          id: "real_gdp_qoq_annualized",
-          label: "Real GDP change from preceding quarter",
-          value,
-          unit: "% annual rate",
-          period: latest.TimePeriod,
-          provider: "bea",
-          evidenceId,
-          ...(previousValue === undefined
-            ? {}
-            : { previousValue, change: round(value - previousValue) }),
-        },
+        macroIndicator(
+          {
+            id: "real_gdp_qoq_annualized",
+            label: "Real GDP change from preceding quarter",
+            value,
+            unit: "% annual rate",
+            period: latest.TimePeriod,
+            provider: "bea",
+            evidenceId,
+            ...(previousValue === undefined
+              ? {}
+              : { previousValue, change: round(value - previousValue) }),
+          },
+          { effectivePeriod },
+          retrievedAt,
+        ),
       ],
       sources: [source],
+      retrievedAt,
     };
   }
 
   async context(): Promise<MacroContext> {
-    const retrievedAt = new Date(this.now()).toISOString();
-    const coverage: MacroContext["coverage"] = {
-      fred: { status: "missing_key", indicators: 0 },
-      treasury: { status: "unavailable", indicators: 0 },
-      bls: { status: "unavailable", indicators: 0 },
-      bea: { status: "missing_key", indicators: 0 },
+    const coverageState: Record<MacroProvider, ProviderCoverageState> = {
+      fred: { status: "missing_key", indicators: 0, retrievedAt: null },
+      treasury: { status: "unavailable", indicators: 0, retrievedAt: null },
+      bls: { status: "unavailable", indicators: 0, retrievedAt: null },
+      bea: { status: "missing_key", indicators: 0, retrievedAt: null },
     };
     const warnings: string[] = [];
     const tasks: Array<{
-      provider: keyof MacroContext["coverage"];
+      provider: MacroProvider;
       run: Promise<ProviderData>;
     }> = [
-      { provider: "treasury", run: this.treasury(retrievedAt) },
-      { provider: "bls", run: this.bls(retrievedAt) },
+      { provider: "treasury", run: this.treasury() },
+      { provider: "bls", run: this.bls() },
     ];
     const fredKey = this.env.FRED_API_KEY?.trim() ?? "";
     if (fredKey) {
       if (/^[a-z0-9]{32}$/.test(fredKey))
-        tasks.push({ provider: "fred", run: this.fred(retrievedAt, fredKey) });
+        tasks.push({ provider: "fred", run: this.fred(fredKey) });
       else {
-        coverage.fred.status = "misconfigured";
+        coverageState.fred.status = "misconfigured";
         warnings.push(
           "FRED coverage is unavailable because FRED_API_KEY must be a 32-character lowercase alphanumeric key.",
         );
@@ -734,9 +942,9 @@ export class MacroContextClient {
     const beaUserId = this.env.BEA_USER_ID?.trim() ?? "";
     if (beaUserId) {
       if (beaUserId.length === 36)
-        tasks.push({ provider: "bea", run: this.bea(retrievedAt, beaUserId) });
+        tasks.push({ provider: "bea", run: this.bea(beaUserId) });
       else {
-        coverage.bea.status = "misconfigured";
+        coverageState.bea.status = "misconfigured";
         warnings.push(
           "BEA growth coverage is unavailable because BEA_USER_ID must be 36 characters.",
         );
@@ -748,18 +956,25 @@ export class MacroContextClient {
     const settled = await Promise.allSettled(tasks.map((task) => task.run));
     const indicators: MacroIndicator[] = [];
     const sources: MacroEvidence[] = [];
+    const retrievalTimes: string[] = [];
     settled.forEach((result, index) => {
       const provider = tasks[index]!.provider;
       if (result.status === "fulfilled") {
         indicators.push(...result.value.indicators);
         sources.push(...result.value.sources);
         warnings.push(...(result.value.warnings ?? []));
-        coverage[provider] = {
+        retrievalTimes.push(result.value.retrievedAt);
+        coverageState[provider] = {
           status: "available",
           indicators: result.value.indicators.length,
+          retrievedAt: result.value.retrievedAt,
         };
       } else {
-        coverage[provider] = { status: "unavailable", indicators: 0 };
+        coverageState[provider] = {
+          status: "unavailable",
+          indicators: 0,
+          retrievedAt: null,
+        };
         warnings.push(
           `${provider === "bea" ? "BEA" : provider === "bls" ? "BLS" : provider === "fred" ? "FRED" : "Treasury Fiscal Data"} is temporarily unavailable.`,
         );
@@ -770,11 +985,29 @@ export class MacroContextClient {
       (a, b) =>
         a.provider.localeCompare(b.provider) || a.label.localeCompare(b.label),
     );
+    const serverRespondedAt = new Date(this.now()).toISOString();
+    const responseIndicators = indicators.map((indicator) =>
+      indicatorTime(indicator, serverRespondedAt),
+    );
+    const responseSources = deduped.records.map((source) => ({
+      ...source,
+      serverRespondedAt,
+      time: { ...source.time, serverResponseTime: serverRespondedAt },
+    }));
+    const coverage: MacroContext["coverage"] = {
+      fred: providerCoverage(coverageState.fred, serverRespondedAt),
+      treasury: providerCoverage(coverageState.treasury, serverRespondedAt),
+      bls: providerCoverage(coverageState.bls, serverRespondedAt),
+      bea: providerCoverage(coverageState.bea, serverRespondedAt),
+    };
+    const retrievedAt = retrievalTimes.length
+      ? latestTime(retrievalTimes)
+      : null;
     return {
-      asOf: retrievedAt,
-      indicators,
-      regime: describeMacroRegime(indicators),
-      sources: deduped.records,
+      ...responseTime(retrievedAt, serverRespondedAt),
+      indicators: responseIndicators,
+      regime: describeMacroRegime(responseIndicators),
+      sources: responseSources,
       warnings: unique(warnings),
       coverage,
       disclosures: [

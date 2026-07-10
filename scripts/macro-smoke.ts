@@ -22,10 +22,34 @@ if (
   )
 )
   throw new Error("Macro regime cites unknown evidence");
+const validResponseTime = (value: {
+  retrievedAt: string | null;
+  serverRespondedAt: string;
+  time: { retrievalTime: string | null; serverResponseTime: string };
+  asOf: string;
+}) =>
+  value.time.retrievalTime === value.retrievedAt &&
+  value.time.serverResponseTime === value.serverRespondedAt &&
+  value.asOf === value.serverRespondedAt;
+if (
+  !context.retrievedAt ||
+  !validResponseTime(context) ||
+  !Object.values(context.coverage).every(validResponseTime) ||
+  !context.indicators.every(validResponseTime) ||
+  context.sources.some(
+    (source) =>
+      source.time.retrievalTime !== source.retrievedAt ||
+      source.time.serverResponseTime !== source.serverRespondedAt,
+  )
+)
+  throw new Error("Macro time provenance is incomplete");
 
 console.log(
   JSON.stringify(
     {
+      retrievedAt: context.retrievedAt,
+      serverRespondedAt: context.serverRespondedAt,
+      time: context.time,
       asOf: context.asOf,
       coverage: context.coverage,
       indicators: context.indicators.map((item) => ({
@@ -34,6 +58,13 @@ console.log(
         unit: item.unit,
         period: item.period,
         evidenceId: item.evidenceId,
+        observedAt: item.observedAt,
+        publishedAt: item.publishedAt,
+        effectivePeriod: item.effectivePeriod,
+        retrievedAt: item.retrievedAt,
+        serverRespondedAt: item.serverRespondedAt,
+        time: item.time,
+        asOf: item.asOf,
       })),
       regime: context.regime.summary,
       warnings: context.warnings,
