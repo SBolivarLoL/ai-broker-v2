@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `d188e0c` on 2026-07-10.
+Code baseline reviewed: `main` at `7489097` on 2026-07-10.
 
 ## Quick start
 
@@ -47,7 +47,7 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 - Alpaca paper account, positions, orders, activities, watchlists, market clock, calendar, IEX market data, single-symbol quotes, market monitoring, company-market snapshots, market workspace discovery/session DTOs, and entitled multi-asset market snapshots with explicit observation/retrieval/server-response provenance where migrated.
 - Signed equity, linked, basket, short, option, and crypto paper-order previews with fresh-state confirmation, idempotency, receipts, and global operations policy.
 - Portfolio performance, FIFO ledger, risk, exposure, scenarios, optimizer proposals, and constrained rebalance planning.
-- SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks with canonical source/time provenance. GDELT and Finnhub provider DTOs preserve applicable publication/effective-period, retrieval, and server-response time; unqueried optional-provider states expose retrieval as unavailable.
+- SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks with canonical source/time provenance. GDELT, Finnhub, and OpenFIGI provider DTOs preserve applicable publication/effective-period, retrieval, and server-response time; unqueried optional-provider states expose retrieval as unavailable.
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
 - Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered bounded paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, promotion evidence gates, and reports.
 - SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, a source/output governance registry, and local provider/dataset quality reporting.

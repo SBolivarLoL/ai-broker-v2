@@ -212,7 +212,7 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       const data = {
         symbol, companyName: asset.name ?? symbol, currentPrice: price, oneYearReturnPercent: (closes.at(-1)! / closes[0]! - 1) * 100,
         annualizedVolatilityPercent: risk.annualizedVolatility, maxDrawdownPercent: -risk.maxDrawdown, fiftyTwoWeekHigh: Math.max(...closes), fiftyTwoWeekLow: Math.min(...closes),
-        identity: { status: identity.status, matchQuality: identity.matchQuality, canonicalFigi: identity.canonicalFigi, selected: identity.selected, candidateCount: identity.candidateCount, warnings: identity.warnings, evidenceId: identity.sources[0]?.id ?? null },
+        identity: { status: identity.status, keyStatus: identity.keyStatus, matchQuality: identity.matchQuality, canonicalFigi: identity.canonicalFigi, selected: identity.selected, candidateCount: identity.candidateCount, warnings: identity.warnings, retrievedAt: identity.retrievedAt, serverRespondedAt: identity.serverRespondedAt, time: identity.time, asOf: identity.asOf, evidenceId: identity.sources[0]?.id ?? null },
       };
       const asOf = new Date().toISOString();
       sources.push(...identity.sources);

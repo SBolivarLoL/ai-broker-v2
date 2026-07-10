@@ -3,6 +3,11 @@
  * anonymous request pacing, coalescing, retries, and provenance.
  */
 import { canonicalEvidence, type CanonicalEvidence } from "../shared/evidence";
+import {
+  normalizeIsoTime,
+  normalizeTimeProvenance,
+  type NormalizedTimeProvenance,
+} from "../shared/time-provenance";
 
 type FetchLike = (
   input: string | URL | Request,
@@ -13,7 +18,13 @@ type OpenFigiStatus =
 export type OpenFigiKeyStatus =
   "anonymous" | "configured" | "misconfigured" | "rejected";
 
-export type OpenFigiInstrument = {
+type OpenFigiProviderTime = {
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
+};
+
+type OpenFigiInstrumentRecord = {
   figi: string;
   compositeFigi: string | null;
   shareClassFigi: string | null;
@@ -25,6 +36,8 @@ export type OpenFigiInstrument = {
   securityType2: string | null;
   description: string | null;
 };
+export type OpenFigiInstrument = OpenFigiInstrumentRecord &
+  OpenFigiProviderTime;
 
 export type OpenFigiIdentity = {
   symbol: string;
@@ -38,6 +51,9 @@ export type OpenFigiIdentity = {
   candidateCount: number;
   sources: Array<CanonicalEvidence<unknown, "identity">>;
   warnings: string[];
+  retrievedAt: string;
+  serverRespondedAt: string;
+  time: NormalizedTimeProvenance;
   asOf: string;
 };
 
@@ -81,6 +97,58 @@ const figi = (value: unknown) => {
 };
 const unique = (values: string[]) => [...new Set(values)];
 
+function providerTime(
+  retrievedAt: string,
+  serverRespondedAt: string,
+): OpenFigiProviderTime {
+  return {
+    retrievedAt,
+    serverRespondedAt,
+    time: normalizeTimeProvenance({
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+  };
+}
+
+function instrumentDto(
+  value: OpenFigiInstrumentRecord,
+  retrievedAt: string,
+  serverRespondedAt: string,
+): OpenFigiInstrument {
+  return {
+    ...value,
+    ...providerTime(retrievedAt, serverRespondedAt),
+  };
+}
+
+function withServerResponseTime(
+  value: OpenFigiIdentity,
+  serverRespondedAt: string,
+): OpenFigiIdentity {
+  const responseAt = normalizeIsoTime(
+    serverRespondedAt,
+    "OpenFIGI server response time",
+  );
+  return {
+    ...value,
+    asOf: responseAt,
+    serverRespondedAt: responseAt,
+    time: providerTime(value.retrievedAt, responseAt).time,
+    selected: value.selected
+      ? instrumentDto(value.selected, value.selected.retrievedAt, responseAt)
+      : null,
+    candidates: value.candidates.map((candidate) =>
+      instrumentDto(candidate, candidate.retrievedAt, responseAt),
+    ),
+    sources: value.sources.map((source) => ({
+      ...source,
+      serverRespondedAt: responseAt,
+      time: { ...source.time, serverResponseTime: responseAt },
+    })),
+  };
+}
+
 function companyKey(value: string) {
   return cleanText(value, 200)
     .toLowerCase()
@@ -110,7 +178,10 @@ function namesMatch(companyName: string, candidateName: string) {
   );
 }
 
-function instrument(raw: unknown, symbol: string): OpenFigiInstrument | null {
+function instrument(
+  raw: unknown,
+  symbol: string,
+): OpenFigiInstrumentRecord | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const item = raw as Record<string, unknown>;
   const primaryFigi = figi(item.figi);
@@ -140,8 +211,8 @@ function instrument(raw: unknown, symbol: string): OpenFigiInstrument | null {
   };
 }
 
-function collapseCandidates(values: OpenFigiInstrument[]) {
-  const grouped = new Map<string, OpenFigiInstrument>();
+function collapseCandidates(values: OpenFigiInstrumentRecord[]) {
+  const grouped = new Map<string, OpenFigiInstrumentRecord>();
   for (const value of values) {
     const key = value.compositeFigi ?? value.figi;
     const current = grouped.get(key);
@@ -153,7 +224,7 @@ function collapseCandidates(values: OpenFigiInstrument[]) {
 }
 
 function selectedCandidate(
-  candidates: OpenFigiInstrument[],
+  candidates: OpenFigiInstrumentRecord[],
   companyName: string,
 ) {
   if (candidates.length === 1)
@@ -317,7 +388,12 @@ export class OpenFigiClient {
     const cacheKey = `${symbol}:${companyKey(companyName)}:${keyStatus}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > this.now())
-      return Promise.resolve(cached.value);
+      return Promise.resolve(
+        withServerResponseTime(
+          cached.value,
+          new Date(this.now()).toISOString(),
+        ),
+      );
     const active = this.inflight.get(cacheKey);
     if (active) return active;
     const request = (async () => {
@@ -329,7 +405,7 @@ export class OpenFigiClient {
           : [];
       try {
         const payload = await this.request(symbol, apiKey);
-        const asOf = new Date(this.now()).toISOString();
+        const retrievedAt = new Date(this.now()).toISOString();
         if (
           !Array.isArray(payload) ||
           payload.length !== 1 ||
@@ -350,10 +426,12 @@ export class OpenFigiClient {
           ? result.data
               .slice(0, 100)
               .map((value) => instrument(value, symbol))
-              .filter((value): value is OpenFigiInstrument => Boolean(value))
+              .filter((value): value is OpenFigiInstrumentRecord =>
+                Boolean(value),
+              )
           : [];
         const allCandidates = collapseCandidates(rawCandidates);
-        const candidates = allCandidates.slice(0, 8);
+        const candidateRecords = allCandidates.slice(0, 8);
         const choice = selectedCandidate(allCandidates, companyName);
         const status: OpenFigiStatus = choice.selected
           ? "matched"
@@ -377,10 +455,17 @@ export class OpenFigiClient {
           warnings.push(
             "OpenFIGI returned one constrained candidate, but its company name did not independently match the Alpaca name.",
           );
-        if (allCandidates.length > candidates.length)
+        if (allCandidates.length > candidateRecords.length)
           warnings.push(
-            `Only the first ${candidates.length} OpenFIGI candidates are displayed.`,
+            `Only the first ${candidateRecords.length} OpenFIGI candidates are displayed.`,
           );
+        const serverRespondedAt = new Date(this.now()).toISOString();
+        const selected = choice.selected
+          ? instrumentDto(choice.selected, retrievedAt, serverRespondedAt)
+          : null;
+        const candidates = candidateRecords.map((candidate) =>
+          instrumentDto(candidate, retrievedAt, serverRespondedAt),
+        );
         const data = {
           request: {
             idType: "TICKER",
@@ -392,7 +477,7 @@ export class OpenFigiClient {
           matchQuality: choice.matchQuality,
           canonicalFigi,
           selected: choice.selected,
-          candidates,
+          candidates: candidateRecords,
           candidateCount: allCandidates.length,
           providerWarning: cleanText(result.warning, 300) || null,
         };
@@ -405,8 +490,9 @@ export class OpenFigiClient {
           claimStatus: "official_record",
           title: `${symbol} OpenFIGI identity mapping`,
           url: API_URL,
-          asOf,
-          retrievedAt: asOf,
+          asOf: retrievedAt,
+          retrievedAt,
+          serverRespondedAt,
           entityIds: {
             symbol,
             ...(canonicalFigi ? { figi: canonicalFigi } : {}),
@@ -420,12 +506,15 @@ export class OpenFigiClient {
           keyStatus,
           matchQuality: choice.matchQuality,
           canonicalFigi,
-          selected: choice.selected,
+          selected,
           candidates,
           candidateCount: allCandidates.length,
           sources: [source],
           warnings: unique(warnings),
-          asOf,
+          retrievedAt,
+          serverRespondedAt,
+          time: providerTime(retrievedAt, serverRespondedAt).time,
+          asOf: serverRespondedAt,
         };
         this.cache.set(cacheKey, {
           value,
@@ -433,7 +522,8 @@ export class OpenFigiClient {
         });
         return value;
       } catch (error) {
-        const asOf = new Date(this.now()).toISOString();
+        const retrievedAt = new Date(this.now()).toISOString();
+        const serverRespondedAt = new Date(this.now()).toISOString();
         const rateLimited =
           error instanceof OpenFigiHttpError && error.status === 429;
         const rejected =
@@ -449,7 +539,10 @@ export class OpenFigiClient {
           candidates: [],
           candidateCount: 0,
           sources: [],
-          asOf,
+          retrievedAt,
+          serverRespondedAt,
+          time: providerTime(retrievedAt, serverRespondedAt).time,
+          asOf: serverRespondedAt,
           warnings: unique([
             ...baseWarnings,
             rejected
