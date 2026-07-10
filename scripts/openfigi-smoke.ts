@@ -1,6 +1,13 @@
 import { getOpenFigiIdentity } from "../backend/integrations/openfigi";
 
 const result = await getOpenFigiIdentity("AAPL", "Apple Inc. Common Stock");
+if (
+  !result.retrievedAt ||
+  !result.serverRespondedAt ||
+  result.time.retrievalTime !== result.retrievedAt ||
+  result.time.serverResponseTime !== result.serverRespondedAt
+)
+  throw new Error("OpenFIGI root time provenance is incomplete");
 if (result.status === "matched") {
   if (!result.canonicalFigi || result.selected?.ticker !== "AAPL")
     throw new Error("OpenFIGI selected identity is invalid");
@@ -17,6 +24,16 @@ if (result.status === "matched") {
     result.sources[0]?.category !== "identity"
   )
     throw new Error("OpenFIGI evidence trust labels are invalid");
+  if (
+    result.selected?.retrievedAt !== result.retrievedAt ||
+    result.selected.serverRespondedAt !== result.serverRespondedAt ||
+    result.candidates.some(
+      (candidate) =>
+        candidate.retrievedAt !== result.retrievedAt ||
+        candidate.serverRespondedAt !== result.serverRespondedAt,
+    )
+  )
+    throw new Error("OpenFIGI instrument time provenance is incomplete");
 } else if (
   result.status !== "rate_limited" ||
   result.selected ||
@@ -45,6 +62,8 @@ console.log(
       candidates: result.candidateCount,
       evidence: result.sources.length,
       warnings: result.warnings,
+      retrievedAt: result.retrievedAt,
+      serverRespondedAt: result.serverRespondedAt,
       asOf: result.asOf,
     },
     null,

@@ -17,9 +17,10 @@ const apple = {
 
 test("OpenFIGI maps a constrained public ticker job into canonical identity evidence", async () => {
   let calls = 0;
+  let clock = now;
   const client = new OpenFigiClient({
     env: {},
-    now: () => now,
+    now: () => clock,
     minIntervalMs: 0,
     fetchImpl: async (input, init) => {
       calls++;
@@ -45,11 +46,35 @@ test("OpenFIGI maps a constrained public ticker job into canonical identity evid
     matchQuality: "company_name_confirmed",
     canonicalFigi: "BBG000B9XRY4",
     candidateCount: 1,
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    asOf: "2026-06-29T12:00:00.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
+    },
   });
   expect(result.selected).toMatchObject({
     figi: "BBG000B9XRY4",
     name: "APPLE INC",
     securityType2: "Common Stock",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
+    },
+  });
+  expect(result.candidates[0]).toMatchObject({
+    figi: "BBG000B9XRY4",
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
   });
   expect(result.sources).toEqual([
     expect.objectContaining({
@@ -58,10 +83,31 @@ test("OpenFIGI maps a constrained public ticker job into canonical identity evid
       authority: "official",
       claimStatus: "official_record",
       entityIds: { symbol: "AAPL", figi: "BBG000B9XRY4" },
+      retrievedAt: "2026-06-29T12:00:00.000Z",
+      serverRespondedAt: "2026-06-29T12:00:00.000Z",
     }),
   ]);
-  await client.mapIdentity("AAPL", "Apple Inc. Common Stock");
+  clock += 60_000;
+  const cached = await client.mapIdentity("AAPL", "Apple Inc. Common Stock");
   expect(calls).toBe(1);
+  expect(cached.retrievedAt).toBe(result.retrievedAt);
+  expect(cached.serverRespondedAt).toBe("2026-06-29T12:01:00.000Z");
+  expect(cached.asOf).toBe(cached.serverRespondedAt);
+  expect(cached.time.retrievalTime).toBe(result.retrievedAt);
+  expect(cached.time.serverResponseTime).toBe(cached.serverRespondedAt);
+  expect(cached.selected?.retrievedAt).toBe(result.selected?.retrievedAt);
+  expect(cached.selected?.serverRespondedAt).toBe(cached.serverRespondedAt);
+  expect(cached.candidates[0]?.retrievedAt).toBe(
+    result.candidates[0]?.retrievedAt,
+  );
+  expect(cached.candidates[0]?.serverRespondedAt).toBe(
+    cached.serverRespondedAt,
+  );
+  expect(cached.sources[0]?.contentHash).toBe(result.sources[0]?.contentHash);
+  expect(cached.sources[0]?.retrievedAt).toBe(result.sources[0]?.retrievedAt);
+  expect(cached.sources[0]?.serverRespondedAt).toBe(
+    cached.serverRespondedAt,
+  );
 });
 
 test("OpenFIGI sends a valid optional key only in the request header", async () => {
@@ -131,9 +177,10 @@ test("OpenFIGI treats a v3 warning as a sourced no-match outcome", async () => {
 
 test("OpenFIGI retries and caches explicit rate-limit coverage loss", async () => {
   let calls = 0;
+  let clock = now;
   const client = new OpenFigiClient({
     env: {},
-    now: () => now,
+    now: () => clock,
     minIntervalMs: 0,
     sleep: async () => {},
     fetchImpl: async () => {
@@ -149,12 +196,26 @@ test("OpenFIGI retries and caches explicit rate-limit coverage loss", async () =
     status: "rate_limited",
     selected: null,
     sources: [],
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    asOf: "2026-06-29T12:00:00.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:00.000Z",
+    },
   });
   expect(result.warnings[0]).toContain(
     "no ticker-to-FIGI join should be assumed",
   );
-  await client.mapIdentity("AAPL", "Apple Inc.");
+  clock += 30_000;
+  const cached = await client.mapIdentity("AAPL", "Apple Inc.");
   expect(calls).toBe(2);
+  expect(cached.retrievedAt).toBe(result.retrievedAt);
+  expect(cached.serverRespondedAt).toBe("2026-06-29T12:00:30.000Z");
+  expect(cached.time.serverResponseTime).toBe(cached.serverRespondedAt);
 });
 
 test("OpenFIGI serializes public mapping calls below the anonymous limit", async () => {

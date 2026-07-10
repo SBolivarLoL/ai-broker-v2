@@ -6,7 +6,10 @@ import {
 } from "../../integrations/finnhub";
 import { getGdeltCompanySignals } from "../../integrations/gdelt";
 import { getOfficialMacroContext } from "../../integrations/macro-context";
-import { getOpenFigiIdentity } from "../../integrations/openfigi";
+import {
+  getOpenFigiIdentity,
+  type OpenFigiIdentity,
+} from "../../integrations/openfigi";
 import type { createStore } from "../../persistence/store";
 import {
   appendTradeJournalReview,
@@ -43,6 +46,10 @@ type ResearchContext = {
   finnhubCompanyEnrichment?: (
     symbol: string,
   ) => Promise<FinnhubCompanyEnrichment>;
+  openFigiIdentity?: (
+    symbol: string,
+    companyName: string,
+  ) => Promise<OpenFigiIdentity>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -339,7 +346,12 @@ export async function handleResearchRequest(
     const asset = await alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
       symbolOrAssetId: symbol,
     });
-    return json(await getOpenFigiIdentity(symbol, asset.name ?? symbol));
+    return json(
+      await (context.openFigiIdentity ?? getOpenFigiIdentity)(
+        symbol,
+        asset.name ?? symbol,
+      ),
+    );
   }
 
   if (
