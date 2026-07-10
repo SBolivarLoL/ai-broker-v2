@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `5e16347`: 2026-07-10.
+Last reviewed against `main` commit `d188e0c`: 2026-07-10.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -177,6 +177,8 @@ Treat a backtest as a screening tool. A stored hash proves which input was used,
 Compare cohorts with `POST /api/strategy/backtests/compare` and 2-20 immutable `backtestIds`. The comparison report is compatible only when every selected artifact has the same period, symbols, timeframe, dataset hash, friction model, baseline set, code/provider identity, and feed. Mixed evidence still returns rows and warnings, but `compatible:false` prevents treating the metrics as an apples-to-apples ranking.
 
 The browser retains recent backtest IDs and accepts one ID per line in its comparison control. It displays the compatibility verdict, named warnings, return/drawdown/turnover/Sortino/Calmar metrics, modeled costs, and capacity warnings. Aligned cohort charts and richer promotion-blocker visualization remain roadmap work.
+
+In the workstation layout, experiment inputs stay in a compact left control column while return, benchmark, drawdown, exposure, equity-curve, trade/capacity, cost, and uncertainty evidence occupy the wider review column. The layout collapses to one column at tablet/mobile widths without hiding evidence.
 
 The selection objective is fixed: highest train total return, then lower train drawdown, lower train turnover, and candidate hash. This is reproducible, not automatically statistically sound. Test-fold results never influence selection within that fold, but repeated human edits after seeing test output still contaminate the experiment.
 

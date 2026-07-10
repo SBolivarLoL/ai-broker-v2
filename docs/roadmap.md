@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `5e16347`: 2026-07-10.
+Last reviewed against `main` commit `d188e0c`: 2026-07-10.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -107,7 +107,7 @@ Exit gate: a decision can be replayed from stored, time-correct inputs, and prov
 2. [ ] Expand the implemented backtest comparison control into an experiment workspace with aligned equity/drawdown charts, out-of-sample bands, decision counts, and promotion blockers. The current browser accepts recent immutable backtest IDs and shows compatibility, warnings, costs, capacity evidence, and core metrics.
 3. [ ] Extend the persistent global data-health status and provider/dataset drawer with calculation-level expected/received/omitted/freshness/impact evidence in every workspace. Options now reports quote/IV/Greek coverage explicitly, but not every report has equivalent detail.
 4. [ ] Finish a shared visual vocabulary for loading, partial-data, empty, rate-limited, stale, blocked, and retry states. Live announcements, partial option coverage, protocol blockers, and lazy Research loading are implemented, but remaining workspace cards are not fully normalized.
-5. [ ] Continue improving dense mobile tables without hiding risk evidence. Navigation and the Strategy Lab layout now adapt at 1440, 768, and 390 CSS pixels without horizontal page overflow; large result sets still need targeted table treatment and the existing option-chain render cap.
+5. [ ] Continue improving dense mobile tables without hiding risk evidence. The selected dark workstation system now uses a persistent labeled desktop rail, compact tablet rail, active-item-centered horizontal mobile navigation, sticky evidence/status surfaces, and one-column mobile Strategy Lab layout. It adapts at 1440, 768, and 390 CSS pixels without horizontal page overflow; large result sets still need targeted table treatment and the existing option-chain render cap.
 6. [ ] Add maintained keyboard/focus regression automation for navigation, modal confirmation, error notification, table controls, and destructive operations. Confirmation dialogs now trap focus, support Escape, restore trigger focus, and distinguish destructive actions; this behavior has targeted browser evidence but no CI browser suite.
 7. [ ] Turn closed-beta evidence into an operator workflow: target detail, supporting records, drill timestamps, unresolved incidents, and exportable review packet.
 8. [ ] Add daily/closing briefings only after users repeatedly consume the current monitoring view; every briefing must be change-only, cited, and explicitly non-exhaustive.

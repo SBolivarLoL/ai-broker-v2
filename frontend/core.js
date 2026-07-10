@@ -289,9 +289,22 @@ function activateView(view) {
     const button = $(`[data-view="${name}"]`);
     button.classList.toggle("active", name === view);
     button.setAttribute("aria-selected", String(name === view));
+    if (name === view) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   scrollTo({ top: 0, behavior: "smooth" });
+  const activeButton = $(`[data-view="${view}"]`),
+    navigation = document.querySelector(".nav");
+  requestAnimationFrame(() => {
+    if (navigation.scrollWidth > navigation.clientWidth)
+      navigation.scrollTo({
+        left:
+          activeButton.offsetLeft -
+          (navigation.clientWidth - activeButton.offsetWidth) / 2,
+        behavior: "smooth",
+      });
+  });
   dispatchEvent(new CustomEvent("workspaceactivated", { detail: { view } }));
 }
 document.querySelector(".nav").onclick = (event) => {
@@ -499,9 +512,7 @@ function setPrivacy(enabled) {
   privacyEnabled = enabled;
   document.documentElement.classList.toggle("privacy-mode", enabled);
   privacyToggle.setAttribute("aria-pressed", String(enabled));
-  privacyToggle.textContent = enabled
-    ? "Show private data"
-    : "Hide private data";
+  privacyToggle.textContent = enabled ? "Show values" : "Hide values";
   try {
     localStorage.setItem("privacy-mode", String(enabled));
   } catch {}

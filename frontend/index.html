@@ -8,28 +8,72 @@
     <header class="top">
       <div class="brand">AI Broker</div>
       <nav class="nav" aria-label="Main navigation">
-        <button data-view="home" class="active" aria-selected="true">
-          Home</button
-        ><button data-view="markets" aria-selected="false">Markets</button
-        ><button data-view="portfolio" aria-selected="false">Portfolio</button
-        ><button data-view="strategies" aria-selected="false">Strategies</button
-        ><button data-view="research" aria-selected="false">Research</button
-        ><button data-view="options" aria-selected="false">Options</button
-        ><button data-view="advisor" aria-selected="false">AI Advisor</button>
-      </nav>
-      <div class="status-cluster">
         <button
-          class="data-health-button"
-          id="data-quality-toggle"
-          type="button"
-          aria-expanded="false"
-          aria-controls="data-quality-panel"
+          data-view="home"
+          class="active"
+          aria-label="Overview"
+          aria-selected="true"
         >
-          <i class="dot"></i><span id="data-quality-label">Data health</span>
+          Overview</button
+        ><button data-view="markets" aria-label="Markets" aria-selected="false">
+          Markets</button
+        ><button
+          data-view="portfolio"
+          aria-label="Portfolio"
+          aria-selected="false"
+        >
+          Portfolio</button
+        ><button
+          data-view="strategies"
+          aria-label="Strategy Lab"
+          aria-selected="false"
+        >
+          Strategy Lab</button
+        ><button
+          data-view="research"
+          aria-label="Research"
+          aria-selected="false"
+        >
+          Research</button
+        ><button data-view="options" aria-label="Options" aria-selected="false">
+          Options</button
+        ><button data-view="advisor" aria-label="Advisor" aria-selected="false">
+          Advisor
         </button>
-        <div class="paper"><i class="dot"></i>Alpaca paper</div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="paper"><i class="dot"></i>Paper trading</div>
+        <span>Live trading unavailable</span>
       </div>
     </header>
+    <section class="status-cluster" aria-label="Workspace status">
+      <button
+        class="data-health-button"
+        id="data-quality-toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="data-quality-panel"
+      >
+        <span class="status-label">Data health</span><i class="dot"></i
+        ><span id="data-quality-label">Loading</span>
+      </button>
+      <div class="status-item">
+        <span class="status-label">Environment</span
+        ><strong>Alpaca paper</strong>
+      </div>
+      <div class="status-item">
+        <span class="status-label">Execution</span
+        ><strong class="gain">Paper only</strong>
+      </div>
+      <button
+        class="ghost privacy-toggle"
+        id="privacy-toggle"
+        type="button"
+        aria-pressed="false"
+      >
+        Hide values
+      </button>
+    </section>
     <aside class="data-quality-panel" id="data-quality-panel" hidden>
       <div class="section-head">
         <div>
@@ -53,20 +97,37 @@
     </aside>
     <div class="view" id="home-view">
       <section class="hero">
-        <div class="hero-head">
-          <div>
-            <div class="eyebrow">Portfolio value</div>
-            <div class="balance private-value" id="equity">—</div>
-            <div class="sub private-value" id="buying-power">Connecting…</div>
+        <div class="view-title home-title">
+          <h1>Portfolio overview</h1>
+          <div class="muted">
+            Account state, paper execution controls, and current evidence.
           </div>
-          <button
-            class="ghost"
-            id="privacy-toggle"
-            type="button"
-            aria-pressed="false"
-          >
-            Hide balances
-          </button>
+        </div>
+        <div class="account-summary">
+          <article class="summary-card">
+            <div class="eyebrow">Portfolio value</div>
+            <strong class="balance private-value" id="equity">—</strong>
+            <span class="muted">Current paper-account equity</span>
+          </article>
+          <article class="summary-card">
+            <div class="eyebrow">Buying power</div>
+            <strong class="summary-value private-value" id="buying-power"
+              >Connecting…</strong
+            >
+            <span class="muted">Available under broker rules</span>
+          </article>
+          <article class="summary-card">
+            <div class="eyebrow">Cash</div>
+            <strong class="summary-value private-value" id="cash-balance"
+              >—</strong
+            >
+            <span class="muted">Uninvested account cash</span>
+          </article>
+          <article class="summary-card">
+            <div class="eyebrow">Account status</div>
+            <strong class="summary-value" id="account-status">Loading</strong>
+            <span class="muted">Alpaca paper · live unavailable</span>
+          </article>
         </div>
       </section>
       <div class="grid">

@@ -1,8 +1,10 @@
 # AI Broker UI directions
 
-These are visual concept artifacts, not production screenshots. Options A and B were generated with OpenAI's built-in image generation mode; option C is a browser capture of the implemented refinement.
+These began as visual concept artifacts. Option A was selected and translated into the production browser shell; option B remains an unimplemented alternative, and option C records the earlier refined light UI. Options A and B were generated with OpenAI's built-in image generation mode.
 
 ## Option A — Trading Workstation
+
+Selected and implemented. The production translation preserves the concept's dark operator rail, global data/environment/execution strip, compact evidence cards, restrained blue selection, financial-direction colors, and dense Strategy Lab review hierarchy while continuing to render actual entitlement and missing-data states.
 
 Final prompt: Create a high-fidelity desktop UI concept for AI Broker as a dark institutional trading workstation. Use a persistent left rail, a global data-health strip, dense but readable portfolio cards, a portfolio-versus-benchmark chart, whole-account/invested-assets scope toggles, risk contribution, positions, orders, and a Strategy Lab evidence/progression card. Clearly label paper trading, surface freshness and coverage, use blue for selection, green/red only for financial direction, and amber for required review. Keep the visual credible, restrained, information-dense, and suitable for a serious personal investing operator.
 
