@@ -2,8 +2,53 @@ import { expect, test } from "bun:test";
 import {
   MacroContextClient,
   describeMacroRegime,
-  type MacroIndicator,
+  type MacroIndicatorValue,
 } from "../../backend/integrations/macro-context";
+
+const responseTime = (
+  retrievedAt: string | null,
+  serverRespondedAt: string,
+) => ({
+  retrievedAt,
+  serverRespondedAt,
+  time: {
+    observationTime: null,
+    publicationTime: null,
+    effectivePeriod: null,
+    retrievalTime: retrievedAt,
+    serverResponseTime: serverRespondedAt,
+  },
+  asOf: serverRespondedAt,
+});
+
+const indicatorTime = (
+  eventTime: {
+    observedAt?: string | null;
+    publishedAt?: string | null;
+    effectivePeriod?: { start: string; end: string; label: string } | null;
+  },
+  retrievedAt: string,
+  serverRespondedAt: string,
+) => {
+  const observedAt = eventTime.observedAt ?? null;
+  const publishedAt = eventTime.publishedAt ?? null;
+  const effectivePeriod = eventTime.effectivePeriod ?? null;
+  return {
+    observedAt,
+    publishedAt,
+    effectivePeriod,
+    retrievedAt,
+    serverRespondedAt,
+    time: {
+      observationTime: observedAt,
+      publicationTime: publishedAt,
+      effectivePeriod,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    },
+    asOf: serverRespondedAt,
+  };
+};
 
 const treasuryPayload = {
   data: [
@@ -64,45 +109,70 @@ function publicFetch(counter?: { value: number }) {
 
 test("macro context keeps public providers available and explains key-gated gaps", async () => {
   const calls = { value: 0 };
+  let now = Date.UTC(2026, 5, 29);
   const client = new MacroContextClient({
     fetchImpl: publicFetch(calls),
     env: {},
-    now: () => Date.UTC(2026, 5, 29),
+    now: () => now,
     sleep: async () => {},
   });
   const context = await client.context();
+  const at = "2026-06-29T00:00:00.000Z";
   expect(context.coverage).toEqual({
-    fred: { status: "missing_key", indicators: 0 },
-    treasury: { status: "available", indicators: 3 },
-    bls: { status: "available", indicators: 2 },
-    bea: { status: "missing_key", indicators: 0 },
+    fred: { status: "missing_key", indicators: 0, ...responseTime(null, at) },
+    treasury: { status: "available", indicators: 3, ...responseTime(at, at) },
+    bls: { status: "available", indicators: 2, ...responseTime(at, at) },
+    bea: { status: "missing_key", indicators: 0, ...responseTime(null, at) },
   });
+  expect(context).toMatchObject(responseTime(at, at));
   expect(
     context.indicators.find((item) => item.id === "cpi_all_items_yoy"),
   ).toMatchObject({
     value: 4.2487,
     provider: "bls",
     calculation: expect.any(String),
+    ...indicatorTime(
+      {
+        effectivePeriod: {
+          start: "2026-05-01T00:00:00.000Z",
+          end: "2026-05-31T23:59:59.999Z",
+          label: "2026-M05",
+        },
+      },
+      at,
+      at,
+    ),
   });
   expect(
     context.indicators.find((item) => item.id === "unemployment_rate"),
   ).toMatchObject({ value: 4.3, previousValue: 4.2, change: 0.1 });
   expect(context.sources).toHaveLength(3);
-  expect(context.sources.find((source) => source.provider === "treasury")).toMatchObject({
-    effectivePeriod: {
-      start: "2026-06-25T00:00:00.000Z",
-      end: "2026-06-25T00:00:00.000Z",
-      label: "2026-06-25",
-    },
+  expect(
+    context.sources.find((source) => source.provider === "treasury"),
+  ).toMatchObject({
+    observedAt: null,
+    publishedAt: "2026-06-25T00:00:00.000Z",
+    effectivePeriod: null,
     time: {
-      effectivePeriod: {
-        start: "2026-06-25T00:00:00.000Z",
-        end: "2026-06-25T00:00:00.000Z",
-        label: "2026-06-25",
-      },
+      observationTime: null,
+      publicationTime: "2026-06-25T00:00:00.000Z",
+      effectivePeriod: null,
     },
   });
-  expect(context.sources.find((source) => source.id === "macro:bls:CUUR0000SA0")).toMatchObject({
+  expect(
+    context.indicators.find((item) => item.provider === "treasury"),
+  ).toMatchObject(
+    indicatorTime(
+      { publishedAt: "2026-06-25T00:00:00.000Z" },
+      at,
+      at,
+    ),
+  );
+  expect(
+    context.sources.find(
+      (source) => source.id === "macro:bls:CUUR0000SA0",
+    ),
+  ).toMatchObject({
     effectivePeriod: {
       end: "2026-05-31T23:59:59.999Z",
       label: "2026-M05",
@@ -128,8 +198,27 @@ test("macro context keeps public providers available and explains key-gated gaps
     ]),
   );
   expect(context.disclosures[0]?.text).toContain("not endorsed or certified");
-  await client.context();
+  const hashes = context.sources.map((source) => source.contentHash);
+  now += 60_000;
+  const cached = await client.context();
   expect(calls.value).toBe(2);
+  expect(cached.retrievedAt).toBe(context.retrievedAt);
+  expect(cached.serverRespondedAt).toBe("2026-06-29T00:01:00.000Z");
+  expect(cached.sources.map((source) => source.contentHash)).toEqual(hashes);
+  expect(
+    cached.sources.every(
+      (source) => source.serverRespondedAt === cached.serverRespondedAt,
+    ),
+  ).toBe(true);
+  expect(
+    cached.indicators.every(
+      (indicator) =>
+        indicator.retrievedAt === context.retrievedAt &&
+        indicator.serverRespondedAt === cached.serverRespondedAt,
+    ),
+  ).toBe(true);
+  expect(cached.coverage.fred.retrievedAt).toBeNull();
+  expect(cached.coverage.treasury.retrievedAt).toBe(context.retrievedAt);
 });
 
 test("macro context normalizes configured FRED and BEA observations", async () => {
@@ -195,8 +284,16 @@ test("macro context normalizes configured FRED and BEA observations", async () =
     sleep: async () => {},
   }).context();
   expect(context.indicators).toHaveLength(9);
-  expect(context.coverage.fred).toEqual({ status: "available", indicators: 3 });
-  expect(context.coverage.bea).toEqual({ status: "available", indicators: 1 });
+  expect(context.coverage.fred).toMatchObject({
+    status: "available",
+    indicators: 3,
+    retrievedAt: "2026-06-29T00:00:00.000Z",
+  });
+  expect(context.coverage.bea).toMatchObject({
+    status: "available",
+    indicators: 1,
+    retrievedAt: "2026-06-29T00:00:00.000Z",
+  });
   expect(
     context.indicators.find((item) => item.id === "real_gdp_qoq_annualized"),
   ).toMatchObject({ value: 2.8, previousValue: 1.9, period: "2026Q1" });
@@ -210,7 +307,10 @@ test("macro context normalizes configured FRED and BEA observations", async () =
   expect(
     context.sources.find((source) => source.provider === "fred")?.url,
   ).not.toContain("api_key");
-  expect(context.sources.find((source) => source.id === "macro:fred:DFF")).toMatchObject({
+  expect(
+    context.sources.find((source) => source.id === "macro:fred:DFF"),
+  ).toMatchObject({
+    observedAt: "2026-06-26T00:00:00.000Z",
     effectivePeriod: {
       start: "2026-06-26T00:00:00.000Z",
       end: "2026-06-26T00:00:00.000Z",
@@ -218,14 +318,89 @@ test("macro context normalizes configured FRED and BEA observations", async () =
     },
   });
   expect(
+    context.indicators.find(
+      (item) => item.id === "effective_federal_funds_rate",
+    ),
+  ).toMatchObject(
+    indicatorTime(
+      {
+        observedAt: "2026-06-26T00:00:00.000Z",
+        effectivePeriod: {
+          start: "2026-06-26T00:00:00.000Z",
+          end: "2026-06-26T00:00:00.000Z",
+          label: "2026-06-26",
+        },
+      },
+      "2026-06-29T00:00:00.000Z",
+      "2026-06-29T00:00:00.000Z",
+    ),
+  );
+  expect(
     context.sources.find((source) => source.provider === "bea")?.url,
   ).not.toContain("UserID");
-  expect(context.sources.find((source) => source.provider === "bea")).toMatchObject({
+  expect(
+    context.sources.find((source) => source.provider === "bea"),
+  ).toMatchObject({
     effectivePeriod: {
+      start: "2026-01-01T00:00:00.000Z",
       end: "2026-03-31T23:59:59.999Z",
       label: "2026Q1",
     },
   });
+  expect(
+    context.indicators.find(
+      (item) => item.id === "real_gdp_qoq_annualized",
+    ),
+  ).toMatchObject(
+    indicatorTime(
+      {
+        effectivePeriod: {
+          start: "2026-01-01T00:00:00.000Z",
+          end: "2026-03-31T23:59:59.999Z",
+          label: "2026Q1",
+        },
+      },
+      "2026-06-29T00:00:00.000Z",
+      "2026-06-29T00:00:00.000Z",
+    ),
+  );
+});
+
+test("macro context preserves distinct provider retrieval times", async () => {
+  let now = Date.UTC(2026, 5, 29);
+  let resolveBls!: () => void;
+  const client = new MacroContextClient({
+    env: {},
+    now: () => now,
+    maxRetries: 0,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.includes("fiscaldata.treasury.gov"))
+        return Response.json(treasuryPayload);
+      if (url.includes("bls.gov"))
+        return new Promise<Response>((resolve) => {
+          resolveBls = () => resolve(Response.json(blsPayload));
+        });
+      throw new Error(`Unexpected URL ${url}`);
+    },
+  });
+  const pending = client.context();
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  now += 60_000;
+  resolveBls();
+  const context = await pending;
+  const treasuryAt = "2026-06-29T00:00:00.000Z";
+  const blsAt = "2026-06-29T00:01:00.000Z";
+  expect(context.coverage.treasury.retrievedAt).toBe(treasuryAt);
+  expect(context.coverage.bls.retrievedAt).toBe(blsAt);
+  expect(context.retrievedAt).toBe(blsAt);
+  expect(
+    context.indicators.find((item) => item.provider === "treasury")
+      ?.retrievedAt,
+  ).toBe(treasuryAt);
+  expect(
+    context.indicators.find((item) => item.provider === "bls")?.retrievedAt,
+  ).toBe(blsAt);
 });
 
 test("macro context preserves successful providers when one source fails", async () => {
@@ -241,13 +416,33 @@ test("macro context preserves successful providers when one source fails", async
   }).context();
   expect(context.coverage.treasury.status).toBe("available");
   expect(context.coverage.bls.status).toBe("unavailable");
+  expect(context.coverage.treasury.retrievedAt).toBe("2026-06-29T00:00:00.000Z");
+  expect(context.coverage.bls.retrievedAt).toBeNull();
   expect(context.indicators).toHaveLength(3);
   expect(context.regime.dimensions.map((item) => item.id)).toEqual(["fiscal"]);
   expect(context.warnings).toContain("BLS is temporarily unavailable.");
 });
 
+test("macro context does not invent retrieval time when all providers fail", async () => {
+  const at = "2026-06-29T00:00:00.000Z";
+  const context = await new MacroContextClient({
+    fetchImpl: async () => new Response("unavailable", { status: 503 }),
+    env: {},
+    now: () => Date.UTC(2026, 5, 29),
+    maxRetries: 0,
+  }).context();
+  expect(context).toMatchObject(responseTime(null, at));
+  expect(context.indicators).toEqual([]);
+  expect(context.sources).toEqual([]);
+  expect(context.coverage.treasury).toMatchObject(responseTime(null, at));
+  expect(context.coverage.bls).toMatchObject(responseTime(null, at));
+  expect(context.regime.summary).toBe(
+    "Official macro context is currently unavailable.",
+  );
+});
+
 test("macro regime descriptions cite only the observations they use", () => {
-  const indicators: MacroIndicator[] = [
+  const indicators: MacroIndicatorValue[] = [
     {
       id: "effective_federal_funds_rate",
       label: "Fed funds",

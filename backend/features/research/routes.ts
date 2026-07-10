@@ -5,7 +5,10 @@ import {
   type FinnhubCompanyEnrichment,
 } from "../../integrations/finnhub";
 import { getGdeltCompanySignals } from "../../integrations/gdelt";
-import { getOfficialMacroContext } from "../../integrations/macro-context";
+import {
+  getOfficialMacroContext,
+  type MacroContext,
+} from "../../integrations/macro-context";
 import {
   getOpenFigiIdentity,
   type OpenFigiIdentity,
@@ -52,6 +55,7 @@ type ResearchContext = {
     companyName: string,
   ) => Promise<OpenFigiIdentity>;
   secCompanyEvidence?: (symbol: string) => Promise<SecCompanyEvidence>;
+  officialMacroContext?: () => Promise<MacroContext>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -306,7 +310,9 @@ export async function handleResearchRequest(
   if (url.pathname === "/api/research/macro" && request.method === "GET") {
     if (!allow(`${actor}:macro-research`, 30))
       return json({ error: "Macro research rate limit exceeded" }, 429);
-    return json(await getOfficialMacroContext());
+    return json(
+      await (context.officialMacroContext ?? getOfficialMacroContext)(),
+    );
   }
 
   if (

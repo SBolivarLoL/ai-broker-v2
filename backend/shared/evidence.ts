@@ -54,7 +54,7 @@ export type CanonicalEvidence<
   url: string;
   canonicalUrl: string;
   asOf: string;
-  observedAt: string;
+  observedAt: string | null;
   retrievedAt: string;
   serverRespondedAt: string;
   publishedAt: string | null;
@@ -173,7 +173,8 @@ export function canonicalEvidence<T, C extends EvidenceCategory>(
     "Evidence retrieval time",
   );
   const time = normalizeTimeProvenance({
-    observationTime: input.observedAt ?? asOf,
+    observationTime:
+      input.observedAt === undefined ? asOf : input.observedAt,
     publicationTime: input.publishedAt ?? null,
     effectivePeriod: input.effectivePeriod ?? null,
     retrievalTime: retrievedAt,
@@ -194,7 +195,7 @@ export function canonicalEvidence<T, C extends EvidenceCategory>(
     url: requiredText(input.url, "Evidence URL", 2_000),
     canonicalUrl: canonicalEvidenceUrl(input.url),
     asOf,
-    observedAt: time.observationTime ?? asOf,
+    observedAt: time.observationTime,
     retrievedAt,
     serverRespondedAt: time.serverResponseTime,
     publishedAt: time.publicationTime,

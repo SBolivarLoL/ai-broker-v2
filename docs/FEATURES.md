@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `07e4b30`: 2026-07-10.
+Last reviewed against `main` commit `e38a21a`: 2026-07-10.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -61,7 +61,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts. Classification, recent-filing, filing-evidence/section, company-facts result, and alert DTOs distinguish applicable filing-date publication, report-date effective period, provider retrieval, and server response time. Cache hits retain the original provider retrieval timestamp while each normalized response receives a fresh server timestamp.
 - Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
 - Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
-- Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage.
+- Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage. Root, provider-coverage, indicator, and canonical-evidence DTOs distinguish Treasury publication dates, FRED observation dates, BLS monthly and BEA quarterly effective periods, provider retrieval, and per-response server time. Raw cache hits preserve their original provider retrieval timestamps and evidence hashes; unqueried, misconfigured, or failed providers expose `retrievedAt:null` instead of inventing a successful read. Canonical evidence can retain an explicitly unavailable observation as `observedAt:null` instead of substituting an unrelated as-of time.
 - Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states. GDELT media-signal root/article DTOs, Finnhub root/endpoint/profile/earnings/news DTOs, and OpenFIGI root/selected/candidate instrument DTOs preserve applicable publication or effective-period, provider-retrieval, and server-response time. Cached provider data keeps its original retrieval time while refreshing per-response server time; unqueried Finnhub states report `retrievedAt:null` instead of inventing a provider fetch.
 - Comparable valuation tables from current Alpaca price plus directly reported SEC revenue, net income, diluted EPS, equity, and shares. Missing or invalid inputs remain unavailable.
 - User-authored bull/base/bear assumptions converted into deterministic 12-month valuation scenarios. They are scenarios, not forecasts.
