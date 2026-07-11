@@ -2,7 +2,11 @@
  * Builds asset-class, SEC SIC, and return-derived factor exposure reports with
  * explicit source coverage and methodology warnings.
  */
-export type ExposureBar = { date: string; close: number };
+export type ExposureBar = {
+  date: string;
+  close: number;
+  observedAt?: string | number | Date;
+};
 export type ExposureClassification = { sic: string; industry: string | null; sourceUrl: string };
 export type ExposurePosition = {
   symbol: string;

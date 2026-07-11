@@ -3,8 +3,8 @@
  * date-bounded benchmark series.
  */
 import {
-  normalizeIsoTime,
   providerTimeFields,
+  unavailableProviderTimeFields,
 } from "../../shared/time-provenance";
 export type PerformancePoint = {
   timestamp: number;
@@ -191,30 +191,6 @@ function observationWindow(timestamps: number[], label: string) {
   };
 }
 
-function unavailableProviderTime(
-  serverRespondedAtInput: string | number | Date,
-) {
-  const serverRespondedAt = normalizeIsoTime(
-    serverRespondedAtInput,
-    "Portfolio performance response time",
-  );
-  return {
-    observedAt: null,
-    publishedAt: null,
-    effectivePeriod: null,
-    retrievedAt: null,
-    serverRespondedAt,
-    time: {
-      observationTime: null,
-      publicationTime: null,
-      effectivePeriod: null,
-      retrievalTime: null,
-      serverResponseTime: serverRespondedAt,
-    },
-    asOf: serverRespondedAt,
-  };
-}
-
 export function portfolioPerformanceDto(input: {
   period: string;
   points: PerformancePoint[];
@@ -255,7 +231,7 @@ export function portfolioPerformanceDto(input: {
         retrievalTime: input.benchmarkRetrievedAt,
         serverResponseTime: input.serverRespondedAt,
       })
-    : unavailableProviderTime(input.serverRespondedAt);
+    : unavailableProviderTimeFields(input.serverRespondedAt);
   const rootObservedAt =
     [portfolioObservedAt, benchmarkObservedAt]
       .filter((value): value is number => value !== null)

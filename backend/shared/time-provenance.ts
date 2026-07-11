@@ -37,6 +37,22 @@ export type ProviderTimeFields = {
   asOf: string;
 };
 
+export type UnavailableProviderTimeFields = {
+  observedAt: null;
+  publishedAt: null;
+  effectivePeriod: null;
+  retrievedAt: null;
+  serverRespondedAt: string;
+  time: {
+    observationTime: null;
+    publicationTime: null;
+    effectivePeriod: null;
+    retrievalTime: null;
+    serverResponseTime: string;
+  };
+  asOf: string;
+};
+
 export function normalizeIsoTime(value: string | Date | number, label: string) {
   const time = new Date(value);
   if (!String(value) || !Number.isFinite(time.getTime()))
@@ -101,5 +117,30 @@ export function providerTimeFields(
     serverRespondedAt: time.serverResponseTime,
     time,
     asOf: time.serverResponseTime,
+  };
+}
+
+/** Represents a provider that was not successfully queried for this DTO. */
+export function unavailableProviderTimeFields(
+  serverResponseTime: string | Date | number,
+): UnavailableProviderTimeFields {
+  const serverRespondedAt = normalizeIsoTime(
+    serverResponseTime,
+    "Server response time",
+  );
+  return {
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: null,
+    serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: null,
+      serverResponseTime: serverRespondedAt,
+    },
+    asOf: serverRespondedAt,
   };
 }

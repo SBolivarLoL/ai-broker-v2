@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
+import type { CurrentPortfolioExposure } from "../../backend/features/portfolio/exposure-service";
 import { handlePortfolioRequest } from "../../backend/features/portfolio/routes";
 import { createStore } from "../../backend/persistence/store";
 
@@ -136,6 +137,40 @@ test("portfolio performance route separates portfolio, benchmark, and response t
     ],
     asOf: "2026-01-02T20:00:03.000Z",
   });
+});
+
+test("portfolio exposure route preserves the normalized service contract", async () => {
+  const report = {
+    schemaVersion: "portfolio-exposure-v2",
+    observedAt: "2026-01-02T21:00:00.000Z",
+    retrievedAt: "2026-01-02T21:00:01.000Z",
+    serverRespondedAt: "2026-01-02T21:00:02.000Z",
+    asOf: "2026-01-02T21:00:02.000Z",
+    quality: {
+      status: "partial",
+      missing: ["AAPL:sec_sic_classification"],
+      cache: { hit: true },
+    },
+    inputs: {
+      account: { observedAt: null },
+      benchmark: { observedAt: "2026-01-02T21:00:00.000Z" },
+    },
+  } as unknown as CurrentPortfolioExposure["report"];
+  const request = new Request("http://localhost/api/portfolio/exposure");
+  const response = await handlePortfolioRequest(request, new URL(request.url), {
+    alpaca: {} as Alpaca,
+    store: createStore(":memory:"),
+    actor: "test-operator",
+    allow: () => true,
+    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    currentPortfolioExposure: async () => ({ equity: 10_000, report }),
+    capturePortfolioSnapshot: async () => {
+      throw new Error("unexpected snapshot capture");
+    },
+  });
+
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toEqual(report);
 });
 
 test("portfolio risk distinguishes whole-account and invested-asset diversification", async () => {
