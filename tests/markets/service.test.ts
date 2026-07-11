@@ -11,7 +11,8 @@ function fakeMarketService(
     discoveryCalls = 0,
     calendarCalls = 0,
     companyMarketCalls = 0,
-    multiAssetCalls = 0;
+    multiAssetCalls = 0,
+    assetCatalogCalls = 0;
   const stockStream = {
     onStateChange() {},
     onConnect() {},
@@ -135,6 +136,19 @@ function fakeMarketService(
         getAllOpenPositions: async () => [],
       },
       assets: {
+        getV2Assets: async () => {
+          assetCatalogCalls++;
+          return [
+            {
+              _class: "us_equity",
+              status: "active",
+              tradable: true,
+              symbol: "AAPL",
+              name: "Apple Inc.",
+              exchange: "NASDAQ",
+            },
+          ];
+        },
         getV2AssetsSymbolOrAssetId: async () => ({
           symbol: "AAPL",
           name: "Apple Inc.",
@@ -211,8 +225,46 @@ function fakeMarketService(
     calendarCalls: () => calendarCalls,
     companyMarketCalls: () => companyMarketCalls,
     multiAssetCalls: () => multiAssetCalls,
+    assetCatalogCalls: () => assetCatalogCalls,
   };
 }
+
+test("asset search preserves catalog retrieval time across cached responses", async () => {
+  const times = [
+    new Date("2026-07-11T10:00:00Z"),
+    new Date("2026-07-11T10:00:01Z"),
+    new Date("2026-07-11T10:00:02Z"),
+  ];
+  const { service, assetCatalogCalls } = fakeMarketService(
+    () => true,
+    () => times.shift()!,
+  );
+  const request = new Request("http://localhost/api/assets/search?q=app");
+  const first = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const second = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+  const firstBody = await first?.json();
+  const secondBody = await second?.json();
+
+  expect(firstBody).toMatchObject({
+    observedAt: null,
+    retrievedAt: "2026-07-11T10:00:00.000Z",
+    serverRespondedAt: "2026-07-11T10:00:01.000Z",
+    results: [{ symbol: "AAPL", observedAt: null }],
+  });
+  expect(secondBody.retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.results[0].retrievedAt).toBe(firstBody.retrievedAt);
+  expect(secondBody.serverRespondedAt).toBe("2026-07-11T10:00:02.000Z");
+  expect(secondBody.asOf).toBe(secondBody.serverRespondedAt);
+  expect(assetCatalogCalls()).toBe(1);
+});
 
 test("market service owns quote validation and clock caching", async () => {
   const { service, clockCalls } = fakeMarketService();

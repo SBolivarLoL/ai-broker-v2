@@ -29,7 +29,7 @@ import {
   watchlistDto,
 } from "./market-workspace";
 import { multiAssetDto, type MultiAssetDtoInput } from "./multi-asset";
-import { searchAssets, type SearchableAsset } from "./search";
+import { assetSearchDto, type SearchableAsset } from "./search";
 import { createStockStreamService } from "./stock-stream";
 
 type Store = ReturnType<typeof createStore>;
@@ -74,9 +74,15 @@ export function createMarketService({
   allow,
   now = () => new Date(),
 }: MarketServiceDependencies) {
-  let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null =
-    null;
-  let assetCatalogRequest: Promise<SearchableAsset[]> | null = null;
+  let assetCatalog: {
+    expiresAt: number;
+    assets: SearchableAsset[];
+    retrievedAt: string;
+  } | null = null;
+  let assetCatalogRequest: Promise<{
+    assets: SearchableAsset[];
+    retrievedAt: string;
+  }> | null = null;
   const companyMarketCache = new Map<
     string,
     {
@@ -338,11 +344,11 @@ export function createMarketService({
 
   async function getAssetCatalog() {
     if (assetCatalog && assetCatalog.expiresAt > Date.now())
-      return assetCatalog.assets;
-    assetCatalogRequest ??= alpaca.trading.assets
-      .getV2Assets()
-      .then((assets) =>
-        assets
+      return assetCatalog;
+    assetCatalogRequest ??= (async () => {
+      const providerAssets = await alpaca.trading.assets.getV2Assets();
+      return {
+        assets: providerAssets
           .filter(
             (asset) =>
               asset._class === "us_equity" &&
@@ -356,13 +362,14 @@ export function createMarketService({
             name: asset.name!,
             exchange: asset.exchange,
           })),
-      )
-      .finally(() => {
-        assetCatalogRequest = null;
-      });
-    const assets = await assetCatalogRequest;
-    assetCatalog = { assets, expiresAt: Date.now() + 15 * 60_000 };
-    return assets;
+        retrievedAt: now().toISOString(),
+      };
+    })().finally(() => {
+      assetCatalogRequest = null;
+    });
+    const source = await assetCatalogRequest;
+    assetCatalog = { ...source, expiresAt: Date.now() + 15 * 60_000 };
+    return assetCatalog;
   }
 
   async function handleRequest(
@@ -469,10 +476,15 @@ export function createMarketService({
       if (query.length < 1 || query.length > 50) {
         return json({ error: "Search must contain 1 to 50 characters" }, 400);
       }
-      return json({
-        query,
-        results: searchAssets(await getAssetCatalog(), query),
-      });
+      const catalog = await getAssetCatalog();
+      return json(
+        assetSearchDto({
+          assets: catalog.assets,
+          query,
+          retrievedAt: catalog.retrievedAt,
+          serverRespondedAt: now(),
+        }),
+      );
     }
 
     const assetLogoMatch =

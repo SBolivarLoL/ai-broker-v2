@@ -101,6 +101,12 @@ The market boundary keeps provider retrieval and presentation separate:
   workspace normalization. Watchlist detail retrieval completes before its
   retrieval timestamp is captured; the workspace root aggregates child times
   without relabeling retrieval as observation.
+- `markets/search.ts` owns deterministic asset ranking and asset-search DTO
+  normalization. The service cache retains the asset-master retrieval time,
+  while each search response gets a fresh response timestamp.
+- `markets/company-market.ts` owns company-market normalization, including
+  source-specific time provenance for asset metadata, quotes, sessions, derived
+  statistics, benchmark windows, bars, and news.
 
 The order boundary is deliberately split by responsibility:
 

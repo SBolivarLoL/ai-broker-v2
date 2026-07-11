@@ -1,3 +1,5 @@
+import { providerTimeFields } from "../../shared/time-provenance";
+
 export type SearchableAsset = {
   symbol: string;
   name: string;
@@ -65,4 +67,32 @@ export function searchAssets(
     )
     .slice(0, limit)
     .map(({ asset }) => asset);
+}
+
+export function assetSearchDto(input: {
+  assets: SearchableAsset[];
+  query: string;
+  retrievedAt: string | number | Date;
+  serverRespondedAt: string | number | Date;
+  limit?: number;
+}) {
+  const responseTime = providerTimeFields({
+    observationTime: null,
+    publicationTime: null,
+    effectivePeriod: null,
+    retrievalTime: input.retrievedAt,
+    serverResponseTime: input.serverRespondedAt,
+  });
+  return {
+    query: input.query,
+    results: searchAssets(input.assets, input.query, input.limit).map(
+      (asset) => ({
+        ...asset,
+        source: "Alpaca Trading API asset master",
+        ...responseTime,
+      }),
+    ),
+    source: "Alpaca Trading API asset master",
+    ...responseTime,
+  };
 }

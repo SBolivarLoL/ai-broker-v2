@@ -1,6 +1,6 @@
 import {
-  normalizeTimeProvenance,
-  type NormalizedTimeProvenance,
+  providerTimeFields,
+  type ProviderTimeFields,
 } from "../../shared/time-provenance";
 
 type DateInput = string | number | Date;
@@ -60,12 +60,11 @@ type CompanyNewsInput = {
   url?: unknown;
 };
 
-export type CompanyBar = {
+export type CompanyBar = ProviderTimeFields & {
   timestamp: string;
   observedAt: string;
-  retrievedAt: string;
-  serverRespondedAt: string;
-  time: NormalizedTimeProvenance;
+  source: string;
+  feed: "iex";
   open: number;
   high: number;
   low: number;
@@ -89,11 +88,9 @@ function normalizeCompanyBars(
       const observedAt = new Date(bar.timestamp).toISOString();
       return {
         timestamp: observedAt,
-        observedAt,
-        retrievedAt,
-        serverRespondedAt,
-        time: normalizeTimeProvenance({
+        ...providerTimeFields({
           observationTime: observedAt,
+          publicationTime: null,
           effectivePeriod: {
             start: observedAt,
             end: observedAt,
@@ -102,6 +99,9 @@ function normalizeCompanyBars(
           retrievalTime: retrievedAt,
           serverResponseTime: serverRespondedAt,
         }),
+        observedAt,
+        source: "Alpaca IEX market data",
+        feed: "iex" as const,
         open: Number(bar.open),
         high: Number(bar.high),
         low: Number(bar.low),
@@ -134,11 +134,9 @@ function normalizeBenchmarkBars(
       const observedAt = new Date(bar.timestamp).toISOString();
       return {
         timestamp: observedAt,
-        observedAt,
-        retrievedAt,
-        serverRespondedAt,
-        time: normalizeTimeProvenance({
+        ...providerTimeFields({
           observationTime: observedAt,
+          publicationTime: null,
           effectivePeriod: {
             start: observedAt,
             end: observedAt,
@@ -147,6 +145,9 @@ function normalizeBenchmarkBars(
           retrievalTime: retrievedAt,
           serverResponseTime: serverRespondedAt,
         }),
+        observedAt,
+        source: "Alpaca IEX market data",
+        feed: "iex" as const,
         close: Number(bar.close),
       };
     })
@@ -157,6 +158,19 @@ function normalizeBenchmarkBars(
 function returnPercent(bars: { close: number }[]) {
   if (bars.length < 2) return null;
   return (bars.at(-1)!.close / bars[0]!.close - 1) * 100;
+}
+
+function barEffectivePeriod(
+  bars: { timestamp: string }[],
+  label: string,
+) {
+  return bars.length
+    ? {
+        start: bars[0]!.timestamp,
+        end: bars.at(-1)!.timestamp,
+        label,
+      }
+    : null;
 }
 
 /** Builds the browser-facing company view from raw broker data. */
@@ -200,11 +214,25 @@ export function companyMarketSnapshot(
   const marketPhase = exchangeClock?.phase ?? "unknown";
   const quoteAt = quote.t ? new Date(quote.t).toISOString() : null;
   const tradeAt = trade.t ? new Date(trade.t).toISOString() : null;
-  const quoteObservationAt = quoteAt ?? tradeAt ?? normalizedBars.at(-1)?.observedAt ?? null;
-  const marketObservationAt = [quoteAt, tradeAt, normalizedBars.at(-1)?.observedAt]
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1) ?? null;
+  const quoteObservationAt =
+    quoteAt ?? tradeAt ?? normalizedBars.at(-1)?.observedAt ?? null;
+  const marketObservationAt =
+    [quoteAt, tradeAt, normalizedBars.at(-1)?.observedAt]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+  const sessionObservedAt = exchangeClock?.timestamp
+    ? new Date(exchangeClock.timestamp).toISOString()
+    : null;
+  const periodEffective = barEffectivePeriod(
+    normalizedBars,
+    `${period} company market window`,
+  );
+  const benchmarkObservedAt = normalizedBenchmark.at(-1)?.observedAt ?? null;
+  const benchmarkEffective = barEffectivePeriod(
+    normalizedBenchmark,
+    `${period} benchmark market window`,
+  );
   const clockAt = exchangeClock?.timestamp
     ? new Date(exchangeClock.timestamp).getTime()
     : Date.now();
@@ -255,6 +283,14 @@ export function companyMarketSnapshot(
       fractionable: Boolean(asset.fractionable),
       shortable: Boolean(asset.shortable),
       marginable: Boolean(asset.marginable),
+      source: "Alpaca Trading API asset master",
+      ...providerTimeFields({
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: retrievedAt,
+        serverResponseTime: responseAt,
+      }),
     },
     period,
     quote: {
@@ -268,11 +304,11 @@ export function companyMarketSnapshot(
       spread,
       spreadBps,
       quoteAt,
-      observedAt: quoteObservationAt,
-      retrievedAt,
-      serverRespondedAt: responseAt,
-      time: normalizeTimeProvenance({
+      source: "Alpaca IEX market data",
+      ...providerTimeFields({
         observationTime: quoteObservationAt,
+        publicationTime: null,
+        effectivePeriod: null,
         retrievalTime: retrievedAt,
         serverResponseTime: responseAt,
       }),
@@ -288,6 +324,14 @@ export function companyMarketSnapshot(
       nextClose: exchangeClock?.nextMarketClose
         ? new Date(exchangeClock.nextMarketClose).toISOString()
         : null,
+      source: "Alpaca market clock",
+      ...providerTimeFields({
+        observationTime: sessionObservedAt,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: retrievedAt,
+        serverResponseTime: responseAt,
+      }),
     },
     stats: {
       dayChangePercent,
@@ -304,6 +348,14 @@ export function companyMarketSnapshot(
         currentVolume !== null && averageVolume20d
           ? currentVolume / averageVolume20d
           : null,
+      source: "Derived from Alpaca IEX market data",
+      ...providerTimeFields({
+        observationTime: marketObservationAt,
+        publicationTime: null,
+        effectivePeriod: periodEffective,
+        retrievalTime: retrievedAt,
+        serverResponseTime: responseAt,
+      }),
     },
     benchmark: {
       symbol: benchmarkSymbol,
@@ -315,6 +367,14 @@ export function companyMarketSnapshot(
       observations: normalizedBenchmark.length,
       quality: normalizedBenchmark.length > 1 ? "complete" : "insufficient",
       bars: normalizedBenchmark,
+      source: "Alpaca IEX market data",
+      ...providerTimeFields({
+        observationTime: benchmarkObservedAt,
+        publicationTime: null,
+        effectivePeriod: benchmarkEffective,
+        retrievalTime: retrievedAt,
+        serverResponseTime: responseAt,
+      }),
     },
     bars: normalizedBars,
     news: news.slice(0, 8).map((article) => ({
@@ -325,24 +385,22 @@ export function companyMarketSnapshot(
       author: article.author,
       createdAt: new Date(article.createdAt).toISOString(),
       updatedAt: new Date(article.updatedAt).toISOString(),
-      publishedAt: new Date(article.createdAt).toISOString(),
-      retrievedAt,
-      serverRespondedAt: responseAt,
-      time: normalizeTimeProvenance({
+      ...providerTimeFields({
+        observationTime: null,
         publicationTime: new Date(article.createdAt).toISOString(),
+        effectivePeriod: null,
         retrievalTime: retrievedAt,
         serverResponseTime: responseAt,
       }),
       url: article.url ?? null,
     })),
-    observedAt: marketObservationAt,
-    retrievedAt,
-    serverRespondedAt: responseAt,
-    time: normalizeTimeProvenance({
+    source: "Alpaca Trading API and IEX market data",
+    ...providerTimeFields({
       observationTime: marketObservationAt,
+      publicationTime: null,
+      effectivePeriod: periodEffective,
       retrievalTime: retrievedAt,
       serverResponseTime: responseAt,
     }),
-    asOf: responseAt,
   };
 }

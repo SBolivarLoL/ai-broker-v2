@@ -78,31 +78,51 @@ test("normalizes company price, spread, volume and news", () => {
     "SPY",
     benchmarkBars,
     new Date("2026-01-02T20:00:31Z"),
+    new Date("2026-01-02T20:00:32Z"),
   );
+  expect(result.company).toMatchObject({
+    symbol: "AAPL",
+    source: "Alpaca Trading API asset master",
+    observedAt: null,
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
+  });
   expect(result.quote).toMatchObject({
     price: 111,
     midpoint: 111,
     quality: "healthy",
     observedAt: "2026-01-02T20:00:00.000Z",
     retrievedAt: "2026-01-02T20:00:31.000Z",
-    serverRespondedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
     time: {
       observationTime: "2026-01-02T20:00:00.000Z",
       retrievalTime: "2026-01-02T20:00:31.000Z",
-      serverResponseTime: "2026-01-02T20:00:31.000Z",
+      serverResponseTime: "2026-01-02T20:00:32.000Z",
     },
   });
   expect(result).toMatchObject({
     observedAt: "2026-01-02T20:00:00.000Z",
     retrievedAt: "2026-01-02T20:00:31.000Z",
-    serverRespondedAt: "2026-01-02T20:00:31.000Z",
-    asOf: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
+    effectivePeriod: {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-02T00:00:00.000Z",
+      label: "1M company market window",
+    },
+    asOf: "2026-01-02T20:00:32.000Z",
   });
   expect(result.quote.spreadBps).toBeCloseTo(18.018);
   expect(result.stats).toMatchObject({
     periodHigh: 112,
     periodLow: 97,
     relativeVolume: 2,
+    observedAt: "2026-01-02T20:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
+    effectivePeriod: {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-02T00:00:00.000Z",
+    },
   });
   expect(result.stats.dayChangePercent).toBeCloseTo(11);
   expect(result.stats.periodReturnPercent).toBeCloseTo(10);
@@ -110,6 +130,15 @@ test("normalizes company price, spread, volume and news", () => {
     symbol: "SPY",
     observations: 2,
     quality: "complete",
+    observedAt: "2026-01-02T00:00:00.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
+  });
+  expect(result.session).toMatchObject({
+    phase: "open",
+    observedAt: "2026-01-02T20:00:30.000Z",
+    retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
   });
   expect(result.benchmark.returnPercent).toBeCloseTo(5);
   expect(result.benchmark.relativeStrengthPercent).toBeCloseTo(5);
@@ -120,6 +149,10 @@ test("normalizes company price, spread, volume and news", () => {
       observationTime: "2026-01-01T00:00:00.000Z",
       retrievalTime: "2026-01-02T20:00:31.000Z",
     },
+    effectivePeriod: {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-01T00:00:00.000Z",
+    },
   });
   expect(result.benchmark.bars[0]).toMatchObject({
     observedAt: "2026-01-01T00:00:00.000Z",
@@ -128,8 +161,10 @@ test("normalizes company price, spread, volume and news", () => {
   expect(result.news[0]).toMatchObject({
     headline: "News",
     source: "Wire",
+    observedAt: null,
     publishedAt: "2026-01-02T00:00:00.000Z",
     retrievedAt: "2026-01-02T20:00:31.000Z",
+    serverRespondedAt: "2026-01-02T20:00:32.000Z",
   });
 });
 
