@@ -146,6 +146,12 @@ response, preserving cached provider retrieval separately from account
 retrieval and response time while exposing failed, unqueried, malformed,
 unsupported, and omitted inputs.
 
+`portfolio/snapshot-response.ts` projects modern and legacy persisted daily
+snapshots into one response taxonomy without altering stored JSON or migration
+history. Original broker-read capture remains stable across SQLite reads,
+delivery time refreshes per request, tracker stream observation and recovery
+retrieval remain distinct, and missing legacy capture evidence stays null.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.

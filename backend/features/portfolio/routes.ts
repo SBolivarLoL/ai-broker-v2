@@ -26,6 +26,7 @@ import {
   rollingTurnover,
 } from "../../shared/risk";
 import { portfolioRiskDto } from "./risk-response";
+import { portfolioSnapshotsDto } from "./snapshot-response";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -400,11 +401,13 @@ export async function handlePortfolioRequest(
       return json({ error: "Snapshot limit must be 1 to 366" }, 400);
     }
     const current = await context.capturePortfolioSnapshot();
-    return json({
-      current,
-      history: store.portfolioSnapshots(limit),
-      asOf: new Date().toISOString(),
-    });
+    return json(
+      portfolioSnapshotsDto({
+        current,
+        history: store.portfolioSnapshots(limit),
+        serverRespondedAt: now(),
+      }),
+    );
   }
 
   if (url.pathname === "/api/portfolio/performance") {
