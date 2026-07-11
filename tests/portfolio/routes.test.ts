@@ -145,9 +145,11 @@ test("portfolio risk distinguishes whole-account and invested-asset diversificat
     { symbol: "NVDA", qty: "10", marketValue: "1000", unrealizedPl: "25" },
   ];
   const bars = Array.from({ length: 90 }, (_, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, 1 + index, 21)),
     close: 100 + index,
     volume: 100_000,
   }));
+  const barRequests: Record<string, unknown>[] = [];
   const alpaca = {
     trading: {
       account: {
@@ -156,15 +158,31 @@ test("portfolio risk distinguishes whole-account and invested-asset diversificat
       positions: { getAllOpenPositions: async () => positions },
     },
     marketData: {
-      getStockBarsFor: async () => bars,
+      getStockBarsFor: async (
+        _symbol: string,
+        options: Record<string, unknown>,
+      ) => {
+        barRequests.push(options);
+        return bars;
+      },
       stocks: {
         stockSnapshotSingle: async () => ({
-          latestQuote: { bp: 99, ap: 101 },
+          latestQuote: {
+            bp: 99,
+            ap: 101,
+            t: new Date("2026-04-02T19:59:00Z"),
+          },
         }),
       },
     },
   } as unknown as Alpaca;
   const request = new Request("http://localhost/api/portfolio/risk");
+  const times = [
+    new Date("2026-04-02T20:00:00Z"),
+    new Date("2026-04-02T20:00:01Z"),
+    new Date("2026-04-02T20:00:02Z"),
+    new Date("2026-04-02T20:00:03Z"),
+  ];
   const response = await handlePortfolioRequest(request, new URL(request.url), {
     alpaca,
     store: createStore(":memory:"),
@@ -177,10 +195,23 @@ test("portfolio risk distinguishes whole-account and invested-asset diversificat
     capturePortfolioSnapshot: async () => {
       throw new Error("unexpected snapshot capture");
     },
+    now: () => times.shift()!,
   });
 
   expect(response?.status).toBe(200);
   const body = (await response?.json()) as {
+    observedAt: string;
+    retrievedAt: string;
+    serverRespondedAt: string;
+    inputs: {
+      account: { observedAt: null; retrievedAt: string };
+      positionMarketData: {
+        historicalBars: { observedAt: string; source: { feed: string } };
+        quote: { observedAt: string; source: { feed: string } };
+      }[];
+      benchmark: { observedAt: string; source: { feed: string } };
+    };
+    quality: { status: string; missing: string[] };
     diversification: {
       score: number;
       wholeAccount: { score: number };
@@ -191,4 +222,34 @@ test("portfolio risk distinguishes whole-account and invested-asset diversificat
   expect(body.diversification.wholeAccount.score).toBe(99);
   expect(body.diversification.investedAssets.score).toBe(0);
   expect(body.diversification.investedAssets.grossInvested).toBe(12_000);
+  expect(body.observedAt).toBe("2026-04-02T19:59:00.000Z");
+  expect(body.retrievedAt).toBe("2026-04-02T20:00:02.000Z");
+  expect(body.serverRespondedAt).toBe("2026-04-02T20:00:03.000Z");
+  expect(body.inputs.account).toMatchObject({
+    observedAt: null,
+    retrievedAt: "2026-04-02T20:00:01.000Z",
+  });
+  expect(body.inputs.positionMarketData[0]).toMatchObject({
+    historicalBars: {
+      observedAt: "2026-03-31T21:00:00.000Z",
+      source: { feed: "sip" },
+    },
+    quote: {
+      observedAt: "2026-04-02T19:59:00.000Z",
+      source: { feed: "iex" },
+    },
+  });
+  expect(body.inputs.benchmark).toMatchObject({
+    observedAt: "2026-03-31T21:00:00.000Z",
+    source: { feed: "sip" },
+  });
+  expect(body.quality).toMatchObject({ status: "complete", missing: [] });
+  expect(barRequests).toHaveLength(4);
+  expect(barRequests.every((options) => options.feed === "sip")).toBe(true);
+  expect(
+    barRequests.every(
+      (options) =>
+        (options.end as Date).toISOString() === "2026-04-02T20:00:00.000Z",
+    ),
+  ).toBe(true);
 });

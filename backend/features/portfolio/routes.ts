@@ -2,13 +2,9 @@ import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { json, requestJson } from "../../http/http";
 import { getStockBarsWithFallback } from "../../integrations/alpaca/market-data";
 import type { createStore } from "../../persistence/store";
-import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import {
-  diversificationScopes,
   performancePoints,
   portfolioPerformanceDto,
-  stressTests,
-  valueAtRisk95,
 } from "./analytics";
 import type { CurrentPortfolioExposure } from "./exposure-service";
 import { ledgerSummary, type LedgerCategory } from "./ledger";
@@ -26,11 +22,10 @@ import {
   ConstrainedRebalancePlanRequest,
 } from "./rebalance-planner";
 import {
-  historicalRisk,
-  portfolioHistory,
   riskSnapshot,
   rollingTurnover,
 } from "../../shared/risk";
+import { portfolioRiskDto } from "./risk-response";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -101,75 +96,59 @@ export async function handlePortfolioRequest(
   }
 
   if (url.pathname === "/api/portfolio/risk") {
+    const requestedAt = now();
     const [account, positions] = await Promise.all([
       alpaca.trading.account.getAccount(),
       alpaca.trading.positions.getAllOpenPositions(),
     ]);
+    const accountRetrievedAt = now();
     if (account.equity === undefined || account.cash === undefined) {
       return json({ error: "Account risk data unavailable" }, 502);
     }
-    const start = new Date(Date.now() - 90 * 86_400_000);
-    const [positionData, benchmarkBars] = await Promise.all([
+    const start = new Date(requestedAt.getTime() - 90 * 86_400_000);
+    const [positionData, benchmarkData] = await Promise.all([
       Promise.all(
         positions.map(async (position) => {
-          const [bars, marketSnapshot] = await Promise.all([
-            alpaca.marketData.getStockBarsFor(position.symbol, {
+          const [barData, marketSnapshot] = await Promise.all([
+            getStockBarsWithFallback(alpaca.marketData, position.symbol, {
               timeframe: TimeFrame.Day,
               start,
+              end: requestedAt,
+              now: requestedAt,
             }),
             alpaca.marketData.stocks.stockSnapshotSingle({
               symbol: position.symbol,
               feed: "iex",
             }),
           ]);
-          return { position, bars: bars.slice(-90), marketSnapshot };
+          return {
+            position,
+            bars: barData.bars.slice(-90),
+            barSource: barData.source,
+            marketSnapshot,
+          };
         }),
       ),
-      alpaca.marketData.getStockBarsFor("SPY", {
+      getStockBarsWithFallback(alpaca.marketData, "SPY", {
         timeframe: TimeFrame.Day,
         start,
+        end: requestedAt,
+        now: requestedAt,
       }),
     ]);
-    const series = positionData.map((item) => ({
-      marketValue: Number(item.position.marketValue),
-      closes: item.bars.map((bar) => bar.close),
-    }));
-    const history = portfolioHistory(
-      Number(account.equity),
-      Number(account.cash),
-      series,
+    const marketRetrievedAt = now();
+    return json(
+      portfolioRiskDto({
+        account: { equity: account.equity, cash: account.cash },
+        positions,
+        positionData,
+        benchmarkBars: benchmarkData.bars.slice(-90),
+        benchmarkSource: benchmarkData.source,
+        accountRetrievedAt,
+        marketRetrievedAt,
+        serverRespondedAt: now(),
+      }),
     );
-    const snapshot = riskSnapshot(account.equity, account.cash, positions);
-    const advanced = advancedPortfolioRisk(
-      snapshot.equity,
-      positionData.map((item) => ({
-        symbol: item.position.symbol,
-        weight: Number(item.position.marketValue) / snapshot.equity,
-        closes: item.bars.map((bar) => bar.close),
-      })),
-      benchmarkBars.map((bar) => bar.close),
-    );
-    const liquidity = positionData.map((item) =>
-      positionLiquidity(item.position, item.marketSnapshot, item.bars),
-    );
-    return json({
-      ...snapshot,
-      ...historicalRisk(history),
-      ...valueAtRisk95(snapshot.equity, history),
-      advanced,
-      liquidity,
-      diversification: diversificationScopes(
-        snapshot.hhi,
-        snapshot.largestPositionPercent,
-        positions.map((position) => Number(position.marketValue)),
-      ),
-      stressTests: stressTests(
-        snapshot.equity,
-        snapshot.cash,
-        snapshot.weights,
-      ),
-      asOf: new Date().toISOString(),
-    });
   }
 
   if (url.pathname === "/api/portfolio/exposure" && request.method === "GET") {
