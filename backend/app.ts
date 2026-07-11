@@ -56,7 +56,7 @@ export function createApp({
 }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
   const allow = rateLimiter();
-  const market = createMarketService({ alpaca, store, allow });
+  const market = createMarketService({ alpaca, store, allow, now });
   const strategies = createStrategyRuntime(alpaca, store, codeIdentity);
   const orderRuntime = createOrderRuntime(alpaca, store, now);
   const currentPortfolioExposure = createPortfolioExposureService(alpaca);

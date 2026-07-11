@@ -21,6 +21,7 @@ import { parseStreamSymbols } from "./market-stream";
 import {
   calendarDto,
   discoveryDto,
+  marketWorkspaceDto,
   type MarketCalendarSource,
   type MarketWorkspaceSource,
   parseSymbol,
@@ -63,6 +64,7 @@ type MarketServiceDependencies = {
   alpaca: Alpaca;
   store: Store;
   allow: RateLimit;
+  now?: () => Date;
 };
 
 /** Owns market caches and HTTP translation, delegating the stock-stream lifecycle. */
@@ -70,6 +72,7 @@ export function createMarketService({
   alpaca,
   store,
   allow,
+  now = () => new Date(),
 }: MarketServiceDependencies) {
   let assetCatalog: { expiresAt: number; assets: SearchableAsset[] } | null =
     null;
@@ -116,14 +119,14 @@ export function createMarketService({
         discoveryCache.source.actives,
         discoveryCache.source.clock,
         discoveryCache.source.retrievedAt,
-        new Date(),
+        now(),
       );
     const [movers, actives, clock] = await Promise.all([
       alpaca.marketData.screener.movers({ marketType: "stocks", top: 5 }),
       alpaca.marketData.screener.mostActives({ by: "volume", top: 5 }),
       getClock(),
     ]);
-    const retrievedAt = new Date().toISOString();
+    const retrievedAt = now().toISOString();
     const value = discoveryDto(movers, actives, clock, retrievedAt, retrievedAt);
     discoveryCache = {
       source: { movers, actives, clock, retrievedAt },
@@ -138,15 +141,15 @@ export function createMarketService({
         calendarCache.source.response,
         calendarCache.source.clock,
         calendarCache.source.retrievedAt,
-        new Date(),
+        now(),
       );
-    const start = new Date();
-    const end = new Date(Date.now() + 21 * 86_400_000);
+    const start = now();
+    const end = new Date(start.getTime() + 21 * 86_400_000);
     const [calendar, clock] = await Promise.all([
       alpaca.trading.calendar.calendar({ market: "NASDAQ", start, end }),
       getClock(),
     ]);
-    const retrievedAt = new Date().toISOString();
+    const retrievedAt = now().toISOString();
     const value = calendarDto(calendar, clock, retrievedAt, retrievedAt);
     calendarCache = {
       source: { response: calendar, clock, retrievedAt },
@@ -157,21 +160,28 @@ export function createMarketService({
 
   async function getWatchlists() {
     const summaries = await alpaca.trading.watchlists.getWatchlists();
-    return Promise.all(
+    const watchlists = await Promise.all(
       summaries.map((item) =>
         alpaca.trading.watchlists.getWatchlistById({ watchlistId: item.id }),
       ),
     );
+    return { watchlists, retrievedAt: now().toISOString() };
   }
 
   async function buildMonitoring(
     force = false,
   ): Promise<MarketMonitoringResponse> {
-    const [positions, rawWatchlists] = await Promise.all([
+    const [positions, watchlistSource] = await Promise.all([
       alpaca.trading.positions.getAllOpenPositions(),
       getWatchlists(),
     ]);
-    const watchlists = rawWatchlists.map(watchlistDto) as MonitoringWatchlist[];
+    const watchlists = watchlistSource.watchlists.map((watchlist) =>
+      watchlistDto(
+        watchlist,
+        watchlistSource.retrievedAt,
+        watchlistSource.retrievedAt,
+      ),
+    ) as MonitoringWatchlist[];
     const allSymbols = [
       ...new Set(
         [
@@ -595,16 +605,26 @@ export function createMarketService({
     }
 
     if (url.pathname === "/api/market/workspace" && request.method === "GET") {
-      const [watchlists, discovery, calendar] = await Promise.all([
+      const [watchlistSource, discovery, calendar] = await Promise.all([
         getWatchlists(),
         getDiscovery(),
         getCalendar(),
       ]);
-      return json({
-        watchlists: watchlists.map(watchlistDto),
-        discovery,
-        calendar,
-      });
+      const serverRespondedAt = now();
+      return json(
+        marketWorkspaceDto(
+          watchlistSource.watchlists.map((watchlist) =>
+            watchlistDto(
+              watchlist,
+              watchlistSource.retrievedAt,
+              serverRespondedAt,
+            ),
+          ),
+          discovery,
+          calendar,
+          serverRespondedAt,
+        ),
+      );
     }
 
     if (url.pathname === "/api/market/monitoring" && request.method === "GET") {
@@ -621,12 +641,13 @@ export function createMarketService({
       const watchlist = await alpaca.trading.watchlists.postWatchlist({
         updateWatchlistRequest: input,
       });
+      const retrievedAt = now();
       store.event("watchlist.created", actor, {
         watchlistId: watchlist.id,
         name: input.name,
         symbols: input.symbols,
       });
-      return json(watchlistDto(watchlist), 201);
+      return json(watchlistDto(watchlist, retrievedAt, now()), 201);
     }
 
     const watchlistMatch = url.pathname.match(
@@ -641,12 +662,13 @@ export function createMarketService({
         watchlistId: watchlistMatch[1]!,
         updateWatchlistRequest: input,
       });
+      const retrievedAt = now();
       store.event("watchlist.updated", actor, {
         watchlistId: watchlist.id,
         name: input.name,
         symbols: input.symbols,
       });
-      return json(watchlistDto(watchlist));
+      return json(watchlistDto(watchlist, retrievedAt, now()));
     }
     if (watchlistMatch && request.method === "DELETE") {
       if (!allow(`${actor}:watchlists`, 30)) {
@@ -673,11 +695,12 @@ export function createMarketService({
         watchlistId: watchlistAssetsMatch[1]!,
         addAssetToWatchlistRequest: { symbol },
       });
+      const retrievedAt = now();
       store.event("watchlist.asset.added", actor, {
         watchlistId: watchlist.id,
         symbol,
       });
-      return json(watchlistDto(watchlist));
+      return json(watchlistDto(watchlist, retrievedAt, now()));
     }
 
     const watchlistAssetMatch = url.pathname.match(
@@ -695,11 +718,12 @@ export function createMarketService({
           watchlistId: watchlistAssetMatch[1]!,
           symbol,
         });
+      const retrievedAt = now();
       store.event("watchlist.asset.removed", actor, {
         watchlistId: watchlist.id,
         symbol,
       });
-      return json(watchlistDto(watchlist));
+      return json(watchlistDto(watchlist, retrievedAt, now()));
     }
 
     return null;
