@@ -3,6 +3,7 @@ import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import type { CurrentPortfolioExposure } from "../../backend/features/portfolio/exposure-service";
 import { handlePortfolioRequest } from "../../backend/features/portfolio/routes";
 import { createStore } from "../../backend/persistence/store";
+import { normalizeActivity } from "../../backend/features/portfolio/ledger";
 
 const route = async (
   path: string,
@@ -19,7 +20,7 @@ const route = async (
     store: createStore(":memory:"),
     actor: "test-operator",
     allow: () => true,
-    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
     currentPortfolioExposure: async () => {
       throw new Error("unexpected exposure request");
     },
@@ -61,6 +62,111 @@ test("portfolio routes reject invalid inputs before broker calls", async () => {
     body: JSON.stringify({ targets: [] }),
   });
   expect(rebalance?.status).toBe(400);
+});
+
+test("account activities separate provider, effective, retrieval, and response times", async () => {
+  const store = createStore(":memory:");
+  try {
+    const retrievedAt = "2026-01-03T10:00:00.000Z";
+    store.syncActivities([
+      normalizeActivity({
+        id: "fill-1",
+        activityType: "FILL",
+        transactionTime: new Date("2026-01-02T15:00:00.000Z"),
+        symbol: "AAPL",
+        side: "buy",
+        qty: "1",
+        price: "100",
+      }, retrievedAt),
+      normalizeActivity({
+        id: "dividend-1",
+        activityType: "DIV",
+        createdAt: new Date("2026-01-02T02:00:00.000Z"),
+        date: new Date("2026-01-01T00:00:00.000Z"),
+        symbol: "AAPL",
+        netAmount: "1.25",
+      }, retrievedAt),
+    ]);
+    const request = new Request("http://localhost/api/account/activities?limit=2");
+    const response = await handlePortfolioRequest(request, new URL(request.url), {
+      alpaca: {} as Alpaca,
+      store,
+      actor: "test-operator",
+      allow: () => true,
+      syncAccountActivities: async () => ({
+        imported: 2,
+        truncated: false,
+        retrievedAt,
+        cacheHit: false,
+      }),
+      currentPortfolioExposure: async () => {
+        throw new Error("unexpected exposure request");
+      },
+      capturePortfolioSnapshot: async () => {
+        throw new Error("unexpected snapshot capture");
+      },
+      now: () => new Date("2026-01-03T10:00:01.000Z"),
+    });
+
+    expect(response?.status).toBe(200);
+    const body = await response!.json();
+    expect(body).toMatchObject({
+      schemaVersion: "account-activities-v2",
+      imported: 2,
+      cache: { hit: false, ttlSeconds: 30 },
+      quality: {
+        status: "complete",
+        received: {
+          storedActivities: 2,
+          withRetrievalTime: 2,
+          withProviderTime: 2,
+        },
+      },
+      source: {
+        provider: "alpaca",
+        api: "trading",
+        environment: "paper",
+        endpoint: "account-activities",
+      },
+      observedAt: "2026-01-02T15:00:00.000Z",
+      publishedAt: "2026-01-02T02:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-01-01T00:00:00.000Z",
+        end: "2026-01-02T15:00:00.000Z",
+        label: "Imported account activity history",
+      },
+      retrievedAt,
+      serverRespondedAt: "2026-01-03T10:00:01.000Z",
+    });
+    expect(body.activities[0]).toMatchObject({
+      id: "fill-1",
+      occurredAt: "2026-01-02T15:00:00.000Z",
+      observedAt: "2026-01-02T15:00:00.000Z",
+      publishedAt: null,
+      effectivePeriod: null,
+      retrievedAt,
+      serverRespondedAt: "2026-01-03T10:00:01.000Z",
+    });
+    expect(body.activities[1]).toMatchObject({
+      id: "dividend-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      observedAt: null,
+      publishedAt: "2026-01-02T02:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-01-01T00:00:00.000Z",
+        end: "2026-01-01T23:59:59.999Z",
+      },
+      retrievedAt,
+      serverRespondedAt: "2026-01-03T10:00:01.000Z",
+    });
+    expect(body.summary).toMatchObject({
+      source: { provider: "local", component: "fifo-account-ledger" },
+      retrievedAt,
+      serverRespondedAt: "2026-01-03T10:00:01.000Z",
+    });
+  } finally {
+    store.close();
+  }
 });
 
 test("portfolio performance route separates portfolio, benchmark, and response times", async () => {
@@ -109,7 +215,7 @@ test("portfolio performance route separates portfolio, benchmark, and response t
     store: createStore(":memory:"),
     actor: "test-operator",
     allow: () => true,
-    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
     currentPortfolioExposure: async () => {
       throw new Error("unexpected exposure request");
     },
@@ -162,7 +268,7 @@ test("portfolio exposure route preserves the normalized service contract", async
     store: createStore(":memory:"),
     actor: "test-operator",
     allow: () => true,
-    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
     currentPortfolioExposure: async () => ({ equity: 10_000, report }),
     capturePortfolioSnapshot: async () => {
       throw new Error("unexpected snapshot capture");
@@ -213,7 +319,7 @@ test("portfolio snapshots route preserves capture time and legacy gaps", async (
     store,
     actor: "test-operator",
     allow: () => true,
-    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
     currentPortfolioExposure: async () => {
       throw new Error("unexpected exposure request");
     },
@@ -302,7 +408,7 @@ test("portfolio risk distinguishes whole-account and invested-asset diversificat
     store: createStore(":memory:"),
     actor: "test-operator",
     allow: () => true,
-    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
     currentPortfolioExposure: async () => {
       throw new Error("unexpected exposure request");
     },

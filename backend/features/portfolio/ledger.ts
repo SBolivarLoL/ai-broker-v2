@@ -1,4 +1,9 @@
 /** Normalizes broker account activities into ledger and FIFO tax-lot records. */
+import {
+  normalizeIsoTime,
+  type NormalizedEffectivePeriod,
+} from "../../shared/time-provenance";
+
 export type LedgerCategory = "trade" | "dividend" | "interest" | "fee" | "transfer" | "corporate_action" | "option" | "other";
 
 export type BrokerActivity = {
@@ -56,6 +61,10 @@ export type LedgerActivity = {
   amount: number;
   orderId: string | null;
   corporateAction?: CorporateActionDetails | null;
+  observedAt: string | null;
+  publishedAt: string | null;
+  effectivePeriod: NormalizedEffectivePeriod | null;
+  retrievedAt: string | null;
 };
 
 export type FifoLot = { symbol: string; quantity: number; price: number; acquiredAt: string };
@@ -83,6 +92,23 @@ const optionalNumber = (value: unknown) => {
 
 const optionalString = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
 const field = (activity: BrokerActivity, camel: string, snake: string) => activity[camel] ?? activity[snake];
+
+function activityDate(value: unknown, label: string) {
+  if (value === undefined || value === null) return null;
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime()))
+    throw new Error(`Activity ${label} is invalid`);
+  return value;
+}
+
+function activityEffectivePeriod(date: Date | null) {
+  if (!date) return null;
+  const day = date.toISOString().slice(0, 10);
+  return {
+    start: `${day}T00:00:00.000Z`,
+    end: `${day}T23:59:59.999Z`,
+    label: "Broker activity occurrence or settlement date",
+  };
+}
 
 function basisAllocations(activity: BrokerActivity): CorporateActionBasisAllocation[] {
   const raw = activity.basisAllocations ?? activity.basis_allocations;
@@ -116,14 +142,20 @@ function corporateActionDetails(activity: BrokerActivity): CorporateActionDetail
   };
 }
 
-export function normalizeActivity(activity: BrokerActivity): LedgerActivity {
+export function normalizeActivity(
+  activity: BrokerActivity,
+  retrievedAt: string | Date | number | null = null,
+): LedgerActivity {
   const type = String(activity.activityType ?? "").toUpperCase();
   const side = activity.side === "buy" || activity.side === "sell" ? activity.side : null;
   const quantity = optionalNumber(activity.qty);
   const price = optionalNumber(activity.price);
-  const date = activity.transactionTime ?? activity.createdAt ?? activity.date;
-  if (!activity.id || !type || !date || !Number.isFinite(date.getTime())) throw new Error("Activity is missing its broker identity, type, or timestamp");
-  if (type === "FILL" && (!side || quantity === null || quantity <= 0 || price === null || price <= 0 || !activity.symbol)) throw new Error("Fill activity is incomplete");
+  const transactionTime = activityDate(activity.transactionTime, "transaction time");
+  const createdAt = activityDate(activity.createdAt, "creation time");
+  const date = activityDate(activity.date, "effective date");
+  const occurredAt = transactionTime ?? date ?? createdAt;
+  if (!activity.id || !type || !occurredAt) throw new Error("Activity is missing its broker identity, type, or timestamp");
+  if (type === "FILL" && (!transactionTime || !side || quantity === null || quantity <= 0 || price === null || price <= 0 || !activity.symbol)) throw new Error("Fill activity is incomplete");
   const netAmount = optionalNumber(activity.netAmount);
   const amount = type === "FILL" ? quantity! * price! * (side === "buy" ? -1 : 1) : (netAmount ?? 0);
   const category = activityCategory(type);
@@ -133,7 +165,7 @@ export function normalizeActivity(activity: BrokerActivity): LedgerActivity {
     subType: activity.activitySubType ?? null,
     category,
     status: activity.status ?? "executed",
-    occurredAt: date.toISOString(),
+    occurredAt: occurredAt.toISOString(),
     symbol: activity.symbol ?? null,
     side,
     quantity,
@@ -141,6 +173,12 @@ export function normalizeActivity(activity: BrokerActivity): LedgerActivity {
     amount,
     orderId: activity.orderId ?? null,
     corporateAction: category === "corporate_action" ? corporateActionDetails(activity) : null,
+    observedAt: transactionTime?.toISOString() ?? null,
+    publishedAt: createdAt?.toISOString() ?? null,
+    effectivePeriod: activityEffectivePeriod(date),
+    retrievedAt: retrievedAt === null
+      ? null
+      : normalizeIsoTime(retrievedAt, "Activity retrieval time"),
   };
 }
 

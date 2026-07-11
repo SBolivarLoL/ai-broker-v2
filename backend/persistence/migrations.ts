@@ -385,6 +385,21 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
       ]);
     },
   },
+  {
+    id: "0015",
+    name: "account activity time provenance",
+    checksum: "sha256:account-activity-time-provenance-v1",
+    up(db) {
+      run(db, [
+        "ALTER TABLE account_activities ADD COLUMN observed_at TEXT",
+        "ALTER TABLE account_activities ADD COLUMN published_at TEXT",
+        "ALTER TABLE account_activities ADD COLUMN effective_start TEXT",
+        "ALTER TABLE account_activities ADD COLUMN effective_end TEXT",
+        "ALTER TABLE account_activities ADD COLUMN effective_label TEXT",
+        "ALTER TABLE account_activities ADD COLUMN retrieved_at TEXT",
+      ]);
+    },
+  },
 ];
 
 export function migrateDatabase(

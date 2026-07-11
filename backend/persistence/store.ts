@@ -235,11 +235,13 @@ export function createStore(filename = "data/app.db") {
   const syncActivitiesTransaction = db.transaction(
     (activities: LedgerActivity[]) => {
       const statement =
-        db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id, corporate_action)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        db.query(`INSERT INTO account_activities (activity_id, type, sub_type, category, status, occurred_at, symbol, side, quantity, price, amount, order_id, corporate_action, observed_at, published_at, effective_start, effective_end, effective_label, retrieved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(activity_id) DO UPDATE SET type=excluded.type, sub_type=excluded.sub_type, category=excluded.category, status=excluded.status,
       occurred_at=excluded.occurred_at, symbol=excluded.symbol, side=excluded.side, quantity=excluded.quantity, price=excluded.price,
-      amount=excluded.amount, order_id=excluded.order_id, corporate_action=excluded.corporate_action, synced_at=CURRENT_TIMESTAMP`);
+      amount=excluded.amount, order_id=excluded.order_id, corporate_action=excluded.corporate_action, observed_at=excluded.observed_at,
+      published_at=excluded.published_at, effective_start=excluded.effective_start, effective_end=excluded.effective_end,
+      effective_label=excluded.effective_label, retrieved_at=excluded.retrieved_at, synced_at=CURRENT_TIMESTAMP`);
       for (const activity of activities)
         statement.run(
           activity.id,
@@ -257,12 +259,20 @@ export function createStore(filename = "data/app.db") {
           activity.corporateAction
             ? JSON.stringify(activity.corporateAction)
             : null,
+          activity.observedAt,
+          activity.publishedAt,
+          activity.effectivePeriod?.start ?? null,
+          activity.effectivePeriod?.end ?? null,
+          activity.effectivePeriod?.label ?? null,
+          activity.retrievedAt,
         );
       return activities.length;
     },
   );
   const activitySelect = `SELECT activity_id AS id, type, sub_type AS subType, category, status, occurred_at AS occurredAt,
-    symbol, side, quantity, price, amount, order_id AS orderId, corporate_action AS corporateActionJson FROM account_activities`;
+    symbol, side, quantity, price, amount, order_id AS orderId, corporate_action AS corporateActionJson,
+    observed_at AS observedAt, published_at AS publishedAt, effective_start AS effectiveStart,
+    effective_end AS effectiveEnd, effective_label AS effectiveLabel, retrieved_at AS retrievedAt FROM account_activities`;
   const decisionAuditSelect = `SELECT id, subject_id AS subjectId, kind, actor, payload, previous_hash AS previousHash,
     entry_hash AS entryHash, retention_until AS retentionUntil, created_at AS createdAt FROM decision_audit_log`;
   const mapEventRow = (row: any) => ({
@@ -697,12 +707,31 @@ export function createStore(filename = "data/app.db") {
                 `${activitySelect} ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`,
               )
               .all(limit)
-      ) as (LedgerActivity & { corporateActionJson: string | null })[];
-      return rows.map(({ corporateActionJson, ...activity }) => ({
+      ) as (LedgerActivity & {
+        corporateActionJson: string | null;
+        effectiveStart: string | null;
+        effectiveEnd: string | null;
+        effectiveLabel: string | null;
+      })[];
+      return rows.map(({
+        corporateActionJson,
+        effectiveStart,
+        effectiveEnd,
+        effectiveLabel,
+        ...activity
+      }) => ({
         ...activity,
         corporateAction: corporateActionJson
           ? JSON.parse(corporateActionJson)
           : null,
+        effectivePeriod:
+          effectiveStart || effectiveEnd || effectiveLabel
+            ? {
+                start: effectiveStart,
+                end: effectiveEnd,
+                label: effectiveLabel,
+              }
+            : null,
       }));
     },
     startResearch(id: string, symbol: string, model: string) {

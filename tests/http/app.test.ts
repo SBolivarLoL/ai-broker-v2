@@ -26,6 +26,8 @@ type FakeAlpacaOptions = {
   optionActionError?: Error;
   cryptoBarsError?: Error;
   cryptoBars?: (request: any) => Record<string, any[]>;
+  activities?: any[];
+  activitiesError?: Error;
 };
 
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
@@ -36,6 +38,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   const replacementAttempts: any[] = [];
   const optionActionAttempts: { action: string; symbol: string }[] = [];
   const cryptoBarRequests: any[] = [];
+  let activityRequests = 0;
   const acceptedOrders = new Map<string, any>();
   const orderStreamCallbacks: Record<string, (...args: any[]) => void> = {};
   const orderStream = {
@@ -119,6 +122,11 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     },
     trading: {
       stream: () => orderStream,
+      iterateActivities: async function* () {
+        activityRequests++;
+        if (options.activitiesError) throw options.activitiesError;
+        for (const activity of options.activities ?? []) yield activity;
+      },
       account: { getAccount: async () => { if (options.accountError) throw options.accountError; const equity = options.accountEquity ?? 1_000; return { equity, cash: equity, buyingPower: equity, optionsBuyingPower: equity, optionsTradingLevel: 3, currency: "USD", status: "ACTIVE" }; } },
       positions: {
         getAllOpenPositions: async () => options.positions ?? [],
@@ -224,6 +232,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     replacementAttempts,
     optionActionAttempts,
     cryptoBarRequests,
+    activityRequests: () => activityRequests,
     emitOrderStreamState: (state: string) => orderStreamCallbacks.state?.(state),
     emitTradeUpdate: (clientOrderId: string, status: string) => {
       const order = acceptedOrders.get(clientOrderId);
@@ -246,7 +255,7 @@ function testApp(
   // Relaxed auth is opt-in; default test apps to the development/test path so
   // demo-identity contracts hold unless a test supplies its own NODE_ENV.
   const resolvedEnv = { NODE_ENV: "test", ...env };
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0, now }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0, now }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, activityRequests: fake.activityRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -333,6 +342,57 @@ test("account API accepts the post-PDT broker shape and exposes only allow-liste
       serverResponseTime: "2026-07-11T10:00:01.000Z",
     },
     asOf: "2026-07-11T10:00:01.000Z",
+  });
+});
+
+test("account activity API persists completed broker retrieval and preserves it across cache hits", async () => {
+  const times = [
+    new Date("2026-07-11T11:00:00Z"),
+    new Date("2026-07-11T11:00:01Z"),
+    new Date("2026-07-11T11:00:02Z"),
+  ];
+  const app = testApp({}, {
+    activities: [{
+      id: "fill-1",
+      activityType: "FILL",
+      transactionTime: new Date("2026-07-11T10:59:00Z"),
+      symbol: "AAPL",
+      side: "buy",
+      qty: "1",
+      price: "100",
+    }],
+  }, () => times.shift()!);
+
+  const first = await app.fetch(new Request("http://local/api/account/activities"));
+  expect(first.status).toBe(200);
+  expect(await first.json()).toMatchObject({
+    imported: 1,
+    cache: { hit: false },
+    retrievedAt: "2026-07-11T11:00:00.000Z",
+    serverRespondedAt: "2026-07-11T11:00:01.000Z",
+    activities: [{
+      id: "fill-1",
+      observedAt: "2026-07-11T10:59:00.000Z",
+      retrievedAt: "2026-07-11T11:00:00.000Z",
+      serverRespondedAt: "2026-07-11T11:00:01.000Z",
+    }],
+  });
+
+  const second = await app.fetch(new Request("http://local/api/account/activities"));
+  expect(second.status).toBe(200);
+  expect(await second.json()).toMatchObject({
+    cache: { hit: true },
+    retrievedAt: "2026-07-11T11:00:00.000Z",
+    serverRespondedAt: "2026-07-11T11:00:02.000Z",
+    activities: [{
+      retrievedAt: "2026-07-11T11:00:00.000Z",
+      serverRespondedAt: "2026-07-11T11:00:02.000Z",
+    }],
+  });
+  expect(app.activityRequests()).toBe(1);
+  expect(app.store.activities()[0]).toMatchObject({
+    observedAt: "2026-07-11T10:59:00.000Z",
+    retrievedAt: "2026-07-11T11:00:00.000Z",
   });
 });
 

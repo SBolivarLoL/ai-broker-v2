@@ -451,7 +451,7 @@ async function loadActivities(category = "") {
     summary = data.summary,
     unresolved = summary.unresolvedCorporateActions || [];
   $("#ledger-asof").textContent =
-    `${summary.activityCount} imported activities · FIFO fill accounting · synced ${new Date(data.asOf).toLocaleTimeString()}`;
+    `${summary.activityCount} imported activities · FIFO fill accounting · broker data ${data.cache?.hit ? "reused" : "retrieved"} ${new Date(data.retrievedAt).toLocaleTimeString()}`;
   $("#ledger-metrics").innerHTML =
     `<div class="metric"><strong class="${summary.realizedProfitLoss >= 0 ? "gain" : "loss"}">${esc(signedMoney(summary.realizedProfitLoss))}</strong><span class="muted">Realized trading P&amp;L</span></div><div class="metric"><strong>${esc(signedMoney(summary.dividends))}</strong><span class="muted">Dividends</span></div><div class="metric"><strong>${esc(money.format(summary.feesPaid))}</strong><span class="muted">Fees paid</span></div><div class="metric"><strong>${esc(signedMoney(summary.netTransfers))}</strong><span class="muted">Net transfers</span></div>`;
   $("#ledger-warnings").innerHTML = summary.warnings.length

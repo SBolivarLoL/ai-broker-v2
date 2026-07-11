@@ -125,6 +125,13 @@ provider observation. The order runtime retains per-order REST/stream receipt
 times so route normalization can preserve the provenance of the state that
 actually won reconciliation.
 
+`portfolio/ledger.ts` normalizes account activities for FIFO calculations, and
+`portfolio/activity-response.ts` owns their browser contract. Trade execution,
+provider record creation, non-trade occurrence-or-settlement days, completed
+broker retrieval, cache reuse, and response delivery remain separate. Migration
+0015 stores the normalized provider and retrieval fields; older rows keep null
+provenance until a later broker read supplies it.
+
 `portfolio/analytics.ts` owns deterministic portfolio-performance calculations
 and response normalization. `portfolio/routes.ts` captures portfolio-history/
 position retrieval before the optional benchmark read, then captures benchmark
