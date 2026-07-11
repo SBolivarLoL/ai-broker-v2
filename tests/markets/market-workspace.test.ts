@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   calendarDto,
   discoveryDto,
+  marketWorkspaceDto,
   orderSessionGuidance,
   parseSymbol,
   parseWatchlistInput,
@@ -23,19 +24,37 @@ test("validates and normalizes bounded watchlist input", () => {
 });
 
 test("exposes safe watchlist and market discovery DTOs", () => {
-  expect(
-    watchlistDto({
+  const watchlist = watchlistDto(
+    {
       id: "1",
       name: "Core",
+      createdAt: new Date("2025-12-01T12:00:00Z"),
       updatedAt: new Date("2026-01-01"),
       assets: [
         { symbol: "AAPL", name: "Apple", exchange: "NASDAQ", tradable: true },
       ],
-    }),
-  ).toMatchObject({
+    },
+    new Date("2026-01-02T12:00:00Z"),
+    new Date("2026-01-02T12:00:01Z"),
+  );
+  expect(watchlist).toMatchObject({
     id: "1",
     name: "Core",
-    assets: [{ symbol: "AAPL", tradable: true }],
+    createdAt: "2025-12-01T12:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    observedAt: "2026-01-01T00:00:00.000Z",
+    retrievedAt: "2026-01-02T12:00:00.000Z",
+    serverRespondedAt: "2026-01-02T12:00:01.000Z",
+    asOf: "2026-01-02T12:00:01.000Z",
+    assets: [
+      {
+        symbol: "AAPL",
+        tradable: true,
+        observedAt: null,
+        retrievedAt: "2026-01-02T12:00:00.000Z",
+        serverRespondedAt: "2026-01-02T12:00:01.000Z",
+      },
+    ],
   });
   const result = discoveryDto(
     {
@@ -96,6 +115,41 @@ test("exposes safe watchlist and market discovery DTOs", () => {
     observationTime: "2026-01-01T14:32:00.000Z",
     retrievalTime: "2026-01-01T14:32:02.000Z",
     serverResponseTime: "2026-01-01T14:32:03.000Z",
+  });
+});
+
+test("market workspace aggregates child observation and retrieval times", () => {
+  const result = marketWorkspaceDto(
+    [
+      {
+        observedAt: "2026-01-01T14:00:00.000Z",
+        retrievedAt: "2026-01-01T14:32:01.000Z",
+      } as any,
+    ],
+    {
+      observedAt: "2026-01-01T14:31:00.000Z",
+      retrievedAt: "2026-01-01T14:32:02.000Z",
+    } as any,
+    {
+      observedAt: "2026-01-01T14:32:00.000Z",
+      retrievedAt: "2026-01-01T14:32:03.000Z",
+    } as any,
+    new Date("2026-01-01T14:32:04Z"),
+  );
+
+  expect(result).toMatchObject({
+    source: "Alpaca Trading and Market Data APIs",
+    observedAt: "2026-01-01T14:32:00.000Z",
+    retrievedAt: "2026-01-01T14:32:03.000Z",
+    serverRespondedAt: "2026-01-01T14:32:04.000Z",
+    time: {
+      observationTime: "2026-01-01T14:32:00.000Z",
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-01-01T14:32:03.000Z",
+      serverResponseTime: "2026-01-01T14:32:04.000Z",
+    },
+    asOf: "2026-01-01T14:32:04.000Z",
   });
 });
 

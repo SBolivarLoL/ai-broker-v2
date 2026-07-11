@@ -3,7 +3,10 @@ import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { createMarketService } from "../../backend/features/markets/service";
 import { createStore } from "../../backend/persistence/store";
 
-function fakeMarketService(allow = () => true) {
+function fakeMarketService(
+  allow = () => true,
+  now: () => Date = () => new Date(),
+) {
   let clockCalls = 0,
     discoveryCalls = 0,
     calendarCalls = 0,
@@ -180,6 +183,19 @@ function fakeMarketService(allow = () => true) {
       watchlists: {
         getWatchlists: async () => [],
         getWatchlistById: async () => null,
+        postWatchlist: async ({ updateWatchlistRequest }: any) => ({
+          accountId: "account-1",
+          id: "watchlist-1",
+          name: updateWatchlistRequest.name,
+          createdAt: new Date("2026-06-20T12:00:00Z"),
+          updatedAt: new Date("2026-06-22T14:00:00Z"),
+          assets: updateWatchlistRequest.symbols.map((symbol: string) => ({
+            symbol,
+            name: symbol,
+            exchange: "NASDAQ",
+            tradable: true,
+          })),
+        }),
       },
     },
   } as unknown as Alpaca;
@@ -188,6 +204,7 @@ function fakeMarketService(allow = () => true) {
       alpaca,
       store: createStore(":memory:"),
       allow,
+      now,
     }),
     clockCalls: () => clockCalls,
     discoveryCalls: () => discoveryCalls,
@@ -374,6 +391,13 @@ test("market workspace route keeps cached provider retrieval separate from respo
       },
     },
   });
+  expect(firstBody).toMatchObject({
+    source: "Alpaca Trading and Market Data APIs",
+    observedAt: "2026-06-22T14:32:00.000Z",
+    retrievedAt: firstBody.time.retrievalTime,
+    serverRespondedAt: firstBody.asOf,
+  });
+  expect(firstBody.time.serverResponseTime).toBe(firstBody.serverRespondedAt);
   expect(secondBody.discovery.retrievedAt).toBe(firstBody.discovery.retrievedAt);
   expect(secondBody.calendar.retrievedAt).toBe(firstBody.calendar.retrievedAt);
   expect(
@@ -384,6 +408,43 @@ test("market workspace route keeps cached provider retrieval separate from respo
   ).toBeGreaterThan(new Date(firstBody.calendar.serverRespondedAt).getTime());
   expect(discoveryCalls()).toBe(1);
   expect(calendarCalls()).toBe(1);
+});
+
+test("watchlist mutation separates provider update, retrieval, and response times", async () => {
+  const times = [
+    new Date("2026-06-22T14:00:01Z"),
+    new Date("2026-06-22T14:00:02Z"),
+  ];
+  const { service } = fakeMarketService(() => true, () => times.shift()!);
+  const request = new Request("http://localhost/api/watchlists", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Core", symbols: ["AAPL"] }),
+  });
+  const response = await service.handleRequest(
+    request,
+    new URL(request.url),
+    "test",
+  );
+
+  expect(response?.status).toBe(201);
+  expect(await response?.json()).toMatchObject({
+    id: "watchlist-1",
+    name: "Core",
+    updatedAt: "2026-06-22T14:00:00.000Z",
+    observedAt: "2026-06-22T14:00:00.000Z",
+    retrievedAt: "2026-06-22T14:00:01.000Z",
+    serverRespondedAt: "2026-06-22T14:00:02.000Z",
+    asOf: "2026-06-22T14:00:02.000Z",
+    assets: [
+      {
+        symbol: "AAPL",
+        observedAt: null,
+        retrievedAt: "2026-06-22T14:00:01.000Z",
+        serverRespondedAt: "2026-06-22T14:00:02.000Z",
+      },
+    ],
+  });
 });
 
 test("company market route keeps cached provider retrieval separate from response time", async () => {

@@ -93,6 +93,15 @@ flowchart TD
     DB --> AU["Audit hashing"]
 ```
 
+The market boundary keeps provider retrieval and presentation separate:
+
+- `markets/service.ts` owns provider calls, cache lifetimes, and response-time
+  capture for market routes.
+- `markets/market-workspace.ts` owns pure watchlist, discovery, calendar, and
+  workspace normalization. Watchlist detail retrieval completes before its
+  retrieval timestamp is captured; the workspace root aggregates child times
+  without relabeling retrieval as observation.
+
 The order boundary is deliberately split by responsibility:
 
 - `orders/runtime.ts` owns broker recovery, stream reconciliation, pending-order valuation, and broker submission helpers.

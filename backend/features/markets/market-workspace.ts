@@ -1,5 +1,8 @@
 /** Pure validation and presentation helpers for market-discovery endpoints. */
-import { normalizeTimeProvenance } from "../../shared/time-provenance";
+import {
+  normalizeTimeProvenance,
+  providerTimeFields,
+} from "../../shared/time-provenance";
 
 type DateInput = string | number | Date;
 
@@ -54,17 +57,75 @@ export function parseSymbol(input: unknown) {
   return symbol;
 }
 
-export function watchlistDto(watchlist: any) {
+export function watchlistDto(
+  watchlist: any,
+  retrievedAtInput: DateInput = new Date(),
+  serverRespondedAtInput: DateInput = retrievedAtInput,
+) {
+  const retrievedAt = iso(retrievedAtInput);
+  const serverRespondedAt = iso(serverRespondedAtInput);
+  const observedAt = iso(watchlist.updatedAt);
+  const responseTime = providerTimeFields({
+    observationTime: null,
+    publicationTime: null,
+    effectivePeriod: null,
+    retrievalTime: retrievedAt,
+    serverResponseTime: serverRespondedAt,
+  });
   return {
     id: String(watchlist.id),
     name: String(watchlist.name),
-    updatedAt: new Date(watchlist.updatedAt).toISOString(),
+    createdAt: iso(watchlist.createdAt),
+    updatedAt: observedAt,
     assets: (watchlist.assets ?? []).map((asset: any) => ({
       symbol: String(asset.symbol),
       name: String(asset.name ?? asset.symbol),
       exchange: String(asset.exchange ?? ""),
       tradable: Boolean(asset.tradable),
+      source: "Alpaca Trading API",
+      ...responseTime,
     })),
+    source: "Alpaca Trading API",
+    ...providerTimeFields({
+      observationTime: observedAt,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
+  };
+}
+
+export function marketWorkspaceDto(
+  watchlists: ReturnType<typeof watchlistDto>[],
+  discovery: ReturnType<typeof discoveryDto>,
+  calendar: ReturnType<typeof calendarDto>,
+  serverRespondedAtInput: DateInput = new Date(),
+) {
+  const serverRespondedAt = iso(serverRespondedAtInput);
+  const observedAt = latest([
+    ...watchlists.map((watchlist) => watchlist.observedAt),
+    discovery.observedAt,
+    calendar.observedAt,
+  ]);
+  const retrievedAt =
+    latest([
+      ...watchlists.map((watchlist) => watchlist.retrievedAt),
+      discovery.retrievedAt,
+      calendar.retrievedAt,
+    ]) ?? serverRespondedAt;
+  return {
+    watchlists,
+    discovery,
+    calendar,
+    source: "Alpaca Trading and Market Data APIs",
+    ...providerTimeFields({
+      observationTime: observedAt,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: retrievedAt,
+      serverResponseTime: serverRespondedAt,
+    }),
   };
 }
 
