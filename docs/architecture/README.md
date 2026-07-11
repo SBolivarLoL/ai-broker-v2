@@ -125,6 +125,13 @@ provider observation. The order runtime retains per-order REST/stream receipt
 times so route normalization can preserve the provenance of the state that
 actually won reconciliation.
 
+`portfolio/analytics.ts` owns deterministic portfolio-performance calculations
+and response normalization. `portfolio/routes.ts` captures portfolio-history/
+position retrieval before the optional benchmark read, then captures benchmark
+retrieval and server response independently. A benchmark skipped because no
+portfolio points exist remains explicitly unqueried rather than inheriting the
+portfolio retrieval timestamp.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.

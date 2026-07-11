@@ -280,6 +280,7 @@ export function createApp({
         currentPortfolioExposure,
         capturePortfolioSnapshot,
         env,
+        now,
       });
       if (portfolioResponse) return portfolioResponse;
       const researchResponse = await handleResearchRequest(request, url, {

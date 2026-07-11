@@ -5,6 +5,7 @@ import {
   diversificationScopes,
   moneyWeightedReturn,
   performancePoints,
+  portfolioPerformanceDto,
   performanceSummary,
   stressTests,
   timeWeightedReturn,
@@ -75,6 +76,110 @@ describe("portfolio analytics", () => {
     expect(benchmarkAttribution(funded, [], "SPY").quality).toBe(
       "insufficient",
     );
+  });
+
+  test("normalizes portfolio, benchmark, position, and response times", () => {
+    const dayOne = Date.parse("2026-01-01T00:00:00Z");
+    const dayTwo = Date.parse("2026-01-02T00:00:00Z");
+    const normalized = portfolioPerformanceDto({
+      period: "1M",
+      points: [
+        {
+          timestamp: dayOne,
+          equity: 100,
+          profitLoss: 0,
+          profitLossPercent: 0,
+          externalCashFlow: 0,
+        },
+        {
+          timestamp: dayTwo,
+          equity: 110,
+          profitLoss: 10,
+          profitLossPercent: 10,
+          externalCashFlow: 0,
+        },
+      ],
+      benchmarkBars: [
+        { timestamp: "2026-01-01T20:00:00Z", close: 200 },
+        { timestamp: "2026-01-02T20:00:00Z", close: 210 },
+      ],
+      benchmarkSymbol: "SPY",
+      benchmarkSource: { provider: "alpaca", feed: "iex" },
+      positions: [
+        {
+          symbol: "AAPL",
+          marketValue: "100",
+          unrealizedPl: "10",
+          unrealizedPlpc: "0.1",
+        },
+      ],
+      portfolioRetrievedAt: "2026-01-02T20:00:01Z",
+      benchmarkRetrievedAt: "2026-01-02T20:00:02Z",
+      serverRespondedAt: "2026-01-02T20:00:03Z",
+    });
+
+    expect(normalized).toMatchObject({
+      observedAt: "2026-01-02T20:00:00.000Z",
+      retrievedAt: "2026-01-02T20:00:02.000Z",
+      serverRespondedAt: "2026-01-02T20:00:03.000Z",
+      effectivePeriod: {
+        start: "2026-01-01T00:00:00.000Z",
+        end: "2026-01-02T00:00:00.000Z",
+      },
+      summary: {
+        observedAt: "2026-01-02T00:00:00.000Z",
+        retrievedAt: "2026-01-02T20:00:01.000Z",
+      },
+      benchmark: {
+        observedAt: "2026-01-02T20:00:00.000Z",
+        retrievedAt: "2026-01-02T20:00:02.000Z",
+        serverRespondedAt: "2026-01-02T20:00:03.000Z",
+      },
+      points: [
+        {
+          observedAt: "2026-01-01T00:00:00.000Z",
+          retrievedAt: "2026-01-02T20:00:01.000Z",
+        },
+        { observedAt: "2026-01-02T00:00:00.000Z" },
+      ],
+      attribution: [
+        {
+          symbol: "AAPL",
+          observedAt: null,
+          retrievedAt: "2026-01-02T20:00:01.000Z",
+        },
+      ],
+      quality: {
+        observedAt: "2026-01-02T20:00:00.000Z",
+        retrievedAt: "2026-01-02T20:00:02.000Z",
+      },
+    });
+  });
+
+  test("keeps an unqueried benchmark retrieval explicitly unavailable", () => {
+    const normalized = portfolioPerformanceDto({
+      period: "1M",
+      points: [],
+      benchmarkBars: [],
+      benchmarkSymbol: "SPY",
+      benchmarkSource: null,
+      positions: [],
+      portfolioRetrievedAt: "2026-01-02T20:00:01Z",
+      benchmarkRetrievedAt: null,
+      serverRespondedAt: "2026-01-02T20:00:02Z",
+    });
+
+    expect(normalized.benchmark).toMatchObject({
+      quality: "insufficient",
+      observedAt: null,
+      retrievedAt: null,
+      serverRespondedAt: "2026-01-02T20:00:02.000Z",
+      time: {
+        observationTime: null,
+        retrievalTime: null,
+        serverResponseTime: "2026-01-02T20:00:02.000Z",
+      },
+    });
   });
 
   test("reconciles delayed opening funding to the first funded equity point", () => {
