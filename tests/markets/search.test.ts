@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { searchAssets } from "../../backend/features/markets/search";
+import {
+  assetSearchDto,
+  searchAssets,
+} from "../../backend/features/markets/search";
 
 const assets = [
   { symbol: "NVDA", name: "NVIDIA Corporation", exchange: "NASDAQ" },
@@ -27,4 +30,37 @@ test("supports case-insensitive fuzzy subsequence matches and limits results", (
 test("returns no suggestions for empty or unrelated input", () => {
   expect(searchAssets(assets, "")).toEqual([]);
   expect(searchAssets(assets, "zzzzzz")).toEqual([]);
+});
+
+test("asset search keeps unavailable observation separate from retrieval", () => {
+  const result = assetSearchDto({
+    assets,
+    query: "app",
+    retrievedAt: new Date("2026-07-11T10:00:00Z"),
+    serverRespondedAt: new Date("2026-07-11T10:00:01Z"),
+  });
+
+  expect(result).toMatchObject({
+    query: "app",
+    source: "Alpaca Trading API asset master",
+    observedAt: null,
+    retrievedAt: "2026-07-11T10:00:00.000Z",
+    serverRespondedAt: "2026-07-11T10:00:01.000Z",
+    asOf: "2026-07-11T10:00:01.000Z",
+    results: [
+      {
+        symbol: "AAPL",
+        observedAt: null,
+        retrievedAt: "2026-07-11T10:00:00.000Z",
+        serverRespondedAt: "2026-07-11T10:00:01.000Z",
+      },
+    ],
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-07-11T10:00:00.000Z",
+      serverResponseTime: "2026-07-11T10:00:01.000Z",
+    },
+  });
 });
