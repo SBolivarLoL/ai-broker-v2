@@ -2,12 +2,48 @@ import { describe, expect, test } from "bun:test";
 import { activityCategory, ledgerSummary, normalizeActivity, type LedgerActivity } from "../../backend/features/portfolio/ledger";
 import { createStore } from "../../backend/persistence/store";
 
-const fill = (id: string, occurredAt: string, side: "buy" | "sell", quantity: number, price: number): LedgerActivity => ({ id, type: "FILL", subType: null, category: "trade", status: "executed", occurredAt, symbol: "AAPL", side, quantity, price, amount: quantity * price * (side === "buy" ? -1 : 1), orderId: null });
+const fill = (id: string, occurredAt: string, side: "buy" | "sell", quantity: number, price: number): LedgerActivity => ({
+  id,
+  type: "FILL",
+  subType: null,
+  category: "trade",
+  status: "executed",
+  occurredAt,
+  symbol: "AAPL",
+  side,
+  quantity,
+  price,
+  amount: quantity * price * (side === "buy" ? -1 : 1),
+  orderId: null,
+  observedAt: occurredAt,
+  publishedAt: null,
+  effectivePeriod: null,
+  retrievedAt: null,
+});
 
 describe("account activity ledger", () => {
   test("normalizes fills and non-trade cash activity", () => {
-    expect(normalizeActivity({ id: "1", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), symbol: "AAPL", side: "buy", qty: "2", price: "100" })).toMatchObject({ category: "trade", amount: -200, quantity: 2 });
-    expect(normalizeActivity({ id: "2", activityType: "DIV", date: new Date("2026-01-02"), symbol: "AAPL", netAmount: "3.50" })).toMatchObject({ category: "dividend", amount: 3.5 });
+    expect(normalizeActivity({ id: "1", activityType: "FILL", transactionTime: new Date("2026-01-01T12:00:00Z"), symbol: "AAPL", side: "buy", qty: "2", price: "100" }, "2026-01-01T12:00:01Z")).toMatchObject({
+      category: "trade",
+      amount: -200,
+      quantity: 2,
+      observedAt: "2026-01-01T12:00:00.000Z",
+      publishedAt: null,
+      effectivePeriod: null,
+      retrievedAt: "2026-01-01T12:00:01.000Z",
+    });
+    expect(normalizeActivity({ id: "2", activityType: "DIV", createdAt: new Date("2026-01-03T02:00:00Z"), date: new Date("2026-01-02"), symbol: "AAPL", netAmount: "3.50" }, "2026-01-03T02:00:01Z")).toMatchObject({
+      category: "dividend",
+      amount: 3.5,
+      occurredAt: "2026-01-02T00:00:00.000Z",
+      observedAt: null,
+      publishedAt: "2026-01-03T02:00:00.000Z",
+      effectivePeriod: {
+        start: "2026-01-02T00:00:00.000Z",
+        end: "2026-01-02T23:59:59.999Z",
+      },
+      retrievedAt: "2026-01-03T02:00:01.000Z",
+    });
   });
 
   test("maps broker activity categories without guessing unknown types", () => {
@@ -109,7 +145,7 @@ describe("account activity ledger", () => {
   });
 
   test("separates income, fees and transfers and reports incomplete cost basis", () => {
-    const base = { subType: null, status: "executed", symbol: null, side: null, quantity: null, price: null, orderId: null } as const;
+    const base = { subType: null, status: "executed", symbol: null, side: null, quantity: null, price: null, orderId: null, observedAt: null, publishedAt: null, effectivePeriod: null, retrievedAt: null } as const;
     const summary = ledgerSummary([
       { ...base, id: "d", type: "DIV", category: "dividend", occurredAt: "2026-01-01T00:00:00Z", amount: 10 },
       { ...base, id: "f", type: "FEE", category: "fee", occurredAt: "2026-01-01T00:00:01Z", amount: -2 },

@@ -27,6 +27,7 @@ import {
 } from "../../shared/risk";
 import { portfolioRiskDto } from "./risk-response";
 import { portfolioSnapshotsDto } from "./snapshot-response";
+import { accountActivitiesDto } from "./activity-response";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -40,6 +41,8 @@ type PortfolioContext = {
   syncAccountActivities: () => Promise<{
     imported: number;
     truncated: boolean;
+    retrievedAt: string;
+    cacheHit: boolean;
   }>;
   currentPortfolioExposure: () => Promise<CurrentPortfolioExposure>;
   capturePortfolioSnapshot: () => Promise<
@@ -88,12 +91,15 @@ export async function handlePortfolioRequest(
     }
     const sync = await context.syncAccountActivities();
     const allActivities = store.activities(5_000);
-    return json({
-      summary: ledgerSummary(allActivities, sync.truncated),
+    return json(accountActivitiesDto({
       activities: store.activities(limit, category),
+      allActivities,
       imported: sync.imported,
-      asOf: new Date().toISOString(),
-    });
+      truncated: sync.truncated,
+      cacheHit: sync.cacheHit,
+      retrievedAt: sync.retrievedAt,
+      serverRespondedAt: now(),
+    }));
   }
 
   if (url.pathname === "/api/portfolio/risk") {

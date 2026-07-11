@@ -10,6 +10,7 @@ import {
   buildVersionedCryptoDataset,
   parseCryptoDatasetRequest,
 } from "../../backend/features/strategies/strategy-datasets";
+import { normalizeActivity } from "../../backend/features/portfolio/ledger";
 
 function temporaryDatabase(name: string) {
   const directory = mkdtempSync(join(tmpdir(), "ai-broker-migration-"));
@@ -77,8 +78,16 @@ test("upgrades an 0011 database fixture without losing legacy rows", () => {
     legacy.close();
 
     const upgraded = createStore(filename);
-    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0014", expected: true });
-    expect(upgraded.activities()).toMatchObject([{ id: "legacy-fill", symbol: "AAPL", corporateAction: null }]);
+    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0015", expected: true });
+    expect(upgraded.activities()).toMatchObject([{
+      id: "legacy-fill",
+      symbol: "AAPL",
+      corporateAction: null,
+      observedAt: null,
+      publishedAt: null,
+      effectivePeriod: null,
+      retrievedAt: null,
+    }]);
     expect(upgraded.portfolioSnapshots()).toEqual([{ snapshotDate: "2026-01-02", equity: 10_000 }]);
     expect(upgraded.getStrategyRun("legacy-run")).toMatchObject({ backtestId: null, provenance: null, comparable: false });
     expect(upgraded.strategyBarDatasets("restore-test")).toEqual([]);
@@ -187,6 +196,15 @@ test("restores a serialized backup with migrations and audit chains intact", () 
       stats: dataset.stats,
       bars: dataset.bars,
     });
+    source.syncActivities([normalizeActivity({
+      id: "restore-fill",
+      activityType: "FILL",
+      transactionTime: new Date("2026-01-03T09:59:00.000Z"),
+      symbol: "AAPL",
+      side: "buy",
+      qty: "1",
+      price: "100",
+    }, "2026-01-03T10:00:00.000Z")]);
     const backup = source.databaseBackup();
     source.close();
     writeFileSync(restoredFilename, backup.bytes);
@@ -195,6 +213,11 @@ test("restores a serialized backup with migrations and audit chains intact", () 
     expect(restored.getStrategyRun("restore-run")).toMatchObject({ status: "shadow", configHash: "sha256:restore", backtestId: "restore-backtest", comparable: true });
     expect(restored.getStrategyBacktest("restore-backtest")).toMatchObject({ actor: "restore-test", provenance: { datasetHash: provenance.datasetHash } });
     expect(restored.getStrategyBarDataset("restore-dataset")).toMatchObject({ actor: "restore-test", bars: [{ symbol: "BTC/USD" }, { symbol: "BTC/USD" }] });
+    expect(restored.activities()).toMatchObject([{
+      id: "restore-fill",
+      observedAt: "2026-01-03T09:59:00.000Z",
+      retrievedAt: "2026-01-03T10:00:00.000Z",
+    }]);
     expect(restored.verifyStrategyAuditTrail("restore-run")).toEqual({ valid: true, entries: 2, invalidEntryId: null });
     expect(restored.verifyDecisionAuditTrail()).toEqual({ valid: true, entries: 2, invalidEntryId: null });
     expect(restored.schemaMigrations()).toHaveLength(SCHEMA_MIGRATIONS.length);

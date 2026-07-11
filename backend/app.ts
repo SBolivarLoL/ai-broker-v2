@@ -76,10 +76,12 @@ export function createApp({
     expiresAt: number;
     imported: number;
     truncated: boolean;
+    retrievedAt: string;
   } | null = null;
   let activitySyncRequest: Promise<{
     imported: number;
     truncated: boolean;
+    retrievedAt: string;
   }> | null = null;
   let portfolioCaptureRequest: Promise<
     ReturnType<typeof buildPortfolioSnapshot>
@@ -87,29 +89,34 @@ export function createApp({
 
   async function syncAccountActivities() {
     if (activitySync && activitySync.expiresAt > Date.now())
-      return activitySync;
+      return { ...activitySync, cacheHit: true };
     // Share one broker pagination request across concurrent ledger callers.
     activitySyncRequest ??= (async () => {
-      const activities = [];
+      const brokerActivities = [];
       const maximum = 1_000;
       for await (const activity of alpaca.trading.iterateActivities({
         direction: "desc",
         pageSize: 100,
       })) {
-        activities.push(normalizeActivity(activity));
-        if (activities.length >= maximum) break;
+        brokerActivities.push(activity);
+        if (brokerActivities.length >= maximum) break;
       }
+      const retrievedAt = now().toISOString();
+      const activities = brokerActivities.map((activity) =>
+        normalizeActivity(activity, retrievedAt)
+      );
       store.syncActivities(activities);
       return {
         imported: activities.length,
         truncated: activities.length >= maximum,
+        retrievedAt,
       };
     })().finally(() => {
       activitySyncRequest = null;
     });
     const result = await activitySyncRequest;
     activitySync = { ...result, expiresAt: Date.now() + 30_000 };
-    return activitySync;
+    return { ...activitySync, cacheHit: false };
   }
 
   async function capturePortfolioSnapshot() {
