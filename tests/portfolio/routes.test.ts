@@ -173,6 +173,85 @@ test("portfolio exposure route preserves the normalized service contract", async
   expect(await response?.json()).toEqual(report);
 });
 
+test("portfolio snapshots route preserves capture time and legacy gaps", async () => {
+  const store = createStore(":memory:");
+  store.portfolioSnapshot({ snapshotDate: "2026-01-02", equity: 9_000 });
+  const current = {
+    snapshotDate: "2026-06-21",
+    capturedAt: "2026-06-21T12:00:00.000Z",
+    equity: 10_000,
+    cash: 10_000,
+    buyingPower: 10_000,
+    positionValue: 0,
+    positionCount: 0,
+    reconciliationGap: 0,
+    reconciliationGapPercent: 0,
+    risk: {
+      equity: 10_000,
+      cash: 10_000,
+      cashPercent: 100,
+      unrealizedPl: 0,
+      largestPositionPercent: 0,
+      topThreePercent: 0,
+      hhi: 0,
+      weights: [],
+    },
+    positions: [],
+    orderSync: {
+      streamState: "authenticated",
+      lastEventAt: "2026-06-21T11:59:30.000Z",
+      stale: false,
+    },
+    quality: { status: "healthy", flags: [] },
+    source: "alpaca-paper",
+  };
+  const request = new Request(
+    "http://localhost/api/portfolio/snapshots?limit=30",
+  );
+  const response = await handlePortfolioRequest(request, new URL(request.url), {
+    alpaca: {} as Alpaca,
+    store,
+    actor: "test-operator",
+    allow: () => true,
+    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    currentPortfolioExposure: async () => {
+      throw new Error("unexpected exposure request");
+    },
+    capturePortfolioSnapshot: async () => current,
+    now: () => new Date("2026-06-21T12:00:01Z"),
+  });
+
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    schemaVersion: "portfolio-snapshots-v2",
+    observedAt: null,
+    retrievedAt: "2026-06-21T12:00:00.000Z",
+    serverRespondedAt: "2026-06-21T12:00:01.000Z",
+    current: {
+      schemaVersion: "portfolio-snapshot-v2",
+      retrievedAt: "2026-06-21T12:00:00.000Z",
+      orderSync: { observedAt: "2026-06-21T11:59:30.000Z" },
+    },
+    history: [
+      {
+        snapshotDate: "2026-01-02",
+        provenanceStatus: "unavailable",
+        retrievedAt: null,
+      },
+    ],
+    quality: {
+      status: "partial",
+      missing: [
+        "history:2026-01-02:capture_time",
+        "history:2026-01-02:quality",
+        "history:2026-01-02:positions",
+        "history:2026-01-02:order_sync",
+      ],
+    },
+  });
+  store.close();
+});
+
 test("portfolio risk distinguishes whole-account and invested-asset diversification", async () => {
   const positions = [
     { symbol: "AAPL", qty: "70", marketValue: "7000", unrealizedPl: "100" },
