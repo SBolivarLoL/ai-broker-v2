@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `e38a21a`: 2026-07-10.
+Last reviewed against `main` commit `4e12cb8`: 2026-07-11.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -48,7 +48,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 - Cashflow-adjusted performance, benchmark attribution, drawdown, volatility, Sharpe-style summary metrics, and persisted daily snapshots. Performance root, summary, daily point, benchmark, current-position attribution, and quality DTOs preserve provider observations, effective windows, separate portfolio/benchmark retrieval, and response time. Current-position observation remains null, and benchmark retrieval remains null when no portfolio points exist and no benchmark request occurs.
 - FIFO activity ledger for fills, fees, dividends, interest, transfers, splits, symbol changes, and broker-provided corporate-action basis allocations. Unsupported basis changes remain unresolved rather than guessed.
-- Historical and parametric 95% daily VaR, historical expected shortfall, covariance risk contribution, correlation, liquidity, and SPY benchmark diagnostics.
+- Historical and parametric 95% daily VaR, historical expected shortfall, covariance risk contribution, correlation, liquidity, and SPY benchmark diagnostics. Risk root, current account/position inputs, position-history and IEX-quote inputs, SPY benchmark, advanced analytics, liquidity, weights, diversification, stress, and quality DTOs preserve applicable bar/quote observations, historical effective windows, account versus market retrieval, and response time. Current account/position observations remain null, entitlement-aware historical reads identify their actual SIP/IEX/delayed fallback, and quality reports expected, received, and missing inputs.
 - Diversification reports both whole-account concentration, including cash, and invested-asset concentration over gross position value so a cash-heavy account does not make a concentrated invested sleeve appear diversified.
 - Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps.
 - Deterministic rate, technology, volatility, and user-entered held-symbol scenarios.
@@ -136,7 +136,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 
 - Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
 - Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
-- Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance root/child DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation/publication/effective time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
+- Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance and portfolio-risk root/child DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation/publication/effective time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
 - Media repetition is not event confirmation. Provider failure does not mean no event occurred.
 - Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
 - SEC SIC is labeled as SEC SIC, not GICS or ICB.

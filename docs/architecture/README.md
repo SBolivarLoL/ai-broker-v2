@@ -132,6 +132,13 @@ retrieval and server response independently. A benchmark skipped because no
 portfolio points exist remains explicitly unqueried rather than inheriting the
 portfolio retrieval timestamp.
 
+`portfolio/risk-response.ts` owns deterministic portfolio-risk response
+composition. `portfolio/routes.ts` captures current account/position retrieval
+before its bounded entitlement-aware historical-bar and IEX-snapshot stage.
+The response builder keeps current broker observation unavailable, preserves
+bar and quote event times plus historical effective windows, reports the actual
+SIP/IEX/delayed fallback, and exposes partial input coverage explicitly.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
