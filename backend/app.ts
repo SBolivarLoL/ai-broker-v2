@@ -59,7 +59,9 @@ export function createApp({
   const market = createMarketService({ alpaca, store, allow, now });
   const strategies = createStrategyRuntime(alpaca, store, codeIdentity);
   const orderRuntime = createOrderRuntime(alpaca, store, now);
-  const currentPortfolioExposure = createPortfolioExposureService(alpaca);
+  const currentPortfolioExposure = createPortfolioExposureService(alpaca, {
+    now,
+  });
   const orderRoutes = createOrderRoutes({
     alpaca,
     store,

@@ -139,6 +139,13 @@ The response builder keeps current broker observation unavailable, preserves
 bar and quote event times plus historical effective windows, reports the actual
 SIP/IEX/delayed fallback, and exposes partial input coverage explicitly.
 
+`portfolio/exposure-service.ts` refreshes current account/position state on
+every call and caches only the bounded IEX/SEC evidence. The pure
+`portfolio/exposure-response.ts` builder reapplies that evidence to each fresh
+response, preserving cached provider retrieval separately from account
+retrieval and response time while exposing failed, unqueried, malformed,
+unsupported, and omitted inputs.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.

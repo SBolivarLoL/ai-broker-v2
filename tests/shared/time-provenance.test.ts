@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   normalizeTimeProvenance,
   providerTimeFields,
+  unavailableProviderTimeFields,
 } from "../../backend/shared/time-provenance";
 
 test("normalizes explicit provider time provenance", () => {
@@ -74,6 +75,24 @@ test("builds explicit provider DTO time fields", () => {
         label: "report date",
       },
       retrievalTime: "2026-06-29T12:00:00.000Z",
+      serverResponseTime: "2026-06-29T12:00:01.000Z",
+    },
+    asOf: "2026-06-29T12:00:01.000Z",
+  });
+});
+
+test("keeps an unqueried or failed provider retrieval explicitly unavailable", () => {
+  expect(unavailableProviderTimeFields("2026-06-29T12:00:01Z")).toEqual({
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: null,
+    serverRespondedAt: "2026-06-29T12:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: null,
       serverResponseTime: "2026-06-29T12:00:01.000Z",
     },
     asOf: "2026-06-29T12:00:01.000Z",
