@@ -2,6 +2,10 @@
  * Portfolio performance calculations over broker history, cash flows, and a
  * date-bounded benchmark series.
  */
+import {
+  normalizeIsoTime,
+  providerTimeFields,
+} from "../../shared/time-provenance";
 export type PerformancePoint = {
   timestamp: number;
   equity: number;
@@ -10,6 +14,13 @@ export type PerformancePoint = {
   externalCashFlow: number;
 };
 export type BenchmarkBar = { timestamp: Date | string | number; close: number };
+
+type PerformancePosition = {
+  symbol: unknown;
+  marketValue: unknown;
+  unrealizedPl: unknown;
+  unrealizedPlpc: unknown;
+};
 
 const valid = (value: number) => Number.isFinite(value);
 const mean = (values: number[]) =>
@@ -118,10 +129,9 @@ export function moneyWeightedReturn(points: PerformancePoint[]) {
   return (low + high) / 2;
 }
 
-export function benchmarkAttribution(
+function coveredBenchmarkBars(
   points: PerformancePoint[],
   bars: BenchmarkBar[],
-  symbol: string,
 ) {
   const normalized = bars
     .map((bar) => ({
@@ -144,6 +154,15 @@ export function benchmarkAttribution(
       bar.timestamp >= start &&
       bar.timestamp <= end + 86_400_000,
   );
+  return covered;
+}
+
+export function benchmarkAttribution(
+  points: PerformancePoint[],
+  bars: BenchmarkBar[],
+  symbol: string,
+) {
+  const covered = coveredBenchmarkBars(points, bars);
   const portfolioReturnPercent = timeWeightedReturn(points) * 100;
   if (covered.length < 2)
     return {
@@ -160,6 +179,171 @@ export function benchmarkAttribution(
     activeReturnPercent: portfolioReturnPercent - returnPercent,
     observations: covered.length,
     quality: "complete" as const,
+  };
+}
+
+function observationWindow(timestamps: number[], label: string) {
+  if (!timestamps.length) return null;
+  return {
+    start: timestamps[0]!,
+    end: timestamps.at(-1)!,
+    label,
+  };
+}
+
+function unavailableProviderTime(
+  serverRespondedAtInput: string | number | Date,
+) {
+  const serverRespondedAt = normalizeIsoTime(
+    serverRespondedAtInput,
+    "Portfolio performance response time",
+  );
+  return {
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: null,
+    serverRespondedAt,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: null,
+      serverResponseTime: serverRespondedAt,
+    },
+    asOf: serverRespondedAt,
+  };
+}
+
+export function portfolioPerformanceDto(input: {
+  period: string;
+  points: PerformancePoint[];
+  benchmarkBars: BenchmarkBar[];
+  benchmarkSymbol: string;
+  benchmarkSource: unknown;
+  positions: PerformancePosition[];
+  portfolioRetrievedAt: string | number | Date;
+  benchmarkRetrievedAt: string | number | Date | null;
+  serverRespondedAt: string | number | Date;
+}) {
+  const pointTimestamps = input.points.map((point) => point.timestamp);
+  const portfolioObservedAt = pointTimestamps.at(-1) ?? null;
+  const portfolioEffectivePeriod = observationWindow(
+    pointTimestamps,
+    `${input.period} Alpaca portfolio-history window`,
+  );
+  const portfolioTime = providerTimeFields({
+    observationTime: portfolioObservedAt,
+    publicationTime: null,
+    effectivePeriod: portfolioEffectivePeriod,
+    retrievalTime: input.portfolioRetrievedAt,
+    serverResponseTime: input.serverRespondedAt,
+  });
+  const coveredBenchmark = coveredBenchmarkBars(
+    input.points,
+    input.benchmarkBars,
+  );
+  const benchmarkObservedAt = coveredBenchmark.at(-1)?.timestamp ?? null;
+  const benchmarkTime = input.benchmarkRetrievedAt !== null
+    ? providerTimeFields({
+        observationTime: benchmarkObservedAt,
+        publicationTime: null,
+        effectivePeriod: observationWindow(
+          coveredBenchmark.map((bar) => bar.timestamp),
+          `${input.period} benchmark window`,
+        ),
+        retrievalTime: input.benchmarkRetrievedAt,
+        serverResponseTime: input.serverRespondedAt,
+      })
+    : unavailableProviderTime(input.serverRespondedAt);
+  const rootObservedAt =
+    [portfolioObservedAt, benchmarkObservedAt]
+      .filter((value): value is number => value !== null)
+      .sort((left, right) => left - right)
+      .at(-1) ?? null;
+  const rootRetrievedAt = input.benchmarkRetrievedAt === null
+    ? input.portfolioRetrievedAt
+    : new Date(input.benchmarkRetrievedAt).getTime() >=
+        new Date(input.portfolioRetrievedAt).getTime()
+      ? input.benchmarkRetrievedAt
+      : input.portfolioRetrievedAt;
+  const rootTime = providerTimeFields({
+    observationTime: rootObservedAt,
+    publicationTime: null,
+    effectivePeriod: portfolioEffectivePeriod,
+    retrievalTime: rootRetrievedAt,
+    serverResponseTime: input.serverRespondedAt,
+  });
+  const benchmark = benchmarkAttribution(
+    input.points,
+    input.benchmarkBars,
+    input.benchmarkSymbol,
+  );
+  const attribution = input.positions
+    .map((position) => ({
+      symbol: String(position.symbol),
+      marketValue: Number(position.marketValue),
+      unrealizedProfitLoss: Number(position.unrealizedPl),
+      unrealizedReturnPercent: Number(position.unrealizedPlpc) * 100,
+    }))
+    .filter((item) =>
+      Object.values(item).every(
+        (value) => typeof value === "string" || Number.isFinite(value),
+      ),
+    )
+    .sort(
+      (left, right) =>
+        right.unrealizedProfitLoss - left.unrealizedProfitLoss,
+    )
+    .map((item) => ({
+      ...item,
+      source: "Alpaca Trading API positions",
+      ...providerTimeFields({
+        observationTime: null,
+        publicationTime: null,
+        effectivePeriod: null,
+        retrievalTime: input.portfolioRetrievedAt,
+        serverResponseTime: input.serverRespondedAt,
+      }),
+    }));
+  return {
+    period: input.period,
+    summary: {
+      ...performanceSummary(input.points),
+      source: "Derived from Alpaca portfolio history",
+      ...portfolioTime,
+    },
+    benchmark: {
+      ...benchmark,
+      source: input.benchmarkSource,
+      sourceIdentity: "Alpaca historical stock bars",
+      ...benchmarkTime,
+    },
+    points: input.points.map((point) => ({
+      ...point,
+      source: "Alpaca portfolio history",
+      ...providerTimeFields({
+        observationTime: point.timestamp,
+        publicationTime: null,
+        effectivePeriod: {
+          start: point.timestamp,
+          end: point.timestamp,
+          label: "Alpaca 1D portfolio-history bucket",
+        },
+        retrievalTime: input.portfolioRetrievedAt,
+        serverResponseTime: input.serverRespondedAt,
+      }),
+    })),
+    attribution,
+    quality: {
+      cashflowAdjusted: true,
+      benchmarkCoverage: benchmark.quality,
+      benchmarkSource: input.benchmarkSource,
+      source: "Derived from portfolio and benchmark evidence",
+      ...rootTime,
+    },
+    source: "Alpaca portfolio history, positions, and market data",
+    ...rootTime,
   };
 }
 

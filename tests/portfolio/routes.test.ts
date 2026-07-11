@@ -62,6 +62,82 @@ test("portfolio routes reject invalid inputs before broker calls", async () => {
   expect(rebalance?.status).toBe(400);
 });
 
+test("portfolio performance route separates portfolio, benchmark, and response times", async () => {
+  const alpaca = {
+    trading: {
+      portfolioHistory: {
+        getAccountPortfolioHistory: async () => ({
+          timestamp: [
+            Date.parse("2026-01-01T00:00:00Z") / 1_000,
+            Date.parse("2026-01-02T00:00:00Z") / 1_000,
+          ],
+          equity: [100, 110],
+          profitLoss: [0, 10],
+          profitLossPct: [0, 0.1],
+          cashflow: {},
+        }),
+      },
+      positions: {
+        getAllOpenPositions: async () => [
+          {
+            symbol: "AAPL",
+            marketValue: "100",
+            unrealizedPl: "10",
+            unrealizedPlpc: "0.1",
+          },
+        ],
+      },
+    },
+    marketData: {
+      getStockBarsFor: async () => [
+        { timestamp: "2026-01-01T20:00:00Z", close: 200 },
+        { timestamp: "2026-01-02T20:00:00Z", close: 210 },
+      ],
+    },
+  } as unknown as Alpaca;
+  const times = [
+    new Date("2026-01-02T20:00:01Z"),
+    new Date("2026-01-02T20:00:02Z"),
+    new Date("2026-01-02T20:00:03Z"),
+  ];
+  const request = new Request(
+    "http://localhost/api/portfolio/performance?period=1M",
+  );
+  const response = await handlePortfolioRequest(request, new URL(request.url), {
+    alpaca,
+    store: createStore(":memory:"),
+    actor: "test-operator",
+    allow: () => true,
+    syncAccountActivities: async () => ({ imported: 0, truncated: false }),
+    currentPortfolioExposure: async () => {
+      throw new Error("unexpected exposure request");
+    },
+    capturePortfolioSnapshot: async () => {
+      throw new Error("unexpected snapshot capture");
+    },
+    now: () => times.shift()!,
+  });
+
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    retrievedAt: "2026-01-02T20:00:02.000Z",
+    serverRespondedAt: "2026-01-02T20:00:03.000Z",
+    summary: { retrievedAt: "2026-01-02T20:00:01.000Z" },
+    benchmark: {
+      retrievedAt: "2026-01-02T20:00:02.000Z",
+      source: { provider: "alpaca", feed: "sip" },
+    },
+    attribution: [
+      {
+        symbol: "AAPL",
+        observedAt: null,
+        retrievedAt: "2026-01-02T20:00:01.000Z",
+      },
+    ],
+    asOf: "2026-01-02T20:00:03.000Z",
+  });
+});
+
 test("portfolio risk distinguishes whole-account and invested-asset diversification", async () => {
   const positions = [
     { symbol: "AAPL", qty: "70", marketValue: "7000", unrealizedPl: "100" },

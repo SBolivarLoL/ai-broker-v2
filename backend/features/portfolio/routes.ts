@@ -4,10 +4,9 @@ import { getStockBarsWithFallback } from "../../integrations/alpaca/market-data"
 import type { createStore } from "../../persistence/store";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
 import {
-  benchmarkAttribution,
   diversificationScopes,
   performancePoints,
-  performanceSummary,
+  portfolioPerformanceDto,
   stressTests,
   valueAtRisk95,
 } from "./analytics";
@@ -51,6 +50,7 @@ type PortfolioContext = {
     ReturnType<typeof buildPortfolioSnapshot>
   >;
   env?: Env;
+  now?: () => Date;
 };
 
 /** Handles account-ledger and portfolio-analysis endpoints. */
@@ -61,6 +61,7 @@ export async function handlePortfolioRequest(
 ): Promise<Response | null> {
   const { alpaca, store, actor, allow } = context;
   const env = context.env ?? process.env;
+  const now = context.now ?? (() => new Date());
 
   if (url.pathname === "/api/account/activities" && request.method === "GET") {
     const allowedCategories = new Set<LedgerCategory>([
@@ -452,45 +453,43 @@ export async function handlePortfolioRequest(
       }),
       alpaca.trading.positions.getAllOpenPositions(),
     ]);
+    const portfolioRetrievedAt = now();
     const points = performancePoints(history);
-    const benchmarkData = points.length
-      ? await getStockBarsWithFallback(alpaca.marketData, benchmarkSymbol, {
+    let benchmarkData: {
+      bars: Awaited<ReturnType<typeof getStockBarsWithFallback>>["bars"];
+      source:
+        | Awaited<ReturnType<typeof getStockBarsWithFallback>>["source"]
+        | null;
+    } = {
+      bars: [],
+      source: null,
+    };
+    let benchmarkRetrievedAt: Date | null = null;
+    if (points.length) {
+      benchmarkData = await getStockBarsWithFallback(
+        alpaca.marketData,
+        benchmarkSymbol,
+        {
           timeframe: TimeFrame.Day,
           start: new Date(points[0]!.timestamp - 3 * 86_400_000),
           end: new Date(points.at(-1)!.timestamp + 2 * 86_400_000),
-        })
-      : { bars: [], source: null };
-    const benchmark = benchmarkAttribution(
-      points,
-      benchmarkData.bars,
-      benchmarkSymbol,
-    );
-    const attribution = positions
-      .map((position) => ({
-        symbol: position.symbol,
-        marketValue: Number(position.marketValue),
-        unrealizedProfitLoss: Number(position.unrealizedPl),
-        unrealizedReturnPercent: Number(position.unrealizedPlpc) * 100,
-      }))
-      .filter((item) =>
-        Object.values(item).every(
-          (value) => typeof value === "string" || Number.isFinite(value),
-        ),
-      )
-      .sort((a, b) => b.unrealizedProfitLoss - a.unrealizedProfitLoss);
-    return json({
-      period,
-      summary: performanceSummary(points),
-      benchmark: { ...benchmark, source: benchmarkData.source },
-      points,
-      attribution,
-      quality: {
-        cashflowAdjusted: true,
-        benchmarkCoverage: benchmark.quality,
+        },
+      );
+      benchmarkRetrievedAt = now();
+    }
+    return json(
+      portfolioPerformanceDto({
+        period,
+        points,
+        benchmarkBars: benchmarkData.bars,
+        benchmarkSymbol,
         benchmarkSource: benchmarkData.source,
-      },
-      asOf: new Date().toISOString(),
-    });
+        positions,
+        portfolioRetrievedAt,
+        benchmarkRetrievedAt,
+        serverRespondedAt: now(),
+      }),
+    );
   }
 
   return null;
