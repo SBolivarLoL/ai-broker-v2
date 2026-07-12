@@ -167,6 +167,14 @@ window, and retrieval evidence; applies a seven-day market-history freshness
 gate to volatility inputs; refreshes only delivery time; and makes unmodeled or
 upstream-omitted positions and their impact explicit.
 
+`portfolio/rebalance-planner.ts` owns deterministic turnover, tax, cash,
+quantity, and minimum-notional constraints, while
+`portfolio/rebalance-response.ts` owns provider normalization and the browser
+contract. The route captures account, positions, orders, activities, policy,
+assets, and explicit IEX latest trades independently. Provider trade time gates
+price usability, the injected clock owns the rolling turnover window, and the
+response exposes calculation coverage without granting execution authority.
+
 `portfolio/snapshot-response.ts` projects modern and legacy persisted daily
 snapshots into one response taxonomy without altering stored JSON or migration
 history. Original broker-read capture remains stable across SQLite reads,

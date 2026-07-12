@@ -264,9 +264,11 @@ function renderRebalancePlan(data) {
   latestRebalanceBasketDraft = data.basketDraft || "";
   const s = data.summary,
     t = data.tax,
+    q = data.quality,
     status = data.withinConstraints ? "Within constraints" : "Needs review",
     statusClass = data.withinConstraints ? "gain" : "loss",
     metrics = `<div class="metrics"><div class="metric"><strong class="${statusClass}">${esc(status)}</strong><span class="muted">${esc(data.bindingConstraints.length ? data.bindingConstraints.join(", ").replaceAll("_", " ") : "No binding constraint")}</span></div><div class="metric"><strong>${esc(money.format(s.plannedTurnoverNotional))}</strong><span class="muted">Plan turnover · ${esc(pct(s.turnoverAfterPercent))} after rolling use</span></div><div class="metric"><strong>${esc(money.format(t.estimatedTax))}</strong><span class="muted">FIFO tax estimate · ${esc(String(t.evidenceStatus).replaceAll("_", " "))}</span></div><div class="metric"><strong>${esc(money.format(s.resultingCash))}</strong><span class="muted">Resulting cash · ${esc(money.format(s.cashBuffer))} buffer</span></div></div>`,
+    evidence = `<div class="${q.status === "complete" ? "muted" : "warnings"}"><div>Evidence: ${esc(q.received.account)}/${esc(q.expected.account)} account · ${esc(q.received.currentPositions)}/${esc(q.expected.currentPositions)} current positions · ${esc(q.received.targetPricesWithObservation)}/${esc(q.expected.targetPrices)} observed IEX target prices · ${esc(q.omitted.uncoveredTaxLotQuantity)} uncovered FIFO quantity.</div>${q.impact.map((item) => `<div>${esc(item)}</div>`).join("")}</div>`,
     legs = data.legs.length
       ? `<div class="rebalance-plan-table"><div class="muted" style="padding:12px 0 4px">Planned legs</div>${data.legs.map((leg) => `<div class="rebalance-plan-row"><strong>${esc(leg.symbol)} ${esc(leg.side.toUpperCase())}</strong><span>${esc(leg.quantity)}</span><span>${esc(money.format(leg.price))}</span><span>${esc(money.format(leg.plannedNotional))}</span></div>`).join("")}</div>`
       : '<div class="empty" style="margin-top:14px">No executable legs after constraints.</div>',
@@ -283,9 +285,9 @@ function renderRebalancePlan(data) {
       ? '<div class="rebalance-plan-actions"><button class="ghost" id="load-rebalance-basket" type="button">Load basket</button></div>'
       : "";
   $("#rebalance-plan-asof").textContent =
-    `${status} · updated ${new Date(data.asOf).toLocaleString()}`;
+    `${status} · ${String(q.status).replaceAll("_", " ")} coverage · evidence through ${data.observedAt ? new Date(data.observedAt).toLocaleString() : "provider observation unavailable"} · retrieved ${new Date(data.retrievedAt).toLocaleTimeString()} · response ${new Date(data.serverRespondedAt).toLocaleTimeString()}`;
   $("#rebalance-plan-output").innerHTML =
-    metrics + legs + positionHtml + warnings + actions;
+    metrics + evidence + legs + positionHtml + warnings + actions;
 }
 $("#rebalance-plan-form").onsubmit = async (event) => {
   event.preventDefault();

@@ -601,6 +601,133 @@ test("portfolio scenarios expose normalized time and calculation coverage", asyn
   });
 });
 
+test("rebalance route preserves IEX trade time and rejects stale evidence", async () => {
+  const request = new Request("http://localhost/api/portfolio/rebalance-plan", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      targets: [{ symbol: "AAPL", targetWeightPercent: 5 }],
+      maxTurnoverPercent: 10,
+      cashBufferPercent: 5,
+    }),
+  });
+  const responseFor = async (options: {
+    tradeTime?: string;
+    price?: number;
+    tradable?: boolean;
+    assetClass?: string;
+  }) => {
+    const alpaca = {
+      trading: {
+        account: {
+          getAccount: async () => ({ equity: "100000", cash: "20000" }),
+        },
+        positions: { getAllOpenPositions: async () => [] },
+        orders: { getAllOrders: async () => [] },
+        assets: {
+          getV2AssetsSymbolOrAssetId: async () => ({
+            tradable: options.tradable ?? true,
+            _class: options.assetClass ?? "us_equity",
+            fractionable: true,
+          }),
+        },
+      },
+      marketData: {
+        stocks: {
+          stockLatestTradeSingle: async () => ({
+            trade: {
+              p: options.price ?? 100,
+              t: options.tradeTime ? new Date(options.tradeTime) : undefined,
+            },
+          }),
+        },
+      },
+    } as unknown as Alpaca;
+    return handlePortfolioRequest(request.clone(), new URL(request.url), {
+      alpaca,
+      store: createStore(":memory:"),
+      actor: "test-operator",
+      allow: () => true,
+      syncAccountActivities: async () => ({
+        imported: 0,
+        truncated: false,
+        retrievedAt: "2026-01-10T20:00:00.000Z",
+        cacheHit: false,
+      }),
+      currentPortfolioExposure: async () => {
+        throw new Error("unexpected exposure request");
+      },
+      capturePortfolioSnapshot: async () => {
+        throw new Error("unexpected snapshot capture");
+      },
+      now: () => new Date("2026-01-10T20:00:02.000Z"),
+    });
+  };
+
+  const response = await responseFor({
+    tradeTime: "2026-01-09T20:00:00.000Z",
+  });
+  expect(response?.status).toBe(200);
+  const body = await response?.json();
+  expect(body).toMatchObject({
+    schemaVersion: "portfolio-rebalance-plan-v2",
+    observedAt: "2026-01-09T20:00:00.000Z",
+    retrievedAt: "2026-01-10T20:00:02.000Z",
+    serverRespondedAt: "2026-01-10T20:00:02.000Z",
+    quality: {
+      status: "complete",
+      expected: { account: 1, targetAssets: 1, targetPrices: 1 },
+      received: { targetPricesWithObservation: 1 },
+      freshness: {
+        marketPrices: { fresh: 1, stale: 0, future: 0, unavailable: 0 },
+      },
+    },
+    inputs: {
+      account: { observedAt: null },
+      targetMarket: { expected: 1, received: 1 },
+    },
+  });
+  expect(body.legs).toHaveLength(1);
+  expect(body.legs[0]).toMatchObject({
+    symbol: "AAPL",
+    observedAt: "2026-01-09T20:00:00.000Z",
+    source: { provider: "local" },
+    priceSource: { provider: "alpaca", feed: "iex" },
+  });
+
+  const stale = await responseFor({
+    tradeTime: "2025-12-01T20:00:00.000Z",
+  });
+  expect(stale?.status).toBe(400);
+  expect(await stale?.json()).toEqual({
+    error: "Fresh IEX trade evidence is unavailable for AAPL",
+  });
+
+  const unavailable = await responseFor({});
+  expect(unavailable?.status).toBe(400);
+  expect(await unavailable?.json()).toEqual({
+    error: "Fresh IEX trade evidence is unavailable for AAPL",
+  });
+
+  const malformed = await responseFor({
+    tradeTime: "2026-01-09T20:00:00.000Z",
+    price: 0,
+  });
+  expect(malformed?.status).toBe(400);
+  expect(await malformed?.json()).toEqual({
+    error: "Valid IEX latest-trade evidence is required",
+  });
+
+  const unsupported = await responseFor({
+    tradeTime: "2026-01-09T20:00:00.000Z",
+    assetClass: "crypto",
+  });
+  expect(unsupported?.status).toBe(400);
+  expect(await unsupported?.json()).toEqual({
+    error: "AAPL is not a tradable US stock or ETF",
+  });
+});
+
 test("portfolio snapshots route preserves capture time and legacy gaps", async () => {
   const store = createStore(":memory:");
   store.portfolioSnapshot({ snapshotDate: "2026-01-02", equity: 9_000 });
