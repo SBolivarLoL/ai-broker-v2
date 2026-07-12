@@ -116,10 +116,36 @@ test("account activities separate provider, effective, retrieval, and response t
       cache: { hit: false, ttlSeconds: 30 },
       quality: {
         status: "complete",
-        received: {
+        expected: {
+          activityHistory: 1,
           storedActivities: 2,
+          retrievalTimes: 2,
+          providerTimes: 2,
+          sellBasisUnits: 0,
+          corporateActions: 0,
+        },
+        received: {
+          activityHistory: 1,
+          storedActivities: 2,
+          retrievalTimes: 2,
+          providerTimes: 2,
+          sellBasisUnits: 0,
+          corporateActions: 0,
           withRetrievalTime: 2,
           withProviderTime: 2,
+        },
+        omitted: {
+          activityHistory: 0,
+          storedActivities: 0,
+          retrievalTimes: 0,
+          providerTimes: 0,
+          sellBasisUnits: 0,
+          corporateActions: 0,
+        },
+        freshness: {
+          status: "observed",
+          evaluatedAt: "2026-01-03T10:00:01.000Z",
+          cacheHit: false,
         },
       },
       source: {

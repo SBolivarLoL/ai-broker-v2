@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `c3b3f0c`: 2026-07-12.
+Last reviewed against `main` commit `fff0118`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 394 tests, 0 failures, 1,825 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 395 tests, 0 failures, 1,828 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 189 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 98.06% functions, 97.34% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `c3b3f0c`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `fff0118`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -117,7 +117,10 @@ Additional mechanical checks:
   occurrence-or-settlement effective days, completed broker retrieval, 30-second
   cache reuse, and per-response server time remain separate. Pre-0015 rows expose
   null provenance until a later broker read returns them; no migration timestamp
-  is substituted.
+  is substituted. Pure and direct contracts also prove exact expected,
+  received, omitted, and freshness evidence; configured-bound truncation,
+  unmatched sell basis, and unresolved corporate actions make FIFO P&L, basis,
+  and replay impact explicitly partial.
 - Managed orders and nested legs were checked to derive observation from the
   latest available broker `updatedAt`, `filledAt`, `submittedAt`, or `createdAt`
   timestamp while preserving local retrieval and server-response time. Direct
@@ -337,6 +340,15 @@ The following read-only checks were run:
   and no page-level horizontal overflow at 1440×1000 or 390×844. The pass was
   read-only: it created no basket, preview, order, policy mutation, or live
   trading authority.
+- A second 2026-07-12 headed browser pass rendered the account-activity ledger
+  coverage region against the configured paper account. It showed complete
+  bounded history plus 29/29 stored activities, retrieval times, and provider
+  time-taxonomy records with explicit FIFO interpretation impact. The region
+  was labeled for assistive technology, produced no console errors, fit the
+  desktop page, and after expanding the intentionally collapsed mobile ledger
+  fit a 390×844 viewport with no page-level horizontal overflow. The read-only
+  pass did not expose activity details in logs or create any broker, order,
+  policy, or live-trading mutation.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
