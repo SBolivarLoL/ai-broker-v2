@@ -53,10 +53,7 @@ function snapshotDatePeriod(value: unknown): EffectivePeriodInput | null {
   };
 }
 
-function snapshotTime(
-  snapshot: SnapshotInput,
-  serverRespondedAt: DateInput,
-) {
+function snapshotTime(snapshot: SnapshotInput, serverRespondedAt: DateInput) {
   const capturedAt = isoTime(snapshot.capturedAt);
   return capturedAt
     ? providerTimeFields({
@@ -100,10 +97,12 @@ function validObject(value: unknown): value is SnapshotInput {
 }
 
 function finiteNumber(value: unknown) {
-  return value !== null &&
+  return (
+    value !== null &&
     value !== undefined &&
     value !== "" &&
-    Number.isFinite(Number(value));
+    Number.isFinite(Number(value))
+  );
 }
 
 /** Normalizes one durable snapshot without rewriting its persisted payload. */
@@ -138,12 +137,14 @@ export function portfolioSnapshotDto(
   if (!validObject(snapshot.orderSync)) missing.push("order_sync");
   const legacyFlag = capturedAt
     ? []
-    : [{
-        severity: "warning",
-        code: "legacy_snapshot_provenance",
-        message:
-          "This historical snapshot predates persisted capture-time provenance.",
-      }];
+    : [
+        {
+          severity: "warning",
+          code: "legacy_snapshot_provenance",
+          message:
+            "This historical snapshot predates persisted capture-time provenance.",
+        },
+      ];
   const orderObservedAt = isoTime(orderSync.lastEventAt);
   const recoveryRetrievedAt = isoTime(orderSync.lastRecoveryAt);
   if (
@@ -172,14 +173,25 @@ export function portfolioSnapshotDto(
     snapshot.cash,
     snapshot.buyingPower,
   ].every(finiteNumber);
+  const expected = { account: 1, positions: positionCount, orderSync: 1 };
+  const received = {
+    account: accountAvailable ? 1 : 0,
+    positions: positions.length,
+    orderSync: validObject(snapshot.orderSync) ? 1 : 0,
+  };
+  const impact = missing.length
+    ? [
+        "This snapshot cannot fully support historical reconciliation or replay; missing capture, position, quality, or order-state evidence remains explicit.",
+      ]
+    : [
+        "The persisted snapshot is structurally complete for historical reconciliation; it is a captured record and is not relabeled as current broker state.",
+      ];
 
   return {
     ...snapshot,
     schemaVersion: "portfolio-snapshot-v2",
     snapshotDate:
-      typeof snapshot.snapshotDate === "string"
-        ? snapshot.snapshotDate
-        : null,
+      typeof snapshot.snapshotDate === "string" ? snapshot.snapshotDate : null,
     capturedAt,
     positionCount,
     risk: {
@@ -204,10 +216,7 @@ export function portfolioSnapshotDto(
       stream: {
         available: Boolean(orderObservedAt),
         source: orderStreamSource,
-        ...observedWithoutRetrieval(
-          orderObservedAt,
-          serverRespondedAt,
-        ),
+        ...observedWithoutRetrieval(orderObservedAt, serverRespondedAt),
       },
       recovery: {
         available: Boolean(recoveryRetrievedAt),
@@ -234,13 +243,29 @@ export function portfolioSnapshotDto(
       flags: [...originalFlags, ...legacyFlag],
       coverageStatus: missing.length ? "partial" : "complete",
       provenanceStatus,
-      expected: { account: 1, positions: positionCount, orderSync: 1 },
-      received: {
-        account: accountAvailable ? 1 : 0,
-        positions: positions.length,
-        orderSync: validObject(snapshot.orderSync) ? 1 : 0,
+      expected,
+      received,
+      omitted: {
+        account: expected.account - received.account,
+        positions: Math.max(0, expected.positions - received.positions),
+        orderSync: expected.orderSync - received.orderSync,
+      },
+      freshness: {
+        status: capturedAt ? ("captured" as const) : ("unavailable" as const),
+        capturedAt,
+        evaluatedAt: time.serverRespondedAt,
+        ageSeconds: capturedAt
+          ? Math.max(
+              0,
+              (new Date(time.serverRespondedAt).getTime() -
+                new Date(capturedAt).getTime()) /
+                1_000,
+            )
+          : null,
+        agePolicy: "historical_capture" as const,
       },
       missing,
+      impact,
       source: "Validated captured portfolio snapshot",
       ...time,
     },
@@ -261,8 +286,7 @@ export function portfolioSnapshotDto(
         ...orderTime,
       },
     },
-    source:
-      typeof snapshot.source === "string" ? snapshot.source : "unknown",
+    source: typeof snapshot.source === "string" ? snapshot.source : "unknown",
     sourceDetails: {
       account: accountSource,
       orderState: trackerSource,
@@ -281,10 +305,7 @@ export function portfolioSnapshotsDto(input: {
   history: unknown[];
   serverRespondedAt: DateInput;
 }) {
-  const current = portfolioSnapshotDto(
-    input.current,
-    input.serverRespondedAt,
-  );
+  const current = portfolioSnapshotDto(input.current, input.serverRespondedAt);
   const history = input.history.map((snapshot) =>
     portfolioSnapshotDto(snapshot, input.serverRespondedAt),
   );
@@ -309,18 +330,27 @@ export function portfolioSnapshotsDto(input: {
         serverResponseTime: input.serverRespondedAt,
       })
     : unavailableProviderTimeFields(input.serverRespondedAt);
-  const currentMissing = current.quality.missing.map(
-    (gap) => `current:${gap}`,
-  );
+  const currentMissing = current.quality.missing.map((gap) => `current:${gap}`);
   const historyMissing = history.flatMap((snapshot, index) =>
     snapshot.quality.missing.map(
-      (gap) =>
-        `history:${snapshot.snapshotDate ?? index}:${gap}`,
+      (gap) => `history:${snapshot.snapshotDate ?? index}:${gap}`,
     ),
   );
   const completeHistory = history.filter(
     (snapshot) => snapshot.quality.coverageStatus === "complete",
   ).length;
+  const expected = { current: 1, history: history.length };
+  const received = {
+    current: current.quality.coverageStatus === "complete" ? 1 : 0,
+    history: completeHistory,
+  };
+  const impact = [...currentMissing, ...historyMissing].length
+    ? [
+        "Current or historical snapshot gaps reduce reconciliation and replay coverage; incomplete records remain visible and are not repaired with response time.",
+      ]
+    : [
+        "Current and requested historical snapshots are structurally complete; each record retains its original capture time.",
+      ];
 
   return {
     schemaVersion: "portfolio-snapshots-v2",
@@ -331,12 +361,28 @@ export function portfolioSnapshotsDto(input: {
         current.quality.coverageStatus !== "complete" || historyMissing.length
           ? "partial"
           : "complete",
-      expected: { current: 1, history: history.length },
-      received: {
-        current: current.quality.coverageStatus === "complete" ? 1 : 0,
-        history: completeHistory,
+      expected,
+      received,
+      omitted: {
+        current: expected.current - received.current,
+        history: expected.history - received.history,
+      },
+      freshness: {
+        status: capturedAt ? ("captured" as const) : ("unavailable" as const),
+        latestCapturedAt: capturedAt,
+        evaluatedAt: rootTime.serverRespondedAt,
+        ageSeconds: capturedAt
+          ? Math.max(
+              0,
+              (new Date(rootTime.serverRespondedAt).getTime() -
+                new Date(capturedAt).getTime()) /
+                1_000,
+            )
+          : null,
+        agePolicy: "historical_capture" as const,
       },
       missing: [...currentMissing, ...historyMissing],
+      impact,
       source: "Local SQLite portfolio snapshot history",
       ...rootTime,
     },

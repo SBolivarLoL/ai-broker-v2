@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `0c6f1f4` on 2026-07-12.
+Code baseline reviewed: `main` at `c3b3f0c` on 2026-07-12.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 - Evidence-bound portfolio Q&A, company research, valuation scenarios, counter-thesis review, and trade journal.
 - Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered bounded paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, promotion evidence gates, and reports.
 - SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, a source/output governance registry, and local provider/dataset quality reporting.
-- A dark operator-workstation browser shell with a persistent desktop rail, compact tablet rail, horizontally discoverable mobile navigation, global data-health/environment/execution status, private-value masking, accessible confirmation dialogs, strategy-specific experiment controls, and explicit option-chain coverage warnings.
+- A dark operator-workstation browser shell with a persistent desktop rail, compact tablet rail, horizontally discoverable mobile navigation, global data-health/environment/execution status, private-value masking, accessible confirmation dialogs, strategy-specific experiment controls, explicit option-chain coverage warnings, and calculation-level evidence panels for portfolio risk, exposure, snapshots, performance, scenarios, optimization, and constrained rebalancing.
 
 The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
 

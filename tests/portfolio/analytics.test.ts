@@ -150,6 +150,29 @@ describe("portfolio analytics", () => {
         },
       ],
       quality: {
+        status: "complete",
+        expected: {
+          portfolioHistory: 1,
+          currentPositions: 1,
+          benchmarkHistory: 1,
+        },
+        received: {
+          portfolioHistory: 1,
+          currentPositions: 1,
+          benchmarkHistory: 1,
+        },
+        omitted: {
+          portfolioHistory: 0,
+          currentPositions: 0,
+          benchmarkHistory: 0,
+        },
+        freshness: {
+          status: "observed",
+          portfolioObservedAt: "2026-01-02T00:00:00.000Z",
+          benchmarkObservedAt: "2026-01-02T20:00:00.000Z",
+          evaluatedAt: "2026-01-02T20:00:03.000Z",
+        },
+        missing: [],
         observedAt: "2026-01-02T20:00:00.000Z",
         retrievedAt: "2026-01-02T20:00:02.000Z",
       },
@@ -179,6 +202,22 @@ describe("portfolio analytics", () => {
         retrievalTime: null,
         serverResponseTime: "2026-01-02T20:00:02.000Z",
       },
+    });
+    expect(normalized.quality).toMatchObject({
+      status: "empty",
+      expected: {
+        portfolioHistory: 1,
+        currentPositions: 0,
+        benchmarkHistory: 0,
+      },
+      received: { portfolioHistory: 0 },
+      omitted: { portfolioHistory: 1 },
+      freshness: {
+        status: "partial",
+        portfolioObservedAt: null,
+        benchmarkObservedAt: null,
+      },
+      missing: ["portfolio_history"],
     });
   });
 

@@ -2,6 +2,59 @@
  * Portfolio risk, exposure, scenarios, optimization, rebalance, ledger, order,
  * advisor-plan, and trade-journal UI.
  */
+function portfolioCoveragePanel(label, quality) {
+  if (!quality?.expected || !quality?.received) return "";
+  const entries = Object.entries(quality.expected).filter(([, value]) =>
+      Number.isFinite(Number(value)),
+    ),
+    omitted = quality.omitted || {},
+    rows = entries.map(([key, expected]) => {
+      const received = Number(quality.received[key] || 0),
+        missing = Number.isFinite(Number(omitted[key]))
+          ? Number(omitted[key])
+          : Math.max(0, Number(expected) - received),
+        name = key
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replaceAll("_", " ")
+          .toLowerCase();
+      return `<div class="portfolio-coverage-row"><span>${esc(name)}</span><strong>${esc(received)}/${esc(expected)}</strong><span class="muted">${esc(missing)} omitted</span></div>`;
+    }),
+    omittedTotal = rows.reduce(
+      (sum, _row, index) =>
+        sum +
+        (Number.isFinite(Number(omitted[entries[index][0]]))
+          ? Number(omitted[entries[index][0]])
+          : Math.max(
+              0,
+              Number(entries[index][1]) -
+                Number(quality.received[entries[index][0]] || 0),
+            )),
+      0,
+    ),
+    status = String(
+      quality.coverageStatus || quality.status || "unknown",
+    ).replaceAll("_", " "),
+    partial =
+      omittedTotal > 0 || ["partial", "empty", "error"].includes(status),
+    freshness = quality.freshness || {},
+    observedAt =
+      freshness.latestObservedAt ||
+      freshness.portfolioObservedAt ||
+      freshness.latestCapturedAt ||
+      freshness.capturedAt ||
+      quality.observedAt ||
+      null,
+    evaluatedAt = freshness.evaluatedAt || quality.serverRespondedAt || null,
+    observationCoverage = Number.isFinite(
+      Number(freshness.expectedObservations),
+    )
+      ? `${freshness.receivedObservations}/${freshness.expectedObservations} provider observations`
+      : observedAt
+        ? `evidence through ${new Date(observedAt).toLocaleString()}`
+        : "provider observation unavailable",
+    impacts = Array.isArray(quality.impact) ? quality.impact : [];
+  return `<section class="portfolio-coverage-panel" aria-label="${esc(label)} data coverage"><div class="coverage-strip"><div><strong>${esc(label)} evidence</strong><span class="muted">${esc(observationCoverage)} · evaluated ${evaluatedAt ? esc(new Date(evaluatedAt).toLocaleString()) : "time unavailable"}</span></div><span class="pill ${partial ? "loss" : "gain"}">${esc(status)}</span></div><div class="portfolio-coverage-grid">${rows.join("")}</div>${impacts.length ? `<div class="${partial ? "warnings" : "muted"} portfolio-coverage-impact">${impacts.map((impact) => `<div>${esc(impact)}</div>`).join("")}</div>` : ""}</section>`;
+}
 $("#stress").insertAdjacentHTML(
   "afterend",
   '<div class="metrics" id="advanced-risk"></div><div id="risk-contribution"></div>',
@@ -13,6 +66,10 @@ async function loadRisk() {
     `<div class="metric"><strong>${esc(pct(risk.largestPositionPercent))}</strong><span class="muted">Largest position</span></div><div class="metric"><strong>${esc(pct(risk.annualizedVolatility))}</strong><span class="muted">90d volatility</span></div><div class="metric"><strong>${esc(pct(risk.maxDrawdown))}</strong><span class="muted">90d max drawdown</span></div><div class="metric"><strong>${esc(money.format(risk.valueAtRisk95))}</strong><span class="muted">Historical 95% daily VaR · ${esc(pct(risk.valueAtRisk95Percent))}</span></div>`;
   $("#risk-asof").textContent =
     `As of ${new Date(risk.asOf).toLocaleString()} · ${pct(risk.cashPercent)} cash`;
+  $("#risk-coverage-panel").innerHTML = portfolioCoveragePanel(
+    "Portfolio risk",
+    risk.quality,
+  );
   $("#diversification").innerHTML =
     `<strong>${esc(risk.diversification.investedAssets?.score ?? risk.diversification.score)}/100</strong><span class="muted">Invested assets · ${esc(risk.diversification.investedAssets?.label ?? risk.diversification.label)}</span><span class="muted">Whole account ${esc(risk.diversification.wholeAccount?.score ?? risk.diversification.score)}/100 including cash</span>`;
   const weights = [
@@ -67,6 +124,10 @@ async function loadPortfolioExposure() {
     `${esc(data.quality.classificationScheme)} · SPY benchmark · updated ${new Date(data.asOf).toLocaleString()}`;
   $("#exposure-coverage").textContent =
     `${esc(pct(data.quality.classificationCoveragePercent))} classified`;
+  $("#exposure-coverage-panel").innerHTML = portfolioCoveragePanel(
+    "Portfolio exposure",
+    data.quality,
+  );
   $("#exposure-factors").innerHTML = data.factors
     .map(
       (factor) =>
@@ -361,6 +422,10 @@ async function loadPortfolioRecord() {
     `${snapshot.source} · captured ${new Date(snapshot.capturedAt).toLocaleString()} · ${data.history.length} daily records`;
   $("#snapshot-metrics").innerHTML =
     `<div class="metric"><strong class="${qualityClass}">${esc(quality.status)}</strong><span class="muted">Data quality</span></div><div class="metric"><strong>${esc(money.format(snapshot.reconciliationGap))}</strong><span class="muted">Equity reconciliation gap · ${esc(pct(snapshot.reconciliationGapPercent))}</span></div><div class="metric"><strong>${esc(snapshot.positionCount)}</strong><span class="muted">Validated positions</span></div><div class="metric"><strong>${esc(snapshot.orderSync.streamState || "unknown")}</strong><span class="muted">Order-state source</span></div>`;
+  $("#snapshot-coverage-panel").innerHTML = portfolioCoveragePanel(
+    "Portfolio snapshots",
+    data.quality,
+  );
   $("#snapshot-flags").innerHTML = quality.flags.length
     ? `<div class="warnings">${quality.flags.map((flag) => `<div><strong>${esc(flag.severity.toUpperCase())}</strong> · ${esc(flag.message)}</div>`).join("")}</div>`
     : '<div class="muted" style="margin-top:12px">No data-quality exceptions detected.</div>';
@@ -407,6 +472,10 @@ async function loadPerformance(period = "3M") {
       : "benchmark feed unavailable";
   $("#performance-metrics").innerHTML =
     `<div class="metric"><strong class="${plClass}">${esc(signedMoney(summary.totalProfitLoss))}</strong><span class="muted">Period P&amp;L · ${esc(pct(summary.totalReturnPercent))}</span></div><div class="metric"><strong class="${summary.timeWeightedReturnPercent >= 0 ? "gain" : "loss"}">${esc(pct(summary.timeWeightedReturnPercent))}</strong><span class="muted">Time-weighted return</span></div><div class="metric"><strong>${summary.moneyWeightedReturnPercent === null ? "—" : esc(pct(summary.moneyWeightedReturnPercent))}</strong><span class="muted">Money-weighted return · annualized</span></div><div class="metric"><strong class="${active === null ? "" : active >= 0 ? "gain" : "loss"}">${active === null ? "—" : esc(pct(active))}</strong><span class="muted">Active return vs ${esc(benchmark.symbol)}</span></div>`;
+  $("#performance-coverage-panel").innerHTML = portfolioCoveragePanel(
+    "Portfolio performance",
+    data.quality,
+  );
   $("#performance-quality").innerHTML =
     benchmark.quality === "complete"
       ? `<div class="${source?.fallback ? "warnings" : "muted"}" style="margin-top:12px"><div>${esc(benchmark.symbol)} returned ${esc(pct(benchmark.returnPercent))} across ${esc(benchmark.observations)} daily observations using ${esc(sourceNote)}. External cashflows are excluded from portfolio return.</div>${source?.warning ? `<div>${esc(source.warning)}</div>` : ""}</div>`
@@ -445,6 +514,7 @@ loadPerformance = async function (period = "3M") {
       "Recent SIP market data may require a paid entitlement; other portfolio sections can still load.",
     );
     $("#performance-quality").innerHTML = "";
+    $("#performance-coverage-panel").innerHTML = "";
     $("#performance-chart").innerHTML =
       '<div class="empty error-state"><strong>Equity curve unavailable</strong><div>Benchmark or portfolio history could not be loaded for this period.</div></div>';
     $("#attribution").innerHTML =

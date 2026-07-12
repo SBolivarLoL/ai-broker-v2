@@ -10,11 +10,7 @@ import {
   type Position,
 } from "../../shared/risk";
 import { advancedPortfolioRisk, positionLiquidity } from "./advanced-risk";
-import {
-  diversificationScopes,
-  stressTests,
-  valueAtRisk95,
-} from "./analytics";
+import { diversificationScopes, stressTests, valueAtRisk95 } from "./analytics";
 
 type DateInput = string | number | Date;
 type RiskBar = {
@@ -70,9 +66,7 @@ function observationWindow(
   label: string,
 ): EffectivePeriodInput | null {
   const times = orderedTimes(values);
-  return times.length
-    ? { start: times[0], end: times.at(-1), label }
-    : null;
+  return times.length ? { start: times[0], end: times.at(-1), label } : null;
 }
 
 function timeFields(input: {
@@ -231,6 +225,36 @@ export function portfolioRiskDto(input: {
   });
   const advancedSource =
     "Derived from Alpaca historical position and SPY daily bars";
+  const expected = {
+    account: 1,
+    positions: input.positions.length,
+    positionHistories: input.positions.length,
+    positionQuotes: input.positions.length,
+    benchmarkHistories: 1,
+  };
+  const received = {
+    account: 1,
+    positions: input.positions.length,
+    positionHistories: positionMarketData.filter(
+      (item) => item.historicalBars.count >= 2,
+    ).length,
+    positionQuotes: positionMarketData.filter((item) => item.quote.available)
+      .length,
+    benchmarkHistories: input.benchmarkBars.length >= 2 ? 1 : 0,
+  };
+  const observationExpected = input.positions.length * 2 + 1;
+  const observationReceived =
+    positionMarketData.filter((item) => item.historicalBars.observedAt !== null)
+      .length +
+    positionMarketData.filter((item) => item.quote.observedAt !== null).length +
+    (benchmarkTime.observedAt === null ? 0 : 1);
+  const impact = missing.length
+    ? [
+        "Risk, liquidity, benchmark, or diversification conclusions may be unavailable or based on a reduced evidence set; missing inputs are not imputed.",
+      ]
+    : [
+        "The bounded risk evidence set is complete; provider timestamps remain visible because this calculation does not apply one universal age cutoff across daily bars and quotes.",
+      ];
 
   return {
     schemaVersion: "portfolio-risk-v2",
@@ -300,7 +324,9 @@ export function portfolioRiskDto(input: {
       snapshot.weights,
     ).map((stressTest) => ({
       ...stressTest,
-      ...currentPositionTime("Derived from current Alpaca account and positions"),
+      ...currentPositionTime(
+        "Derived from current Alpaca account and positions",
+      ),
     })),
     inputs: {
       account: {
@@ -328,25 +354,31 @@ export function portfolioRiskDto(input: {
           : missing.length
             ? ("partial" as const)
             : ("complete" as const),
-      expected: {
-        account: 1,
-        positions: input.positions.length,
-        positionHistories: input.positions.length,
-        positionQuotes: input.positions.length,
-        benchmarkHistories: 1,
+      expected,
+      received,
+      omitted: {
+        account: expected.account - received.account,
+        positions: expected.positions - received.positions,
+        positionHistories:
+          expected.positionHistories - received.positionHistories,
+        positionQuotes: expected.positionQuotes - received.positionQuotes,
+        benchmarkHistories:
+          expected.benchmarkHistories - received.benchmarkHistories,
       },
-      received: {
-        account: 1,
-        positions: input.positions.length,
-        positionHistories: positionMarketData.filter(
-          (item) => item.historicalBars.count >= 2,
-        ).length,
-        positionQuotes: positionMarketData.filter((item) => item.quote.available)
-          .length,
-        benchmarkHistories: input.benchmarkBars.length >= 2 ? 1 : 0,
+      freshness: {
+        status:
+          observationReceived === observationExpected
+            ? ("observed" as const)
+            : ("partial" as const),
+        expectedObservations: observationExpected,
+        receivedObservations: observationReceived,
+        latestObservedAt: rootTime.observedAt,
+        evaluatedAt: rootTime.serverRespondedAt,
+        agePolicy: "provider_timestamps_only" as const,
       },
       missing,
       warnings,
+      impact,
       source: "Calculated from the bounded portfolio-risk evidence set",
       ...rootTime,
     },

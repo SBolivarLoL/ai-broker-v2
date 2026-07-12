@@ -550,6 +550,7 @@
           <div class="metrics" id="risk">
             <div class="empty">Calculating…</div>
           </div>
+          <div id="risk-coverage-panel"></div>
           <div class="analytics-grid">
             <div>
               <div class="muted">Allocation</div>
@@ -579,6 +580,7 @@
           <div class="metrics" id="exposure-factors">
             <div class="empty">Loading factor diagnostics…</div>
           </div>
+          <div id="exposure-coverage-panel"></div>
           <div class="exposure-grid">
             <div class="exposure-panel">
               <h3>Asset classes</h3>
@@ -802,6 +804,7 @@
           <div class="metrics" id="snapshot-metrics">
             <div class="empty">Validating broker data…</div>
           </div>
+          <div id="snapshot-coverage-panel"></div>
           <div id="snapshot-flags"></div>
           <div class="muted" style="margin-top: 18px">
             Daily snapshot history
@@ -826,6 +829,7 @@
           <div class="metrics" id="performance-metrics">
             <div class="empty">Loading performance…</div>
           </div>
+          <div id="performance-coverage-panel"></div>
           <div id="performance-quality"></div>
           <div class="analytics-grid">
             <div class="chart" id="performance-chart">
@@ -1065,7 +1069,8 @@
                   id="strategy-params"
                   aria-label="Strategy parameters JSON"
                 >
-{"fast":5,"slow":20,"exposure":1}</textarea>
+{"fast":5,"slow":20,"exposure":1}</textarea
+                >
               </details>
               <div class="ticket-row">
                 <label class="control-label"

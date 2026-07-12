@@ -2327,6 +2327,33 @@ select.field {
 .coverage-strip .muted {
   display: block;
 }
+.portfolio-coverage-panel {
+  margin-bottom: 18px;
+}
+.portfolio-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.portfolio-coverage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+.portfolio-coverage-row > span:first-child {
+  text-transform: capitalize;
+}
+.portfolio-coverage-row .muted {
+  grid-column: 1 / -1;
+}
+.portfolio-coverage-impact {
+  margin-top: 8px;
+}
 .option-chain-limit {
   padding: 14px 8px;
   border-top: 1px solid var(--border);

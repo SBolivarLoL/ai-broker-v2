@@ -208,6 +208,13 @@ describe("portfolio snapshot response", () => {
         status: "partial",
         expected: { current: 1, history: 2 },
         received: { current: 1, history: 1 },
+        omitted: { current: 0, history: 1 },
+        freshness: {
+          status: "captured",
+          latestCapturedAt: "2026-06-21T12:00:00.000Z",
+          evaluatedAt: "2026-06-21T12:00:02.000Z",
+          ageSeconds: 2,
+        },
         missing: [
           "history:2026-01-02:capture_time",
           "history:2026-01-02:quality",
