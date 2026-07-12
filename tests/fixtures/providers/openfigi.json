@@ -1,0 +1,88 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "openfigi_v3_2026_07_12",
+  "provider": "OpenFIGI v3",
+  "sourceIds": ["openfigi_v3"],
+  "origins": [
+    {
+      "endpoint": "POST /v3/mapping",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://www.openfigi.com/api/documentation",
+      "rawSha256": "sha256:e1ee9de1a1d99c46cd802dedbfe03d10202e1916fef03504d6afcb197a36be91",
+      "digestOmissionReason": null
+    }
+  ],
+  "redaction": {
+    "removed": ["optional API key and unrelated candidate rows"],
+    "replaced": ["live issuer identity with the public IBM documentation example"],
+    "review": "FIGI identifiers are public; the fixture includes no API key or private identifier."
+  },
+  "payloads": {
+    "mapping": [
+      {
+        "data": [
+          {
+            "figi": "BBG000BLNNH6",
+            "securityType": "Common Stock",
+            "marketSector": "Equity",
+            "ticker": "IBM",
+            "name": "INTL BUSINESS MACHINES CORP",
+            "exchCode": "US",
+            "shareClassFIGI": "BBG001S5S399",
+            "compositeFIGI": "BBG000BLNNH6",
+            "securityType2": "Common Stock",
+            "securityDescription": "IBM"
+          }
+        ]
+      }
+    ],
+    "partial_warning": [
+      {
+        "warning": "No identifier found."
+      }
+    ],
+    "malformed": {
+      "data": "not-an-array"
+    },
+    "rate_limit": {
+      "status": 429,
+      "headers": {
+        "ratelimit-limit": "25",
+        "ratelimit-remaining": "0",
+        "ratelimit-reset": "1"
+      },
+      "body": "Too Many Requests"
+    }
+  },
+  "cases": [
+    {
+      "id": "openfigi_baseline",
+      "class": "baseline",
+      "derivation": "redacted_recording",
+      "payload": "mapping",
+      "expected": "A unique public identifier becomes canonical identity evidence."
+    },
+    {
+      "id": "openfigi_partial",
+      "class": "partial",
+      "derivation": "redacted_recording_mutation",
+      "payload": "partial_warning",
+      "expected": "The v3 warning key is a sourced no-match, not a transport failure."
+    },
+    {
+      "id": "openfigi_malformed",
+      "class": "malformed",
+      "derivation": "redacted_recording_mutation",
+      "payload": "malformed",
+      "expected": "A non-array mapping envelope cannot select an identity."
+    },
+    {
+      "id": "openfigi_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "rate_limit",
+      "expected": "HTTP 429 and the v3 reset headers produce explicit rate-limited coverage."
+    }
+  ]
+}

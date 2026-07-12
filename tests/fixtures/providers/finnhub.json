@@ -1,0 +1,119 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "finnhub_documented_contract_2026_07_12",
+  "provider": "Finnhub API",
+  "sourceIds": ["finnhub_free_enrichment"],
+  "origins": [
+    {
+      "endpoint": "Company Profile 2, earnings surprises, and company news",
+      "kind": "official_documentation_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://finnhub.io/docs/api",
+      "rawSha256": null,
+      "digestOmissionReason": "No Finnhub key was configured; the fixture preserves the documented contract and prior adapter sample rather than claiming a live recording."
+    }
+  ],
+  "redaction": {
+    "removed": ["API token, phone, market capitalization, and live article text"],
+    "replaced": [
+      "issuer and symbol with ACME Corp/ACME",
+      "news URLs and sources with example.invalid values",
+      "numeric values with deterministic placeholders"
+    ],
+    "review": "The fixture contains no API key, personal contact, licensed live value, or article text."
+  },
+  "payloads": {
+    "profile": {
+      "name": "ACME Corp",
+      "ticker": "ACME",
+      "country": "US",
+      "currency": "USD",
+      "exchange": "EXAMPLE EXCHANGE",
+      "finnhubIndustry": "Technology",
+      "ipo": "2000-01-01",
+      "weburl": "https://example.invalid/acme",
+      "phone": "removed",
+      "marketCapitalization": 999
+    },
+    "earnings_partial": [
+      {
+        "actual": 1.1,
+        "estimate": 1,
+        "period": "2026-03-31",
+        "quarter": 1,
+        "surprise": 0.1,
+        "surprisePercent": 10,
+        "symbol": "ACME",
+        "year": 2026
+      },
+      {
+        "actual": "invalid",
+        "estimate": 1,
+        "period": "not-a-date"
+      }
+    ],
+    "news_timestamp_edge": [
+      {
+        "category": "company",
+        "datetime": 1792891800,
+        "headline": "ACME operating update",
+        "id": 41,
+        "related": "ACME",
+        "source": "Example Wire",
+        "summary": "A replaced summary.",
+        "url": "https://example.invalid/acme-update"
+      },
+      {
+        "category": "company",
+        "datetime": 0,
+        "headline": "Invalid article",
+        "id": 42,
+        "url": "javascript:alert(1)"
+      }
+    ],
+    "rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "0"
+      },
+      "body": "rate limited"
+    }
+  },
+  "cases": [
+    {
+      "id": "finnhub_profile_baseline",
+      "class": "baseline",
+      "derivation": "official_documentation_mutation",
+      "payload": "profile",
+      "expected": "Only the allow-listed company identity fields survive normalization."
+    },
+    {
+      "id": "finnhub_earnings_partial",
+      "class": "partial",
+      "derivation": "official_documentation_mutation",
+      "payload": "earnings_partial",
+      "expected": "Malformed earnings rows are excluded while valid provider records remain."
+    },
+    {
+      "id": "finnhub_news_timestamp_edge",
+      "class": "timestamp_edge",
+      "derivation": "official_documentation_mutation",
+      "payload": "news_timestamp_edge",
+      "expected": "Unix publication seconds normalize to UTC and epoch-zero unsafe content is excluded."
+    },
+    {
+      "id": "finnhub_malformed",
+      "class": "malformed",
+      "derivation": "official_documentation_mutation",
+      "payload": "earnings_partial",
+      "expected": "Wrong scalar types cannot become financial evidence."
+    },
+    {
+      "id": "finnhub_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "rate_limit",
+      "expected": "Endpoint-level throttling yields partial coverage instead of erasing other endpoints."
+    }
+  ]
+}

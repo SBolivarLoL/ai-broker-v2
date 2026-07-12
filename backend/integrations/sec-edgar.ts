@@ -595,26 +595,63 @@ export class SecEdgarClient {
     const submission = submissionResult.value;
     const recent = submission.filings.recent;
     const serverRespondedAt = new Date(this.now()).toISOString();
-    const filings = recent.form
-      .map((form, index) => ({ form, index }))
-      .filter(item => ["10-K", "10-Q", "8-K", "8-K/A"].includes(item.form))
+    const filings = (Array.isArray(recent.form) ? recent.form : [])
+      .map((form, index) => ({
+        form,
+        accession: Array.isArray(recent.accessionNumber)
+          ? recent.accessionNumber[index]
+          : undefined,
+        filed: Array.isArray(recent.filingDate)
+          ? recent.filingDate[index]
+          : undefined,
+        reportDate: Array.isArray(recent.reportDate)
+          ? recent.reportDate[index]
+          : undefined,
+        primaryDocument: Array.isArray(recent.primaryDocument)
+          ? recent.primaryDocument[index]
+          : undefined,
+      }))
+      .filter(
+        (item): item is {
+          form: string;
+          accession: string;
+          filed: string;
+          reportDate: string | undefined;
+          primaryDocument: string;
+        } =>
+          ["10-K", "10-Q", "8-K", "8-K/A"].includes(item.form) &&
+          typeof item.accession === "string" &&
+          /^\d{10}-\d{2}-\d{6}$/.test(item.accession) &&
+          typeof item.filed === "string" &&
+          secDateTime(item.filed) !== null &&
+          typeof item.primaryDocument === "string" &&
+          /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(item.primaryDocument),
+      )
       .slice(0, limit)
-      .map(({ form, index }): SecFiling => {
-        const accession = recent.accessionNumber[index]!;
-        const primaryDocument = recent.primaryDocument[index]!;
+      .map(({
+        form,
+        accession,
+        filed,
+        reportDate,
+        primaryDocument,
+      }): SecFiling => {
         const accessionPlain = accession.replaceAll("-", "");
         const base = `https://www.sec.gov/Archives/edgar/data/${company.cikNumber}/${accessionPlain}`;
+        const effectiveDate =
+          typeof reportDate === "string" && secDateTime(reportDate)
+            ? reportDate
+            : "";
         return {
           form,
-          filed: recent.filingDate[index]!,
-          reportDate: recent.reportDate[index]!,
+          filed,
+          reportDate: effectiveDate,
           accession,
           primaryDocument,
           url: `${base}/${primaryDocument}`,
           indexUrl: `${base}/${accession}-index.html`,
           ...secFilingTime(
-            recent.filingDate[index]!,
-            recent.reportDate[index]!,
+            filed,
+            effectiveDate,
             submissionResult.retrievedAt,
             serverRespondedAt,
           ),

@@ -1,0 +1,140 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "sec_edgar_2026_07_12",
+  "provider": "U.S. SEC EDGAR",
+  "sourceIds": ["sec_edgar"],
+  "origins": [
+    {
+      "endpoint": "company_tickers.json",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://www.sec.gov/search-filings/edgar-application-programming-interfaces",
+      "rawSha256": "sha256:f7100e89ccfb9c6bcfd0915b97aa05ac1e20d86961070d2a852d82e4fb02471f",
+      "digestOmissionReason": null
+    },
+    {
+      "endpoint": "submissions/CIK0000320193.json",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://www.sec.gov/search-filings/edgar-application-programming-interfaces",
+      "rawSha256": "sha256:ea2aa552e984a29e920cf80e0827cf32b632563935f029b6ec9de7f4fa3c026d",
+      "digestOmissionReason": null
+    }
+  ],
+  "redaction": {
+    "removed": [
+      "addresses, phone, EIN, ownership flags, websites, and former names",
+      "all filing rows outside the bounded contract sample",
+      "all XBRL concepts outside the revision example"
+    ],
+    "replaced": [
+      "company identity with ACME Corp and a reserved example CIK",
+      "accession numbers with structurally valid non-production values",
+      "financial values with deterministic placeholders"
+    ],
+    "review": "SEC source data is public, but unrelated issuer and contact fields were still removed to keep the fixture minimal."
+  },
+  "payloads": {
+    "tickers": {
+      "0": {
+        "cik_str": 1234567,
+        "ticker": "ACME",
+        "title": "ACME Corp"
+      }
+    },
+    "submissions_partial": {
+      "name": "ACME Corp",
+      "sic": "3571",
+      "sicDescription": "Electronic Computers",
+      "filings": {
+        "recent": {
+          "accessionNumber": [
+            "0001234567-25-000001",
+            "0001234567-25-000002",
+            "0001234567-25-000003"
+          ],
+          "filingDate": ["2025-11-01", "2025-08-01", "not-a-date"],
+          "reportDate": ["2025-09-30"],
+          "form": ["10-K", "10-Q", "8-K"],
+          "primaryDocument": ["annual.htm", "quarter.htm", "event.htm"]
+        }
+      }
+    },
+    "company_facts_revisions": {
+      "entityName": "ACME Corp",
+      "facts": {
+        "us-gaap": {
+          "RevenueFromContractWithCustomerExcludingAssessedTax": {
+            "label": "Revenue",
+            "units": {
+              "USD": [
+                {
+                  "val": 100,
+                  "start": "2025-01-01",
+                  "end": "2025-03-31",
+                  "filed": "2025-05-01",
+                  "form": "10-Q",
+                  "fp": "Q1",
+                  "accn": "0001234567-25-000001"
+                },
+                {
+                  "val": 110,
+                  "start": "2025-01-01",
+                  "end": "2025-03-31",
+                  "filed": "2025-08-01",
+                  "form": "10-Q/A",
+                  "fp": "Q1",
+                  "accn": "0001234567-25-000004"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "0"
+      },
+      "body": "busy"
+    }
+  },
+  "cases": [
+    {
+      "id": "submissions_partial",
+      "class": "partial",
+      "derivation": "redacted_recording_mutation",
+      "payload": "submissions_partial",
+      "expected": "Misaligned filing arrays and invalid dates are omitted without inventing report dates."
+    },
+    {
+      "id": "filing_timestamp_edge",
+      "class": "timestamp_edge",
+      "derivation": "redacted_recording_mutation",
+      "payload": "submissions_partial",
+      "expected": "Invalid publication dates remain unusable."
+    },
+    {
+      "id": "facts_revision",
+      "class": "revision",
+      "derivation": "redacted_recording_mutation",
+      "payload": "company_facts_revisions",
+      "expected": "A later amendment cannot influence an earlier point-in-time cutoff."
+    },
+    {
+      "id": "submissions_malformed",
+      "class": "malformed",
+      "derivation": "redacted_recording_mutation",
+      "payload": "submissions_partial",
+      "expected": "Malformed filing rows fail closed at normalization."
+    },
+    {
+      "id": "sec_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "rate_limit",
+      "expected": "The SEC client retries within its configured bound and preserves fair-access pacing."
+    }
+  ]
+}
