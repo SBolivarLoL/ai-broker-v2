@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `25d3d9d`: 2026-07-12.
+Last reviewed against `main` commit `499afa8`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 410 tests, 0 failures, 1,907 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 414 tests, 0 failures, 1,927 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.17% functions, 97.28% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.17% functions, 97.30% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `25d3d9d`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `499afa8`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -41,8 +41,8 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Risk and portfolio math     | High at module level                               | Unit, regression, and portfolio system tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                | No independent production reconciliation over a long account history                                                                      |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
-| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                                                                   | No production-sized restore timing or closed-beta operations drill                                                                        |
-| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-rebalance/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and point-in-time fundamentals are not persisted |
+| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                             | No production-sized restore timing or closed-beta operations drill                                                                        |
+| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, persisted point-in-time comparable valuation, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-rebalance/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats                                                                                                                                                                                                                                                                                     | Internal classifications are not legal approval; no automatic retention enforcement exists                                                |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, deterministic replay hashes, and SQLite/API persistence                                                                                                                                                                                                                                                                                                                                               | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                                                                                                                                                                                                                                             | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
@@ -125,6 +125,18 @@ Additional mechanical checks:
   unavailable. Direct API contracts accept `asOf=YYYY-MM-DD`, pass the normalized
   date into the provider boundary, and reject impossible or future dates before
   any provider call. SEC filed dates have day—not intraday—precision.
+- Historical comparable valuation tests prove that v3 requests use a bounded
+  31-day IEX-only daily-bar window, discard bars after the requested day, and
+  exclude SEC valuation observations filed later before input selection. The
+  response preserves the selected bar observation, SEC publication/effective
+  periods, exact excluded valuation-observation count, retrieval/response times, and unavailable
+  historical-classification state. Replay tests verify the canonical outer
+  manifest and every source payload, reject both ordinary tampering and a
+  correctly re-hashed source dated after either cutoff, and return the stored
+  report with `providerRequests:0`. A direct API/SQLite contract validates 201
+  creation, normalized request arguments, null model metrics, stored replay
+  hash, provider-free replay, 404 lookup, 409 integrity failure, and invalid-date
+  rejection before provider work.
 - Official Treasury/BLS/FRED/BEA macro root, provider-coverage, indicator,
   canonical-evidence, research-tool, and direct API DTOs were checked for
   Treasury publication dates, FRED observation dates, BLS monthly and BEA
@@ -270,7 +282,7 @@ Additional mechanical checks:
   and per-response server timestamps. Cache hits preserve the original provider
   retrieval timestamp and extracted-content hashes; the SEC research route and
   comparable-valuation evidence preserve those adapter timestamps.
-- Comparable and scenario valuation v2 roots, SEC/market/derived canonical
+- Comparable valuation v3 and scenario valuation v2 roots, SEC/market/derived canonical
   sources, baselines, scenarios, and quality contracts were checked through
   pure and direct API tests. SEC filing publication and fundamental effective
   periods remain separate from SEC retrieval; the latest-price helper's missing
@@ -324,7 +336,7 @@ This checkout has local Alpaca paper, SEC identity, and OpenAI credentials.
 FRED, BEA, Finnhub, and OpenFIGI keys remain unconfigured. The complete
 credentialed suite was not run; no availability claim is made for optional
 key-gated providers or live OpenAI orchestration in this change.
-`bun run smoke:comparables` now asserts the v2 schema, subject/peer evidence,
+`bun run smoke:comparables` now asserts the v3 schema, subject/peer evidence,
 retrieval-only Alpaca price provenance, and calculation coverage while logging
 only symbols, counts, statuses, and times rather than prices or fundamentals.
 The script itself was not rerun; the same configured Alpaca/SEC endpoints were

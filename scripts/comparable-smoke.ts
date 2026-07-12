@@ -3,7 +3,7 @@ import { getComparableValuations } from "../backend/features/research/research";
 
 const alpaca = new Alpaca({ paper: true, timeoutMs: 10_000 });
 const table = await getComparableValuations(alpaca, "AAPL", ["MSFT"]);
-if (table.schemaVersion !== "comparable-valuations-v2")
+if (table.schemaVersion !== "comparable-valuations-v3")
   throw new Error("Comparable valuation response schema is outdated");
 if (
   !table.rows.some((row) => row.symbol === "AAPL" && row.subject) ||

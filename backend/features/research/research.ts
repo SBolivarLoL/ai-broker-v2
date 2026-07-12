@@ -277,6 +277,93 @@ export async function getComparableValuations(alpaca: Alpaca, rawSubject: string
   return comparableValuationTable(subject, peers, results, warnings);
 }
 
+export function selectHistoricalValuationPrice(
+  bars: Array<{ close?: unknown; timestamp?: unknown }>,
+  filedThrough: string,
+) {
+  const cutoff = normalizeSecPointInTimeDate(filedThrough);
+  const cutoffAt = new Date(`${cutoff}T23:59:59.999Z`).getTime();
+  const eligible = bars.flatMap((bar) => {
+    const price = Number(bar.close);
+    const observedAt = new Date(bar.timestamp as string | Date | number);
+    return Number.isFinite(price) &&
+      price > 0 &&
+      Number.isFinite(observedAt.getTime()) &&
+      observedAt.getTime() <= cutoffAt
+      ? [{ price, observedAt: observedAt.toISOString() }]
+      : [];
+  }).toSorted((a, b) => a.observedAt.localeCompare(b.observedAt));
+  const selected = eligible.at(-1);
+  if (!selected)
+    throw new Error(`Historical market price is unavailable at or before ${cutoff}`);
+  return selected;
+}
+
+export async function getPointInTimeComparableValuations(
+  alpaca: Alpaca,
+  rawSubject: string,
+  rawPeers: string | string[],
+  rawAsOf: string,
+  dependencies: {
+    sec?: Pick<SecEdgarClient, "company" | "companyFactsResult">;
+    now?: () => Date;
+  } = {},
+) {
+  const { subject, peers, symbols } = parseComparableSymbols(rawSubject, rawPeers);
+  const filedThrough = normalizeSecPointInTimeDate(rawAsOf);
+  const cutoffStart = new Date(`${filedThrough}T00:00:00.000Z`);
+  const start = new Date(cutoffStart.getTime() - 31 * 86_400_000);
+  const end = new Date(cutoffStart.getTime() + 86_400_000);
+  const sec = dependencies.sec ?? secEdgarClient();
+  const now = dependencies.now ?? (() => new Date());
+  const settled = await Promise.allSettled(symbols.map(async symbol => {
+    const [company, bars] = await Promise.all([
+      sec.company(symbol),
+      alpaca.marketData.getStockBarsFor(symbol, {
+        timeframe: TimeFrame.Day,
+        start,
+        end,
+        feed: "iex",
+      }),
+    ]);
+    const factsResult = await sec.companyFactsResult(company);
+    const selectedPrice = selectHistoricalValuationPrice(
+      bars,
+      filedThrough,
+    );
+    const marketRetrievedAt = now().toISOString();
+    return buildComparableValuationRow(
+      company,
+      factsResult.facts,
+      selectedPrice.price,
+      marketRetrievedAt,
+      symbol === subject,
+      factsResult,
+      {
+        filedThrough,
+        priceObservedAt: selectedPrice.observedAt,
+        priceFeed: "iex",
+        priceDelayed: false,
+      },
+    );
+  }));
+  const results: Array<ReturnType<typeof buildComparableValuationRow>> = [];
+  const warnings: string[] = [];
+  settled.forEach((result, index) => {
+    const symbol = symbols[index]!;
+    if (result.status === "fulfilled") results.push(result.value);
+    else warnings.push(`${symbol} point-in-time valuation inputs are unavailable: ${result.reason instanceof Error ? result.reason.message : "provider request failed"}`);
+  });
+  return comparableValuationTable(
+    subject,
+    peers,
+    results,
+    warnings,
+    now().toISOString(),
+    { priceMode: "historical_daily_close", filedThrough },
+  );
+}
+
 export async function getValuationScenarios(alpaca: Alpaca, rawSymbol: string, assumptions: unknown) {
   const symbol = SymbolSchema.parse(rawSymbol);
   const parsedAssumptions = ValuationScenarioInput.safeParse(assumptions);

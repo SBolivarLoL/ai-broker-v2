@@ -58,6 +58,9 @@ test("builds data licensing and subscription governance report", () => {
       "simulation-bound intent and authority evidence",
     ]),
   });
+  expect(report.storedOutputs.find(output => output.id === "research_runs")?.contents).toContain(
+    "point-in-time comparable valuation reports with canonical replay hashes",
+  );
   expect(report.storedOutputs.flatMap(output => output.tables).sort()).toEqual(expectedTables);
   const outputIds = new Set(report.storedOutputs.map(output => output.id));
   const sourceIds = new Set(report.sources.map(source => source.id));

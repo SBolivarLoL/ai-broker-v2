@@ -744,6 +744,11 @@ export function createStore(filename = "data/app.db") {
         "UPDATE research_runs SET status = 'completed', payload = ?, metrics = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
       ).run(JSON.stringify(payload), JSON.stringify(metrics), id);
     },
+    completeResearchArtifact(id: string, payload: unknown) {
+      db.query(
+        "UPDATE research_runs SET status = 'completed', payload = ?, metrics = NULL, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
+      ).run(JSON.stringify(payload), id);
+    },
     failResearch(id: string, error: string) {
       db.query(
         "UPDATE research_runs SET status = 'failed', error = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",

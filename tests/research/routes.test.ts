@@ -8,6 +8,7 @@ import { createStore } from "../../backend/persistence/store";
 import type { getCompanySecEvidence } from "../../backend/features/research/research";
 import type {
   getComparableValuations,
+  getPointInTimeComparableValuations,
   getValuationScenarios,
   runCompanyResearch,
 } from "../../backend/features/research/research";
@@ -34,8 +35,13 @@ type RouteOptions = {
   officialMacroContext?: () => Promise<MacroContext>;
   comparableValuations?: (
     symbol: string,
-    peers: string,
+    peers: string | string[],
   ) => ReturnType<typeof getComparableValuations>;
+  pointInTimeComparableValuations?: (
+    symbol: string,
+    peers: string | string[],
+    asOf: string,
+  ) => ReturnType<typeof getPointInTimeComparableValuations>;
   valuationScenarios?: (
     symbol: string,
     scenarios: unknown,
@@ -72,6 +78,8 @@ const route = async (
     secCompanyEvidence: options.secCompanyEvidence,
     officialMacroContext: options.officialMacroContext,
     comparableValuations: options.comparableValuations,
+    pointInTimeComparableValuations:
+      options.pointInTimeComparableValuations,
     valuationScenarios: options.valuationScenarios,
     companyResearch: options.companyResearch,
     portfolioQuestion: options.portfolioQuestion,
@@ -327,7 +335,7 @@ test("advisor routes preserve versioned coverage contracts", async () => {
 
 test("valuation routes preserve normalized coverage contracts", async () => {
   const comparablePayload = {
-    schemaVersion: "comparable-valuations-v2",
+    schemaVersion: "comparable-valuations-v3",
     quality: {
       status: "partial",
       expected: { companies: 2 },
@@ -342,7 +350,10 @@ test("valuation routes preserve normalized coverage contracts", async () => {
     () => true,
     {
       comparableValuations: async (symbol, peers) => {
-        comparableInputs.push([symbol, peers]);
+        comparableInputs.push([
+          symbol,
+          Array.isArray(peers) ? peers.join(",") : peers,
+        ]);
         return comparablePayload;
       },
     },
@@ -380,6 +391,150 @@ test("valuation routes preserve normalized coverage contracts", async () => {
   expect(scenarioInputs).toEqual([["AAPL", scenarios]]);
   expect(scenario?.status).toBe(200);
   expect(await scenario?.json()).toEqual(scenarioPayload);
+});
+
+test("historical valuation runs persist and replay without another provider call", async () => {
+  const replayTime = {
+    observedAt: null,
+    publishedAt: null,
+    retrievedAt: "2026-07-12T12:00:00.000Z",
+    serverRespondedAt: "2026-07-12T12:00:01.000Z",
+    effectivePeriod: null,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-07-12T12:00:00.000Z",
+      serverResponseTime: "2026-07-12T12:00:01.000Z",
+    },
+    asOf: "2026-07-12T12:00:01.000Z",
+  };
+  const report = {
+    schemaVersion: "comparable-valuations-v3",
+    priceMode: "historical_daily_close",
+    pointInTime: {
+      status: "applied",
+      asOfDate: "2025-05-15",
+      cutoffAt: "2025-05-15T23:59:59.999Z",
+      publicationPrecision: "sec_filed_date",
+      marketObservationPolicy: "last_daily_bar_at_or_before_cutoff",
+      excludedPostCutoffValuationObservations: 0,
+      historicalClassification: {
+        status: "unavailable",
+        reason: "SEC submissions expose current SIC without a historical classification series.",
+      },
+    },
+    subject: "AAPL",
+    peers: ["MSFT"],
+    rows: [],
+    sources: [],
+    warnings: ["Fixture intentionally has no provider rows."],
+    formulas: {},
+    quality: {
+      status: "partial",
+      expected: { companies: 2, secFundamentals: 2, prices: 2, marketPriceObservations: 2, valuationMetrics: 12 },
+      received: { companies: 0, secFundamentals: 0, prices: 0, marketPriceObservations: 0, valuationMetrics: 0 },
+      omitted: { companies: 2, secFundamentals: 2, prices: 2, marketPriceObservations: 2, valuationMetrics: 12 },
+      freshness: { status: "retrieval_time_only", latestPublishedAt: null, effectivePeriod: null, retrievedAt: "2026-07-12T12:00:00.000Z", evaluatedAt: "2026-07-12T12:00:01.000Z", agePolicy: "historical_price_must_not_exceed_cutoff" },
+      missing: ["AAPL:valuation_inputs", "MSFT:valuation_inputs"],
+      impact: ["No historical valuation conclusion is available."],
+      source: "Injected deterministic route fixture",
+      ...replayTime,
+    },
+    ...replayTime,
+  } as unknown as Awaited<ReturnType<typeof getPointInTimeComparableValuations>>;
+  const calls: Array<[string, string[], string]> = [];
+  const store = createStore(":memory:");
+  const created = await route(
+    "/api/research/valuation-runs",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbol: "aapl", peers: ["MSFT"], asOf: "2025-05-15" }),
+    },
+    () => true,
+    {
+      store,
+      pointInTimeComparableValuations: async (symbol, peers, asOf) => {
+        calls.push([symbol, Array.isArray(peers) ? peers : peers.split(","), asOf]);
+        return report;
+      },
+    },
+  );
+  expect(created?.status).toBe(201);
+  const createdBody = await created?.json();
+  expect(calls).toEqual([["AAPL", ["MSFT"], "2025-05-15"]]);
+  expect(createdBody).toMatchObject({
+    schemaVersion: "historical-comparable-valuation-run-v1",
+    model: "deterministic-comparable-valuations-v3",
+    report: { pointInTime: { status: "applied", asOfDate: "2025-05-15" } },
+    evidenceReplay: {
+      schemaVersion: "comparable-valuation-replay-v1",
+      calculationVersion: "comparable-valuations-v3",
+    },
+  });
+  expect(store.getResearch(createdBody.runId)).toMatchObject({
+    status: "completed",
+    metrics: null,
+    payload: {
+      runId: createdBody.runId,
+      evidenceReplay: { contentHash: createdBody.evidenceReplay.contentHash },
+    },
+  });
+
+  const replayed = await route(
+    `/api/research/valuation-runs/${createdBody.runId}/replay`,
+    { method: "POST" },
+    () => true,
+    { store },
+  );
+  expect(replayed?.status).toBe(200);
+  expect(await replayed?.json()).toMatchObject({
+    status: "verified",
+    providerRequests: 0,
+    replayHash: createdBody.evidenceReplay.contentHash,
+    report: { pointInTime: { asOfDate: "2025-05-15" } },
+  });
+  expect(calls).toHaveLength(1);
+
+  const tamperedRunId = crypto.randomUUID();
+  const tamperedPayload = structuredClone(createdBody);
+  tamperedPayload.runId = tamperedRunId;
+  tamperedPayload.evidenceReplay.contentHash = `sha256:${"0".repeat(64)}`;
+  store.startResearch(
+    tamperedRunId,
+    "AAPL",
+    "deterministic-comparable-valuations-v3",
+  );
+  store.completeResearchArtifact(tamperedRunId, tamperedPayload);
+  await expect(
+    route(
+      `/api/research/valuation-runs/${tamperedRunId}/replay`,
+      { method: "POST" },
+      () => true,
+      { store },
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  const missingReplay = await route(
+    `/api/research/valuation-runs/${crypto.randomUUID()}/replay`,
+    { method: "POST" },
+    () => true,
+    { store },
+  );
+  expect(missingReplay?.status).toBe(404);
+
+  const invalid = await route(
+    "/api/research/valuation-runs",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbol: "AAPL", peers: ["MSFT"], asOf: "2025-02-30" }),
+    },
+    () => true,
+    { store, pointInTimeComparableValuations: async () => report },
+  );
+  expect(invalid?.status).toBe(400);
+  store.close();
 });
 
 test("company research route preserves the versioned coverage contract", async () => {

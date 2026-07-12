@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
+import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import {
   buildComparableValuationRow,
+  buildComparableValuationReplay,
   comparableValuationTable,
   parseComparableSymbols,
+  replayComparableValuation,
 } from "../../backend/features/research/comparable-valuation";
+import {
+  getPointInTimeComparableValuations,
+  selectHistoricalValuationPrice,
+} from "../../backend/features/research/research";
 import type {
   SecCompany,
   SecFacts,
@@ -252,7 +259,9 @@ test("validates bounded manual peer sets and aggregates canonical evidence", () 
     "2026-06-29T12:01:00Z",
   );
   expect(table).toMatchObject({
-    schemaVersion: "comparable-valuations-v2",
+    schemaVersion: "comparable-valuations-v3",
+    priceMode: "latest_retrieval",
+    pointInTime: { status: "not_requested" },
     subject: "AAPL",
     peers: ["MSFT"],
     rows: [{ symbol: "AAPL" }],
@@ -266,21 +275,21 @@ test("validates bounded manual peer sets and aggregates canonical evidence", () 
       expected: {
         companies: 2,
         secFundamentals: 2,
-        currentPrices: 2,
+        prices: 2,
         marketPriceObservations: 2,
         valuationMetrics: 12,
       },
       received: {
         companies: 1,
         secFundamentals: 1,
-        currentPrices: 1,
+        prices: 1,
         marketPriceObservations: 0,
         valuationMetrics: 6,
       },
       omitted: {
         companies: 1,
         secFundamentals: 1,
-        currentPrices: 1,
+        prices: 1,
         marketPriceObservations: 2,
         valuationMetrics: 6,
       },
@@ -291,4 +300,201 @@ test("validates bounded manual peer sets and aggregates canonical evidence", () 
     },
   });
   expect(table.sources).toHaveLength(3);
+});
+
+test("historical comparables exclude later SEC revisions and later market bars", () => {
+  const revisedFacts = structuredClone(facts);
+  revisedFacts.facts["us-gaap"]!
+    .RevenueFromContractWithCustomerExcludingAssessedTax!.units.USD!.push(
+      annual(
+        150,
+        "2024-01-01",
+        "2024-12-31",
+        "2025-06-01",
+        "0000320193-25-000099",
+      ),
+    );
+  const selectedPrice = selectHistoricalValuationPrice(
+    [
+      { close: 29, timestamp: "2025-05-14T20:00:00.000Z" },
+      { close: 31, timestamp: "2025-05-16T20:00:00.000Z" },
+    ],
+    "2025-05-15",
+  );
+  const result = buildComparableValuationRow(
+    company,
+    revisedFacts,
+    selectedPrice.price,
+    "2026-07-12T12:00:00.000Z",
+    true,
+    {
+      retrievedAt: "2026-07-12T11:59:58.000Z",
+      serverRespondedAt: "2026-07-12T11:59:59.000Z",
+    },
+    {
+      filedThrough: "2025-05-15",
+      priceObservedAt: selectedPrice.observedAt,
+      priceFeed: "iex",
+    },
+  );
+  const report = comparableValuationTable(
+    "AAPL",
+    ["MSFT"],
+    [result],
+    ["MSFT unavailable"],
+    "2026-07-12T12:00:01.000Z",
+    { priceMode: "historical_daily_close", filedThrough: "2025-05-15" },
+  );
+
+  expect(result.row).toMatchObject({
+    price: 29,
+    annualRevenue: 120,
+    periods: { price: "2025-05-14T20:00:00.000Z" },
+  });
+  expect(result.pointInTime).toMatchObject({
+    mode: "filing_date_cutoff",
+    asOfDate: "2025-05-15",
+    excludedPostCutoffObservations: 1,
+  });
+  expect(report).toMatchObject({
+    schemaVersion: "comparable-valuations-v3",
+    priceMode: "historical_daily_close",
+    observedAt: "2025-05-14T20:00:00.000Z",
+    pointInTime: {
+      status: "applied",
+      asOfDate: "2025-05-15",
+      marketObservationPolicy: "last_daily_bar_at_or_before_cutoff",
+      excludedPostCutoffValuationObservations: 1,
+      historicalClassification: { status: "unavailable" },
+    },
+    quality: {
+      expected: { prices: 2, marketPriceObservations: 2 },
+      received: { prices: 1, marketPriceObservations: 1 },
+      freshness: { agePolicy: "historical_price_must_not_exceed_cutoff" },
+    },
+  });
+});
+
+test("point-in-time valuation service requests bounded IEX history and preserves the cutoff", async () => {
+  const requests: Array<{ symbol: string; options: Record<string, unknown> }> = [];
+  const alpaca = {
+    marketData: {
+      async getStockBarsFor(symbol: string, options: Record<string, unknown>) {
+        requests.push({ symbol, options });
+        return [
+          { close: symbol === "AAPL" ? 29 : 19, timestamp: "2025-05-14T20:00:00.000Z" },
+          { close: 999, timestamp: "2025-05-16T20:00:00.000Z" },
+        ];
+      },
+    },
+  } as unknown as Alpaca;
+  const sec = {
+    async company(symbol: string) {
+      return { ...company, ticker: symbol, title: `${symbol} Inc.` };
+    },
+    async companyFactsResult(requestedCompany: SecCompany) {
+      return {
+        company: requestedCompany,
+        facts: { ...facts, entityName: requestedCompany.title },
+        sourceUrl: `https://data.sec.gov/${requestedCompany.cik}.json`,
+        retrievedAt: "2026-07-12T11:59:58.000Z",
+        serverRespondedAt: "2026-07-12T11:59:59.000Z",
+      } as any;
+    },
+  };
+
+  const report = await getPointInTimeComparableValuations(
+    alpaca,
+    "AAPL",
+    ["MSFT"],
+    "2025-05-15",
+    { sec, now: () => new Date("2026-07-12T12:00:00.000Z") },
+  );
+
+  expect(requests.map(({ symbol, options }) => ({
+    symbol,
+    feed: options.feed,
+    start: (options.start as Date).toISOString(),
+    end: (options.end as Date).toISOString(),
+  }))).toEqual([
+    { symbol: "AAPL", feed: "iex", start: "2025-04-14T00:00:00.000Z", end: "2025-05-16T00:00:00.000Z" },
+    { symbol: "MSFT", feed: "iex", start: "2025-04-14T00:00:00.000Z", end: "2025-05-16T00:00:00.000Z" },
+  ]);
+  expect(report).toMatchObject({
+    schemaVersion: "comparable-valuations-v3",
+    priceMode: "historical_daily_close",
+    pointInTime: { status: "applied", asOfDate: "2025-05-15" },
+    rows: [
+      { symbol: "AAPL", subject: true, price: 29, periods: { price: "2025-05-14T20:00:00.000Z" } },
+      { symbol: "MSFT", subject: false, price: 19, periods: { price: "2025-05-14T20:00:00.000Z" } },
+    ],
+    quality: {
+      status: "complete",
+      received: { companies: 2, prices: 2, marketPriceObservations: 2 },
+    },
+  });
+});
+
+test("historical comparable replay verifies stored evidence without provider reads", () => {
+  const selectedPrice = selectHistoricalValuationPrice(
+    [{ close: 30, timestamp: "2025-05-14T20:00:00.000Z" }],
+    "2025-05-15",
+  );
+  const result = buildComparableValuationRow(
+    company,
+    facts,
+    selectedPrice.price,
+    "2026-07-12T12:00:00.000Z",
+    true,
+    undefined,
+    {
+      filedThrough: "2025-05-15",
+      priceObservedAt: selectedPrice.observedAt,
+      priceFeed: "iex",
+    },
+  );
+  const report = comparableValuationTable(
+    "AAPL",
+    ["MSFT"],
+    [result],
+    ["MSFT unavailable"],
+    "2026-07-12T12:00:01.000Z",
+    { priceMode: "historical_daily_close", filedThrough: "2025-05-15" },
+  );
+  const replay = buildComparableValuationReplay(report);
+
+  expect(replayComparableValuation(replay)).toMatchObject({
+    schemaVersion: "comparable-valuation-replay-result-v1",
+    status: "verified",
+    providerRequests: 0,
+    replayHash: replay.contentHash,
+    report: { rows: [{ symbol: "AAPL", price: 30 }] },
+  });
+  const tampered = structuredClone(replay);
+  tampered.report.rows[0]!.price = 999;
+  expect(() => replayComparableValuation(tampered)).toThrow("integrity check failed");
+
+  const futureMarketReport = structuredClone(report);
+  const marketSource = futureMarketReport.sources.find(
+    (source) => source.category === "market",
+  )!;
+  marketSource.observedAt = "2025-05-16T20:00:00.000Z";
+  marketSource.time.observationTime = marketSource.observedAt;
+  expect(() =>
+    replayComparableValuation(
+      buildComparableValuationReplay(futureMarketReport),
+    ),
+  ).toThrow("exceeds the market cutoff");
+
+  const futureFilingReport = structuredClone(report);
+  const fundamentalSource = futureFilingReport.sources.find(
+    (source) => source.category === "fundamentals",
+  )!;
+  fundamentalSource.publishedAt = "2025-05-16T00:00:00.000Z";
+  fundamentalSource.time.publicationTime = fundamentalSource.publishedAt;
+  expect(() =>
+    replayComparableValuation(
+      buildComparableValuationReplay(futureFilingReport),
+    ),
+  ).toThrow("exceeds the filing cutoff");
 });
