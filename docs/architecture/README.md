@@ -130,7 +130,10 @@ actually won reconciliation.
 provider record creation, non-trade occurrence-or-settlement days, completed
 broker retrieval, cache reuse, and response delivery remain separate. Migration
 0015 stores the normalized provider and retrieval fields; older rows keep null
-provenance until a later broker read supplies it.
+provenance until a later broker read supplies it. The response quality contract
+also treats bounded-history truncation, missing stored time taxonomy, unmatched
+sell basis, and unresolved corporate actions as consequential coverage gaps
+before the shared portfolio evidence panel renders FIFO conclusions.
 
 `portfolio/analytics.ts` owns deterministic portfolio-performance calculations
 and response normalization. `portfolio/routes.ts` captures portfolio-history/

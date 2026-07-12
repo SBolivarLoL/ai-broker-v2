@@ -536,6 +536,10 @@ async function loadActivities(category = "") {
     `${summary.activityCount} imported activities · FIFO fill accounting · broker data ${data.cache?.hit ? "reused" : "retrieved"} ${new Date(data.retrievedAt).toLocaleTimeString()}`;
   $("#ledger-metrics").innerHTML =
     `<div class="metric"><strong class="${summary.realizedProfitLoss >= 0 ? "gain" : "loss"}">${esc(signedMoney(summary.realizedProfitLoss))}</strong><span class="muted">Realized trading P&amp;L</span></div><div class="metric"><strong>${esc(signedMoney(summary.dividends))}</strong><span class="muted">Dividends</span></div><div class="metric"><strong>${esc(money.format(summary.feesPaid))}</strong><span class="muted">Fees paid</span></div><div class="metric"><strong>${esc(signedMoney(summary.netTransfers))}</strong><span class="muted">Net transfers</span></div>`;
+  $("#ledger-coverage-panel").innerHTML = portfolioCoveragePanel(
+    "Account activity ledger",
+    data.quality,
+  );
   $("#ledger-warnings").innerHTML = summary.warnings.length
     ? `<div class="warnings">${summary.warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}${unresolved.map((action) => `<div><strong>${esc(`${action.type}${action.subType ? "." + action.subType : ""}${action.symbol ? " · " + action.symbol : ""}`)}</strong> — ${esc(action.reason)}</div>`).join("")}<div>${esc(summary.method)}</div></div>`
     : "";
