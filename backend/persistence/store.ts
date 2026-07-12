@@ -28,6 +28,7 @@ import {
 } from "../features/strategies/strategy-provenance";
 import { TradeJournalEntry } from "../features/portfolio/trade-journal";
 import { createStrategyStore } from "./strategy-store";
+import { createRetentionRepository } from "./retention";
 export type { SchemaMigration } from "./migrations";
 export type {
   StrategyAuditInput,
@@ -42,6 +43,11 @@ export type {
   StrategyRunInput,
   StrategyRunStatus,
 } from "./strategy-store";
+export type {
+  RetentionCutoffs,
+  RetentionInventory,
+  RetentionPruneResult,
+} from "./retention";
 
 export type RiskReservationStatus =
   "reserved" | "submitted" | "filled" | "canceled" | "rejected" | "released";
@@ -110,6 +116,7 @@ export function createStore(filename = "data/app.db") {
     throw error;
   }
   const strategyStore = createStrategyStore(db);
+  const retentionRepository = createRetentionRepository(db);
 
   const reservationRows = (now = Date.now()) =>
     db
@@ -811,6 +818,7 @@ export function createStore(filename = "data/app.db") {
       ).map((row) => JSON.parse(row.payload));
     },
     ...strategyStore,
+    ...retentionRepository,
     decisionAudit,
     decisionAuditTrail(subjectId?: string, limit = 100) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1_000)

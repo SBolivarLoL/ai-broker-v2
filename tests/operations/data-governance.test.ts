@@ -61,6 +61,19 @@ test("builds data licensing and subscription governance report", () => {
   expect(report.storedOutputs.find(output => output.id === "research_runs")?.contents).toContain(
     "point-in-time comparable valuation and user-assumption scenario reports with canonical replay hashes",
   );
+  expect(
+    report.storedOutputs
+      .filter((output) =>
+        ["operations_events", "research_runs", "strategy_experiments"].includes(
+          output.id,
+        ),
+      )
+      .every(
+        (output) =>
+          output.retentionDecision ===
+          "selective_automatic_pruning_with_lineage_protection",
+      ),
+  ).toBe(true);
   expect(report.storedOutputs.flatMap(output => output.tables).sort()).toEqual(expectedTables);
   const outputIds = new Set(report.storedOutputs.map(output => output.id));
   const sourceIds = new Set(report.sources.map(source => source.id));
@@ -72,6 +85,6 @@ test("builds data licensing and subscription governance report", () => {
   expect(report.storedOutputs.every(output => output.sourceIds.every(id => report.sources.find(source => source.id === id)?.storedOutputIds.includes(output.id)))).toBe(true);
   expect(report.storedOutputs.every(output => output.redistributionDecision === "internal_only")).toBe(true);
   expect(report.runbook.join(" ")).toContain("fixed-income research unavailable");
-  expect(report.runbook.join(" ")).toContain("no purge job exists");
+  expect(report.runbook.join(" ")).toContain("bounded automatic pruning");
   expect(report.runbook.join(" ")).toContain("Re-review paid feed");
 });
