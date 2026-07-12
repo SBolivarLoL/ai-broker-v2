@@ -491,6 +491,7 @@ export class OpenFigiClient {
           title: `${symbol} OpenFIGI identity mapping`,
           url: API_URL,
           asOf: retrievedAt,
+          observedAt: null,
           retrievedAt,
           serverRespondedAt,
           entityIds: {

@@ -4,7 +4,10 @@ import {
   getFinnhubCompanyEnrichment,
   type FinnhubCompanyEnrichment,
 } from "../../integrations/finnhub";
-import { getGdeltCompanySignals } from "../../integrations/gdelt";
+import {
+  getGdeltCompanySignals,
+  type GdeltCompanySignals,
+} from "../../integrations/gdelt";
 import {
   getOfficialMacroContext,
   type MacroContext,
@@ -28,6 +31,13 @@ import {
   runPortfolioQuestion,
 } from "./copilot";
 import { buildFixedIncomeResearchStatus } from "./fixed-income-research";
+import {
+  buildFinnhubResearchCoverage,
+  buildGdeltResearchCoverage,
+  buildMacroResearchCoverage,
+  buildOpenFigiResearchCoverage,
+  buildSecResearchCoverage,
+} from "./provider-coverage";
 import { normalizeSecPointInTimeDate } from "./sec-financial-trends";
 import {
   getCompanySecEvidence,
@@ -68,6 +78,10 @@ type ResearchContext = {
   finnhubCompanyEnrichment?: (
     symbol: string,
   ) => Promise<FinnhubCompanyEnrichment>;
+  gdeltCompanySignals?: (
+    symbol: string,
+    companyName: string,
+  ) => Promise<GdeltCompanySignals>;
   openFigiIdentity?: (
     symbol: string,
     companyName: string,
@@ -373,26 +387,26 @@ export async function handleResearchRequest(
         );
       }
     }
-    return json(
-      await (
-        context.secCompanyEvidence ??
-        ((requestedSymbol, cutoff) =>
-          getCompanySecEvidence(
-            requestedSymbol,
-            undefined,
-            undefined,
-            cutoff,
-          ))
-      )(symbol, filedThrough),
-    );
+    const result = await (
+      context.secCompanyEvidence ??
+      ((requestedSymbol, cutoff) =>
+        getCompanySecEvidence(
+          requestedSymbol,
+          undefined,
+          undefined,
+          cutoff,
+        ))
+    )(symbol, filedThrough);
+    return json({ ...result, quality: buildSecResearchCoverage(result) });
   }
 
   if (url.pathname === "/api/research/macro" && request.method === "GET") {
     if (!allow(`${actor}:macro-research`, 30))
       return json({ error: "Macro research rate limit exceeded" }, 429);
-    return json(
-      await (context.officialMacroContext ?? getOfficialMacroContext)(),
-    );
+    const result = await (
+      context.officialMacroContext ?? getOfficialMacroContext
+    )();
+    return json({ ...result, quality: buildMacroResearchCoverage(result) });
   }
 
   if (
@@ -411,7 +425,10 @@ export async function handleResearchRequest(
     const asset = await alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
       symbolOrAssetId: symbol,
     });
-    return json(await getGdeltCompanySignals(symbol, asset.name ?? symbol));
+    const result = await (
+      context.gdeltCompanySignals ?? getGdeltCompanySignals
+    )(symbol, asset.name ?? symbol);
+    return json({ ...result, quality: buildGdeltResearchCoverage(result) });
   }
 
   if (url.pathname === "/api/research/finnhub" && request.method === "GET") {
@@ -420,11 +437,10 @@ export async function handleResearchRequest(
     const symbol = symbolFrom(url.searchParams.get("symbol"));
     if (!validSymbol(symbol))
       return json({ error: "A valid stock symbol is required" }, 400);
-    return json(
-      await (
-        context.finnhubCompanyEnrichment ?? getFinnhubCompanyEnrichment
-      )(symbol),
-    );
+    const result = await (
+      context.finnhubCompanyEnrichment ?? getFinnhubCompanyEnrichment
+    )(symbol);
+    return json({ ...result, quality: buildFinnhubResearchCoverage(result) });
   }
 
   if (url.pathname === "/api/research/openfigi" && request.method === "GET") {
@@ -436,12 +452,11 @@ export async function handleResearchRequest(
     const asset = await alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
       symbolOrAssetId: symbol,
     });
-    return json(
-      await (context.openFigiIdentity ?? getOpenFigiIdentity)(
-        symbol,
-        asset.name ?? symbol,
-      ),
+    const result = await (context.openFigiIdentity ?? getOpenFigiIdentity)(
+      symbol,
+      asset.name ?? symbol,
     );
+    return json({ ...result, quality: buildOpenFigiResearchCoverage(result) });
   }
 
   if (

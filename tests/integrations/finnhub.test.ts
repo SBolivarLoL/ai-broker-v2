@@ -215,14 +215,17 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
     authority: "licensed_provider",
     claimStatus: "provider_record",
     category: "identity",
+    observedAt: null,
     retrievedAt: "2026-06-29T12:00:00.000Z",
     serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    time: { observationTime: null },
   });
   expect(
     result.sources.find((source) => source.id === "finnhub:earnings:AAPL"),
   ).toMatchObject({
     claimStatus: "provider_record",
     category: "fundamentals",
+    observedAt: null,
     retrievedAt: "2026-06-29T12:00:00.000Z",
     serverRespondedAt: "2026-06-29T12:00:00.000Z",
     effectivePeriod: {
@@ -230,6 +233,7 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
       end: "2026-03-31T00:00:00.000Z",
       label: "Latest Finnhub earnings period 2026-03-31",
     },
+    time: { observationTime: null },
   });
   expect(
     result.sources.find((source) => source.id === "finnhub:news:41"),
@@ -237,9 +241,11 @@ test("Finnhub normalizes free profile, earnings, and news into typed canonical e
     claimStatus: "media_signal",
     category: "news",
     canonicalUrl: "https://news.example/apple",
+    observedAt: null,
     publishedAt: "2026-06-29T11:00:00.000Z",
     retrievedAt: "2026-06-29T12:00:00.000Z",
     serverRespondedAt: "2026-06-29T12:00:00.000Z",
+    time: { observationTime: null },
   });
   expect(JSON.stringify(result)).not.toContain("valid_key_123");
   expect(urls).toHaveLength(3);

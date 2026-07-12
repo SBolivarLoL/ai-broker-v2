@@ -83,8 +83,10 @@ test("OpenFIGI maps a constrained public ticker job into canonical identity evid
       authority: "official",
       claimStatus: "official_record",
       entityIds: { symbol: "AAPL", figi: "BBG000B9XRY4" },
+      observedAt: null,
       retrievedAt: "2026-06-29T12:00:00.000Z",
       serverRespondedAt: "2026-06-29T12:00:00.000Z",
+      time: expect.objectContaining({ observationTime: null }),
     }),
   ]);
   clock += 60_000;

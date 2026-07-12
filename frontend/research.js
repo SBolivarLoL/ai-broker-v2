@@ -120,7 +120,7 @@ function renderMacroContext(data) {
       .join("");
   $("#macro-asof").textContent =
     `Official observations retrieved ${new Date(data.asOf).toLocaleString()}. Descriptive context, not a trading signal.`;
-  return `<div class="macro-coverage">${coverage}</div><p>${esc(data.regime?.summary || "Official macro context is currently unavailable.")}</p><div class="macro-indicators">${indicators || '<div class="empty">No official macro observations are currently available.</div>'}</div><div class="macro-regime">${dimensions}</div>${warnings}${disclosures}`;
+  return `${calculationCoveragePanel("Official macro context", data.quality)}<div class="macro-coverage">${coverage}</div><p>${esc(data.regime?.summary || "Official macro context is currently unavailable.")}</p><div class="macro-indicators">${indicators || '<div class="empty">No official macro observations are currently available.</div>'}</div><div class="macro-regime">${dimensions}</div>${warnings}${disclosures}`;
 }
 let macroContextLoaded = false;
 async function loadMacroContext() {
@@ -137,7 +137,9 @@ async function loadMacroContext() {
     throw error;
   }
 }
-function renderEdgarEvidence(sources) {
+function renderEdgarEvidence(data) {
+  const sources = data.sources || [],
+    coverage = calculationCoveragePanel("SEC EDGAR", data.quality);
   const filingsSource = sources.find((source) =>
       source.id?.startsWith("sec:filings"),
     ),
@@ -158,7 +160,7 @@ function renderEdgarEvidence(sources) {
     !sectionSources.length &&
     !trends.length
   )
-    return '<div class="empty">This research run did not return SEC filing evidence. Re-run analysis or check the declared SEC user-agent and network configuration.</div>';
+    return `${coverage}<div class="empty">This research run did not return SEC filing evidence. Re-run analysis or check the declared SEC user-agent and network configuration.</div>`;
   const filingRows = filings
       .slice(0, 8)
       .map(
@@ -189,7 +191,7 @@ function renderEdgarEvidence(sources) {
         return `<details class="filing-section"><summary><span><strong>${esc(item.form || "Filing")} · ${esc(item.title || "Section")}</strong><span class="muted">${esc(item.locator || "Locator unavailable")} · filed ${esc(item.filed || "—")} · <span class="accession">${esc(item.accession || "No accession")}</span></span></span><span class="pill">${item.truncated ? "bounded" : "complete"}</span></summary><p>${esc(excerpt || "Section text was unavailable.")}</p><div class="filing-section-meta"><span class="accession">${esc(item.contentHash || source.id)}</span><a href="${esc(safeUrl(item.sourceUrl || source.url))}" target="_blank" rel="noopener noreferrer">Open official section source ↗</a></div></details>`;
       })
       .join("");
-  return `<div class="filing-grid"><div><h3>Recent filings</h3>${filingRows || '<div class="empty">No 10-K, 10-Q or 8-K metadata returned.</div>'}</div><div><h3>XBRL facts</h3><div class="fact-grid">${factRows || '<div class="empty">No SEC company facts returned.</div>'}</div></div></div><div class="financial-trends"><h3>Comparable financial trends</h3>${trendRows || '<div class="empty">This run predates comparable trend evidence. Re-run research to refresh the SEC facts.</div>'}</div><div class="filing-sections"><h3>Accession-linked filing sections</h3>${sectionRows || '<div class="empty">This run predates filing-section extraction or no supported section was found. Re-run research to refresh the evidence.</div>'}</div>${limitations.length ? `<div class="warnings">${[...new Set(limitations)].map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}<div class="eval-note">Official SEC evidence retains each metric's concept, unit, period, form, filed date, accession and filing URL; filing excerpts also retain their locator, truncation state and content hash.</div>`;
+  return `${coverage}<div class="filing-grid"><div><h3>Recent filings</h3>${filingRows || '<div class="empty">No 10-K, 10-Q or 8-K metadata returned.</div>'}</div><div><h3>XBRL facts</h3><div class="fact-grid">${factRows || '<div class="empty">No SEC company facts returned.</div>'}</div></div></div><div class="financial-trends"><h3>Comparable financial trends</h3>${trendRows || '<div class="empty">This run predates comparable trend evidence. Re-run research to refresh the SEC facts.</div>'}</div><div class="filing-sections"><h3>Accession-linked filing sections</h3>${sectionRows || '<div class="empty">This run predates filing-section extraction or no supported section was found. Re-run research to refresh the evidence.</div>'}</div>${limitations.length ? `<div class="warnings">${[...new Set(limitations)].map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}<div class="eval-note">Official SEC evidence retains each metric's concept, unit, period, form, filed date, accession and filing URL; filing excerpts also retain their locator, truncation state and content hash.</div>`;
 }
 let secEvidenceSymbol = null;
 async function loadSecEvidence(
@@ -203,7 +205,7 @@ async function loadSecEvidence(
     const data = await api(
       `/api/research/sec?symbol=${encodeURIComponent(symbol)}`,
     );
-    root.innerHTML = renderEdgarEvidence(data.sources || []);
+    root.innerHTML = renderEdgarEvidence(data);
     secEvidenceSymbol = symbol;
   } catch (error) {
     root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;

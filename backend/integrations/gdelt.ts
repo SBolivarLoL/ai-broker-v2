@@ -359,6 +359,7 @@ export class GdeltClient {
         title: `GDELT media signal: ${headline}`.slice(0, 500),
         url,
         asOf: publishedAt,
+        observedAt: null,
         retrievedAt,
         serverRespondedAt,
         publishedAt,
