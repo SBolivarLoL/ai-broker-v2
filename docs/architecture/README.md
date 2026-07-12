@@ -223,6 +223,14 @@ price observation stays null. Scenario calculation time and user assumptions
 remain local evidence, while `research.js` renders missing company, metric,
 freshness, and scenario-output impact through the shared coverage vocabulary.
 
+`research/copilot.ts` keeps model output behind typed read-only tools, citation
+guards, independent counter-thesis review, and exact simulation authority.
+`research/advisor-coverage.ts` projects only safe evidence identity, phase,
+source, and time metadata into portfolio-question v2 and portfolio-plan v2
+responses. Proposal and review reads remain distinct, local simulation evidence
+is not mislabeled as provider observation, and `portfolio.js` renders the shared
+coverage region before either Advisor report's conclusions.
+
 `research/company-research-coverage.ts` owns the normalized v2 quality and root
 time contract for generated company reports. `research.ts` retains typed tool
 orchestration and canonical evidence collection, while `routes.ts` persists the

@@ -43,6 +43,8 @@ type SecCompanyEvidence = Awaited<ReturnType<typeof getCompanySecEvidence>>;
 type ComparableValuations = Awaited<ReturnType<typeof getComparableValuations>>;
 type ValuationScenarios = Awaited<ReturnType<typeof getValuationScenarios>>;
 type CompanyResearchRun = Awaited<ReturnType<typeof runCompanyResearch>>;
+type PortfolioQuestionRun = Awaited<ReturnType<typeof runPortfolioQuestion>>;
+type PortfolioCopilotRun = Awaited<ReturnType<typeof runPortfolioCopilot>>;
 
 type ResearchContext = {
   alpaca: Alpaca;
@@ -71,6 +73,14 @@ type ResearchContext = {
     symbol: string,
     runId: string,
   ) => Promise<CompanyResearchRun>;
+  portfolioQuestion?: (
+    alpaca: Alpaca,
+    question: string,
+  ) => Promise<PortfolioQuestionRun>;
+  portfolioCopilot?: (
+    alpaca: Alpaca,
+    intent: Intent,
+  ) => Promise<PortfolioCopilotRun>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -115,7 +125,10 @@ export async function handleResearchRequest(
       );
     }
     const planId = crypto.randomUUID();
-    const output = await runPortfolioCopilot(alpaca, parsed.data);
+    const output = await (context.portfolioCopilot ?? runPortfolioCopilot)(
+      alpaca,
+      parsed.data,
+    );
     store.plan(planId, parsed.data, output, actor);
     const auditHash =
       store.decisionAuditTrail(planId).at(-1)?.entryHash ?? null;
@@ -147,7 +160,10 @@ export async function handleResearchRequest(
         400,
       );
     }
-    const output = await runPortfolioQuestion(alpaca, parsed.data);
+    const output = await (context.portfolioQuestion ?? runPortfolioQuestion)(
+      alpaca,
+      parsed.data,
+    );
     store.event("agent.portfolio_question.answered", actor, {
       evidence: [...new Set(output.claims.flatMap((claim) => claim.evidence))],
       claims: output.claims.length,
@@ -155,7 +171,6 @@ export async function handleResearchRequest(
     return json({
       question: parsed.data,
       ...output,
-      asOf: new Date().toISOString(),
     });
   }
 

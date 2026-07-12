@@ -7,6 +7,12 @@ import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
 import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "../../shared/risk";
 import { openaiModel } from "./research";
+import {
+  buildAdvisorEvidenceRecord,
+  buildPortfolioPlanCoverage,
+  buildPortfolioQuestionCoverage,
+  type AdvisorEvidencePhase,
+} from "./advisor-coverage";
 
 export const Intent = z.enum(["reduce_concentration", "balanced_growth", "preserve_capital"]);
 export type Intent = z.infer<typeof Intent>;
@@ -157,10 +163,39 @@ export function reviewedPlanAllowsOrder(plan: unknown, order: { symbol: string; 
   return parsed.data.ideas.some(idea => idea.actionable && idea.action === action && idea.proposedAction === action && idea.symbol === order.symbol && Math.abs(idea.suggestedQty - order.qty) < 1e-9 && idea.riskReview.symbol === idea.symbol && idea.riskReview.proposedAction === action && idea.riskReview.verdict === "approve");
 }
 
-function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
-  const evidence = <T extends object>(evidenceId: string, value: T) => {
+function normalizedProviderTime(value: unknown) {
+  const time = value ? new Date(value as string | Date | number) : null;
+  return time && Number.isFinite(time.getTime()) ? time.toISOString() : null;
+}
+
+function latestProviderTime(values: unknown[]) {
+  return (
+    values
+      .map(normalizedProviderTime)
+      .filter((value): value is string => Boolean(value))
+      .toSorted()
+      .at(-1) ?? null
+  );
+}
+
+function createPortfolioReadTools(
+  alpaca: Alpaca,
+  evidenceIds: Set<string>,
+  phase: AdvisorEvidencePhase,
+) {
+  const evidenceRecords: ReturnType<typeof buildAdvisorEvidenceRecord>[] = [];
+  const evidence = <T extends object>(
+    evidenceId: string,
+    value: T,
+    time: Omit<
+      Parameters<typeof buildAdvisorEvidenceRecord>[0],
+      "evidenceId" | "phase"
+    >,
+  ) => {
+    const record = buildAdvisorEvidenceRecord({ evidenceId, phase, ...time });
     evidenceIds.add(evidenceId);
-    return { evidenceId, asOf: new Date().toISOString(), ...value };
+    evidenceRecords.push(record);
+    return { evidenceId, asOf: record.asOf, ...value };
   };
   const portfolio = tool({
     name: "get_portfolio",
@@ -172,7 +207,7 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
         alpaca.trading.account.getAccount(),
         alpaca.trading.positions.getAllOpenPositions(),
       ]);
-      return evidence("portfolio:current", { equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, positions: positions.map(({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc }) => ({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc })) });
+      return evidence("portfolio:current", { equity: account.equity, cash: account.cash, buyingPower: account.buyingPower, positions: positions.map(({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc }) => ({ symbol, qty, avgEntryPrice, currentPrice, marketValue, unrealizedPl, unrealizedPlpc })) }, { source: "Alpaca Trading API" });
     },
   });
 
@@ -184,7 +219,7 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
     async execute({ symbol }) {
       const price = await alpaca.marketData.getLatestPrice(symbol);
       if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) throw new Error("No valid price available");
-      return evidence(`price:${symbol}`, { symbol, price });
+      return evidence(`price:${symbol}`, { symbol, price }, { source: "Alpaca Market Data API" });
     },
   });
 
@@ -195,7 +230,7 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
     async execute() {
       const [account, positions] = await Promise.all([alpaca.trading.account.getAccount(), alpaca.trading.positions.getAllOpenPositions()]);
       if (account.equity === undefined || account.cash === undefined) throw new Error("Account risk data unavailable");
-      return evidence("risk:current", riskSnapshot(account.equity, account.cash, positions));
+      return evidence("risk:current", riskSnapshot(account.equity, account.cash, positions), { source: "Alpaca Trading API plus local deterministic risk" });
     },
   });
 
@@ -206,8 +241,20 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
     async execute({ symbol }) {
       const start = new Date(Date.now() - 90 * 86_400_000);
       const bars = await alpaca.marketData.getStockBarsFor(symbol, { timeframe: TimeFrame.Day, start });
-      const closes = bars.map(bar => bar.close).slice(-90);
-      return evidence(`bars:${symbol}:90d`, { symbol, closes, ...historicalRisk(closes) });
+      const selectedBars = bars.slice(-90);
+      const closes = selectedBars.map((bar) => bar.close);
+      const barTimes = selectedBars.map((bar) => bar.timestamp);
+      return evidence(`bars:${symbol}:90d`, { symbol, closes, ...historicalRisk(closes) }, {
+        source: "Alpaca Market Data API",
+        observationTime: latestProviderTime(barTimes),
+        effectivePeriod: barTimes.length
+          ? {
+              start: latestProviderTime([barTimes[0]]),
+              end: latestProviderTime(barTimes),
+              label: "Returned daily-bar window",
+            }
+          : null,
+      });
     },
   });
 
@@ -217,7 +264,11 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
     parameters: z.object({ symbol: z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/) }), timeoutMs: 10_000,
     async execute({ symbol }) {
       const articles = await alpaca.marketData.collectNews({ symbols: [symbol], limit: 5 });
-      return evidence(`news:${symbol}`, { symbol, articles: articles.slice(0, 5).map(({ headline, summary, createdAt }) => ({ headline, summary, createdAt })) });
+      const selectedArticles = articles.slice(0, 5);
+      return evidence(`news:${symbol}`, { symbol, articles: selectedArticles.map(({ headline, summary, createdAt }) => ({ headline, summary, createdAt })) }, {
+        source: "Alpaca/Benzinga news",
+        publicationTime: latestProviderTime(selectedArticles.map((article) => article.createdAt)),
+      });
     },
   });
 
@@ -227,7 +278,10 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
     parameters: z.object({ symbol: z.string().trim().toUpperCase().regex(/^[A-Z.]{1,10}$/) }), timeoutMs: 10_000,
     async execute({ symbol }) {
       const [asset, clock] = await Promise.all([alpaca.trading.assets.getV2AssetsSymbolOrAssetId({ symbolOrAssetId: symbol }), alpaca.trading.calendar.legacyClock()]);
-      return evidence(`status:${symbol}`, { symbol, tradable: asset.tradable, assetClass: asset._class, fractionable: asset.fractionable, marketOpen: clock.isOpen, nextOpen: clock.nextOpen });
+      return evidence(`status:${symbol}`, { symbol, tradable: asset.tradable, assetClass: asset._class, fractionable: asset.fractionable, marketOpen: clock.isOpen, nextOpen: clock.nextOpen }, {
+        source: "Alpaca Trading API and market clock",
+        observationTime: normalizedProviderTime(clock.timestamp),
+      });
     },
   });
 
@@ -242,17 +296,34 @@ function createPortfolioReadTools(alpaca: Alpaca, evidenceIds: Set<string>) {
         filledQty: order.filledQty, type: order.type, timeInForce: order.timeInForce,
         status: order.status, limitPrice: order.limitPrice, stopPrice: order.stopPrice,
         submittedAt: order.submittedAt,
-      })) });
+      })) }, {
+        source: "Alpaca Trading API",
+        observationTime: latestProviderTime(
+          orders.map((order) =>
+            (order as any).updatedAt ??
+            (order as any).filledAt ??
+            order.submittedAt,
+          ),
+        ),
+      });
     },
   });
 
-  return { evidence, tools: [portfolio, risk, latestPrice, history, news, assetStatus, openOrders] };
+  return {
+    evidence,
+    evidenceRecords,
+    tools: [portfolio, risk, latestPrice, history, news, assetStatus, openOrders],
+  };
 }
 
 export async function runPortfolioQuestion(alpaca: Alpaca, rawQuestion: string) {
   const question = PortfolioQuestion.parse(rawQuestion);
   const evidenceIds = new Set<string>();
-  const { tools } = createPortfolioReadTools(alpaca, evidenceIds);
+  const { tools, evidenceRecords } = createPortfolioReadTools(
+    alpaca,
+    evidenceIds,
+    "question",
+  );
   const input = `Answer this portfolio question: ${JSON.stringify(question)}`;
   const agent = new Agent({
     name: "Portfolio Q&A",
@@ -279,13 +350,28 @@ export async function runPortfolioQuestion(alpaca: Alpaca, rawQuestion: string) 
   });
   const result = await run(agent, input, { maxTurns: 6 });
   if (!result.finalOutput) throw new Error("Portfolio Q&A returned no answer");
-  return result.finalOutput;
+  const retrievedAt = new Date().toISOString();
+  const serverRespondedAt = new Date().toISOString();
+  return {
+    schemaVersion: "portfolio-question-v2",
+    ...result.finalOutput,
+    ...buildPortfolioQuestionCoverage({
+      output: result.finalOutput,
+      evidenceRecords,
+      retrievedAt,
+      serverRespondedAt,
+    }),
+  };
 }
 
 export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "balanced_growth") {
   const evidenceIds = new Set<string>();
   const simulations = new Map<string, SimulationAuthority>();
-  const { evidence, tools } = createPortfolioReadTools(alpaca, evidenceIds);
+  const { evidence, tools, evidenceRecords } = createPortfolioReadTools(
+    alpaca,
+    evidenceIds,
+    "proposal",
+  );
 
   const simulation = tool({
     name: "simulate_trade",
@@ -308,7 +394,10 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
         policyVersion: SIMULATION_POLICY_VERSION,
         expiresAt: Date.now() + 5 * 60_000,
       });
-      return evidence(evidenceId, { simulationId: id, symbol, side, qty, price, ...result });
+      return evidence(evidenceId, { simulationId: id, symbol, side, qty, price, ...result }, {
+        source: "Local deterministic paper-order simulation",
+        kind: "local",
+      });
     },
   });
 
@@ -339,7 +428,8 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
   const result = await run(agent, `Analyze my current Alpaca paper portfolio for ${intent}.`, { maxTurns: 6 });
   if (!result.finalOutput) throw new Error("Copilot returned no analysis");
   const reviewEvidenceIds = new Set<string>();
-  const { tools: reviewTools } = createPortfolioReadTools(alpaca, reviewEvidenceIds);
+  const { tools: reviewTools, evidenceRecords: reviewEvidenceRecords } =
+    createPortfolioReadTools(alpaca, reviewEvidenceIds, "review");
   const reviewInput = `Challenge this exact portfolio proposal before it becomes actionable: ${JSON.stringify(result.finalOutput)}`;
   const reviewer = new Agent({
     name: "Portfolio Risk Reviewer",
@@ -353,5 +443,20 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
   });
   const review = await run(reviewer, reviewInput, { maxTurns: 6 });
   if (!review.finalOutput) throw new Error("Risk reviewer returned no analysis");
-  return applyCounterThesisReview(result.finalOutput, review.finalOutput);
+  const output = applyCounterThesisReview(
+    result.finalOutput,
+    review.finalOutput,
+  );
+  const retrievedAt = new Date().toISOString();
+  const serverRespondedAt = new Date().toISOString();
+  return {
+    schemaVersion: "portfolio-plan-v2",
+    ...output,
+    ...buildPortfolioPlanCoverage({
+      output,
+      evidenceRecords: [...evidenceRecords, ...reviewEvidenceRecords],
+      retrievedAt,
+      serverRespondedAt,
+    }),
+  };
 }

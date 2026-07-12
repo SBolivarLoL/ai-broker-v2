@@ -45,6 +45,18 @@ test("builds data licensing and subscription governance report", () => {
   expect(report.sources.filter(source => source.category !== "derived_analytics").every(source => source.liveUseDecision !== "internal_only")).toBe(true);
   expect(report.sources.find(source => source.id === "fred_api")).toMatchObject({ redistributionDecision: "blocked", termsStatus: "official_api_terms" });
   expect(report.sources.find(source => source.id === "openai_api")).toMatchObject({ entitlement: "requires_api_key", retentionDecision: "persist_with_provenance", liveUseDecision: "external_review_required" });
+  expect(report.storedOutputs.find(output => output.id === "advisor_plans")).toMatchObject({
+    sourceIds: [
+      "alpaca_paper_trading",
+      "alpaca_equity_iex",
+      "alpaca_news_benzinga",
+      "openai_api",
+      "local_derived_analytics",
+    ],
+    contents: expect.arrayContaining([
+      "proposal and independent-review evidence identity/time metadata",
+    ]),
+  });
   expect(report.storedOutputs.flatMap(output => output.tables).sort()).toEqual(expectedTables);
   const outputIds = new Set(report.storedOutputs.map(output => output.id));
   const sourceIds = new Set(report.sources.map(source => source.id));
