@@ -1,8 +1,17 @@
 import { expect, test } from "bun:test";
-import type { ComparableValuationRow } from "../../backend/features/research/comparable-valuation";
-import { canonicalEvidence } from "../../backend/shared/evidence";
+import {
+  buildComparableValuationReplay,
+  comparableValuationTable,
+  type ComparableValuationRow,
+} from "../../backend/features/research/comparable-valuation";
+import {
+  canonicalEvidence,
+  evidenceContentHash,
+} from "../../backend/shared/evidence";
 import {
   buildValuationScenarioMemo,
+  buildValuationScenarioReplay,
+  replayValuationScenario,
   ValuationScenarioInput,
 } from "../../backend/features/research/valuation-scenario";
 
@@ -116,7 +125,10 @@ test("builds ordered scenario memos from user assumptions and cited inputs", () 
     inputs: [row.evidence.sec, row.evidence.price],
   });
   expect(result).toMatchObject({
-    schemaVersion: "valuation-scenarios-v2",
+    schemaVersion: "valuation-scenarios-v3",
+    priceMode: "latest_retrieval",
+    pointInTime: { status: "not_requested" },
+    referencePrice: 10,
     observedAt: null,
     publishedAt: "2026-04-01T00:00:00.000Z",
     retrievedAt: asOf,
@@ -125,21 +137,21 @@ test("builds ordered scenario memos from user assumptions and cited inputs", () 
       status: "partial",
       expected: {
         secFundamentals: 2,
-        currentPrices: 1,
+        prices: 1,
         marketPriceObservations: 1,
         assumptionCases: 3,
         scenarioOutputs: 3,
       },
       received: {
         secFundamentals: 2,
-        currentPrices: 1,
+        prices: 1,
         marketPriceObservations: 0,
         assumptionCases: 3,
         scenarioOutputs: 3,
       },
       omitted: {
         secFundamentals: 0,
-        currentPrices: 0,
+        prices: 0,
         marketPriceObservations: 1,
         assumptionCases: 0,
         scenarioOutputs: 0,
@@ -147,6 +159,7 @@ test("builds ordered scenario memos from user assumptions and cited inputs", () 
       freshness: { status: "retrieval_time_only" },
     },
   });
+  expect("currentPrice" in result).toBe(false);
 });
 
 test("rejects unordered cases and leaves non-positive earnings unavailable", () => {
@@ -191,4 +204,69 @@ test("rejects unordered cases and leaves non-positive earnings unavailable", () 
     received: { scenarioOutputs: 1 },
     omitted: { scenarioOutputs: 2 },
   });
+});
+
+test("historical scenario replay recomputes from the stored parent and assumptions", () => {
+  const historicalRow = structuredClone(row);
+  historicalRow.periods.price = "2026-04-30T20:00:00.000Z";
+  const historicalSources = structuredClone(sources);
+  const market = historicalSources.find((source) => source.category === "market")!;
+  market.observedAt = "2026-04-30T20:00:00.000Z";
+  market.time.observationTime = market.observedAt;
+  const parent = comparableValuationTable(
+    "TEST",
+    ["PEER"],
+    [
+      {
+        row: historicalRow,
+        sources: historicalSources,
+        pointInTime: {
+          mode: "filing_date_cutoff",
+          asOfDate: "2026-05-01",
+          cutoffAt: "2026-05-01T23:59:59.999Z",
+          excludedPostCutoffObservations: 0,
+          publicationPrecision: "sec_filed_date",
+        },
+      },
+    ],
+    ["PEER unavailable"],
+    "2026-07-12T12:00:00.000Z",
+    { priceMode: "historical_daily_close", filedThrough: "2026-05-01" },
+  );
+  const parentReplay = buildComparableValuationReplay(parent);
+  const replay = buildValuationScenarioReplay(
+    parentReplay,
+    assumptions,
+    "2026-07-12T12:00:01.000Z",
+  );
+  const result = replayValuationScenario(replay);
+
+  expect(result).toMatchObject({
+    schemaVersion: "valuation-scenario-replay-result-v1",
+    status: "verified",
+    providerRequests: 0,
+    replayHash: replay.contentHash,
+    parentReplayHash: parentReplay.contentHash,
+    memo: {
+      schemaVersion: "valuation-scenarios-v3",
+      priceMode: "historical_daily_close",
+      pointInTime: { status: "applied", asOfDate: "2026-05-01" },
+      referencePrice: 10,
+      observedAt: "2026-04-30T20:00:00.000Z",
+      quality: {
+        freshness: { agePolicy: "historical_price_must_not_exceed_cutoff" },
+      },
+    },
+  });
+  expect(result.memo.scenarios[1]?.memo).toContain(
+    "selected historical IEX daily close",
+  );
+
+  const tampered = structuredClone(replay);
+  tampered.memo.scenarios[1]!.impliedPrice = 999;
+  const { contentHash: _oldHash, ...tamperedManifest } = tampered;
+  tampered.contentHash = evidenceContentHash(tamperedManifest);
+  expect(() => replayValuationScenario(tampered)).toThrow(
+    "deterministic recomputation failed",
+  );
 });
