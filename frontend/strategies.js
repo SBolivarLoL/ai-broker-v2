@@ -234,6 +234,74 @@ function syncStrategyLifecycleControls() {
 function strategyLineChart(points) {
   return equityChart(points.map((point) => ({ equity: point.equity })));
 }
+function comparisonChart(charts, valueKey, title) {
+  const series = charts?.series || [];
+  if (!charts?.aligned)
+    return `<div class="comparison-chart"><h4>${esc(title)}</h4><div class="empty">${esc(charts?.alignmentReason || "Exact timestamp alignment is unavailable.")}</div></div>`;
+  const values = series.flatMap((item) =>
+    (item.points || [])
+      .map((point) => Number(point[valueKey]))
+      .filter(Number.isFinite),
+  );
+  if (!values.length)
+    return `<div class="comparison-chart"><h4>${esc(title)}</h4><div class="empty">No chart observations are available.</div></div>`;
+  const width = 820,
+    height = 248,
+    left = 48,
+    right = 14,
+    top = 16,
+    bottom = 34,
+    low = Math.min(0, ...values),
+    high = Math.max(0, ...values),
+    span = Math.max(high - low, 1e-9),
+    maximumPoints = Math.max(...series.map((item) => item.points?.length || 0));
+  const x = (index) =>
+      left + (index / Math.max(maximumPoints - 1, 1)) * (width - left - right),
+    y = (value) => top + ((high - value) / span) * (height - top - bottom),
+    zeroY = y(0);
+  const lines = series
+    .map((item, seriesIndex) => {
+      const points = (item.points || [])
+        .map((point, index) => {
+          const value = Number(point[valueKey]);
+          return Number.isFinite(value)
+            ? `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`
+            : "";
+        })
+        .filter(Boolean)
+        .join(" ");
+      return points
+        ? `<path class="comparison-series-${seriesIndex % 8}" d="${points}" fill="none" stroke-width="2.4" vector-effect="non-scaling-stroke" />`
+        : "";
+    })
+    .join("");
+  const legend = series
+    .map(
+      (item, index) =>
+        `<span><i class="comparison-series-${index % 8}"></i>${esc(strategyLabels[item.strategyId] || item.strategyId)} · ${esc(item.backtestId.slice(0, 8))}</span>`,
+    )
+    .join("");
+  const first = series[0]?.points?.[0]?.timestamp,
+    last = series[0]?.points?.at(-1)?.timestamp;
+  return `<div class="comparison-chart"><h4>${esc(title)}</h4><div class="comparison-chart-legend">${legend}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)} from ${esc(first ? new Date(first).toLocaleDateString() : "unknown start")} to ${esc(last ? new Date(last).toLocaleDateString() : "unknown end")}"><line x1="${left}" x2="${width - right}" y1="${zeroY}" y2="${zeroY}" class="comparison-zero" /><text x="4" y="${top + 5}" class="comparison-axis">${esc(pct(high))}</text><text x="4" y="${height - bottom}" class="comparison-axis">${esc(pct(low))}</text>${lines}</svg></div>`;
+}
+function comparisonBand(band) {
+  return band?.status === "available"
+    ? `${pct(band.lowerPercent)} to ${pct(band.upperPercent)}`
+    : "Unavailable";
+}
+function renderStrategyComparison(comparison) {
+  const charts = `${comparisonChart(comparison.charts, "equityReturnPercent", "Aligned equity return")}${comparisonChart(comparison.charts, "drawdownPercent", "Aligned drawdown")}`;
+  const experiments = comparison.rows
+    .map((row) => {
+      const out = row.evaluation?.outOfSample || {},
+        decisions = row.decisionCounts || {},
+        blockers = row.promotionReadiness?.blockers || [];
+      return `<article class="comparison-experiment"><div class="section-head"><div><h4>${esc(strategyLabels[row.strategyId] || row.strategyId)}</h4><div class="muted">Backtest ${esc(row.backtestId.slice(0, 8))} · ${esc(row.createdAt ? new Date(row.createdAt).toLocaleString() : "creation time unavailable")}</div></div><span class="pill ${row.comparable ? "gain" : "loss"}">${row.comparable ? "Clean artifact" : "Legacy / dirty"}</span></div><div class="comparison-metrics"><div><strong class="${Number(row.metrics.totalReturnPercent) >= 0 ? "gain" : "loss"}">${row.metrics.totalReturnPercent === null ? "—" : esc(pct(row.metrics.totalReturnPercent))}</strong><span>Full-period return</span></div><div><strong>${row.metrics.maxDrawdownPercent === null ? "—" : esc(pct(row.metrics.maxDrawdownPercent))}</strong><span>Max drawdown</span></div><div><strong>${esc(decisions.materialTrades ?? "—")}</strong><span>Material decisions</span></div><div><strong>${esc(decisions.exposureIncreases ?? "—")} / ${esc(decisions.exposureReductions ?? "—")}</strong><span>Increase / reduce</span></div><div><strong>${out.totalReturnPercent === null || out.totalReturnPercent === undefined ? "—" : esc(pct(out.totalReturnPercent))}</strong><span>Walk-forward OOS</span></div><div><strong>${esc(comparisonBand(out.uncertainty))}</strong><span>90% OOS return band</span></div><div><strong>${out.holdout?.totalReturnPercent === null || out.holdout?.totalReturnPercent === undefined ? "—" : esc(pct(out.holdout.totalReturnPercent))}</strong><span>Final holdout</span></div><div><strong>${esc(comparisonBand(row.evaluation?.fullSampleUncertainty))}</strong><span>90% full-sample band</span></div></div><div class="promotion-blockers"><strong>Promotion blockers</strong>${blockers.length ? `<ul>${blockers.map((blocker) => `<li class="${blocker.severity === "blocking" ? "blocking" : "evidence"}"><span>${esc(blocker.code.replaceAll("_", " "))}</span>${esc(blocker.message)}</li>`).join("")}</ul>` : '<div class="muted">No blockers reported.</div>'}</div></article>`;
+    })
+    .join("");
+  return `<div class="section-head"><div><h3>Experiment comparison workspace</h3><div class="muted">${comparison.compatible ? "Cohort evidence is aligned; uncertainty remains non-rankable." : "Compatibility warnings prevent comparative ranking."}</div></div><span class="pill ${comparison.compatible ? "gain" : "loss"}">${comparison.compatible ? "Comparable" : "Not rankable"}</span></div>${comparison.warnings.length ? `<div class="warnings">${comparison.warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>` : ""}<div class="comparison-charts">${charts}</div><div class="comparison-experiments">${experiments}</div>`;
+}
 function displayValue(value) {
   return value === null
     ? "—"
@@ -667,19 +735,24 @@ $("#strategy-compare-form").onsubmit = async (event) => {
     .filter(Boolean);
   if (ids.length < 2)
     return notify("Add at least two backtest IDs to compare.");
-  const button = $("#strategy-compare-button");
+  if (ids.length > 20)
+    return notify("Compare at most 20 backtest IDs.");
+  if (new Set(ids).size !== ids.length)
+    return notify("Backtest IDs must be unique.");
+  const button = $("#strategy-compare-button"),
+    output = $("#strategy-comparison");
   try {
     button.disabled = true;
     button.textContent = "Comparing…";
+    output.setAttribute("aria-busy", "true");
     const comparison = await api("/api/strategy/backtests/compare", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ backtestIds: ids }),
     });
-    $("#strategy-comparison").innerHTML =
-      `<div class="section-head"><div><h3>Comparison cohort</h3><div class="muted">${comparison.compatible ? "Compatible evidence" : "Compatibility warnings require review"}</div></div><span class="pill ${comparison.compatible ? "gain" : "loss"}">${comparison.compatible ? "Comparable" : "Not rankable"}</span></div>${comparison.warnings.length ? `<div class="warnings">${comparison.warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>` : ""}<div class="comparison-table">${comparison.rows.map((row) => `<div class="comparison-row"><div><strong>${esc(strategyLabels[row.strategyId] || row.strategyId)}</strong><span class="muted">${esc(row.backtestId.slice(0, 8))}</span></div><strong class="${Number(row.metrics.totalReturnPercent) >= 0 ? "gain" : "loss"}">${row.metrics.totalReturnPercent === null ? "—" : esc(pct(row.metrics.totalReturnPercent))}</strong><span>${row.metrics.maxDrawdownPercent === null ? "—" : esc(pct(row.metrics.maxDrawdownPercent))} drawdown</span><span>${row.metrics.tradeCount ?? "—"} trades</span></div>`).join("")}</div>`;
+    output.innerHTML = renderStrategyComparison(comparison);
   } catch (error) {
-    $("#strategy-comparison").innerHTML = cardError(
+    output.innerHTML = cardError(
       "Comparison unavailable",
       error,
       "Use persisted backtests produced by the same actor.",
@@ -687,6 +760,7 @@ $("#strategy-compare-form").onsubmit = async (event) => {
   } finally {
     button.disabled = false;
     button.textContent = "Compare backtests";
+    output.setAttribute("aria-busy", "false");
   }
 };
 $("#strategy-form").onsubmit = async (event) => {
