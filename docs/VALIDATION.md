@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `4ac24df`: 2026-07-12.
+Last reviewed against `main` commit `3db616d`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 404 tests, 0 failures, 1,871 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 407 tests, 0 failures, 1,898 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 98.17% functions, 97.28% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `4ac24df`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `3db616d`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -109,6 +109,15 @@ Additional mechanical checks:
   states consequential instead of relabeling retrieval as observation. The
   governance regression also binds persisted Advisor plans reciprocally to
   Alpaca paper-account, IEX, Benzinga, OpenAI, and local-derived sources.
+- SEC point-in-time trend tests prove that a later 10-K amendment cannot replace
+  the record available at an earlier date and that post-cutoff annual,
+  quarterly, and instant facts are excluded before metric selection. A cached
+  provider-projection test removes later filing metadata and extracted sections,
+  returns empty facts/trends when nothing eligible remains, preserves retrieval
+  provenance, reports exact exclusion counts, and keeps historical SIC
+  unavailable. Direct API contracts accept `asOf=YYYY-MM-DD`, pass the normalized
+  date into the provider boundary, and reject impossible or future dates before
+  any provider call. SEC filed dates have day—not intraday—precision.
 - Official Treasury/BLS/FRED/BEA macro root, provider-coverage, indicator,
   canonical-evidence, research-tool, and direct API DTOs were checked for
   Treasury publication dates, FRED observation dates, BLS monthly and BEA

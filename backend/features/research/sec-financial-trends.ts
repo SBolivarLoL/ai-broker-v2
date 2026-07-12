@@ -41,6 +41,14 @@ export type SecFinancialTrends = {
     annualObservations: number;
     quarterlyObservations: number;
     latestPeriodEnd: string | null;
+    latestFiled: string | null;
+  };
+  pointInTime: {
+    mode: "latest_available" | "filing_date_cutoff";
+    asOfDate: string | null;
+    cutoffAt: string | null;
+    excludedPostCutoffObservations: number;
+    publicationPrecision: "sec_filed_date";
   };
   limitations: string[];
 };
@@ -152,6 +160,28 @@ function isForm(entry: FactEntry, prefix: "10-K" | "10-Q") {
   return entry.form === prefix || entry.form === `${prefix}/A`;
 }
 
+export function normalizeSecPointInTimeDate(
+  value: string,
+  latestAllowedDate?: string,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
+    throw new Error("SEC point-in-time date must use YYYY-MM-DD");
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (
+    !Number.isFinite(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  )
+    throw new Error("SEC point-in-time date must be a real calendar date");
+  if (latestAllowedDate && value > latestAllowedDate)
+    throw new Error("SEC point-in-time date cannot be in the future");
+  return value;
+}
+
+function availableByFilingDate(entry: FactEntry, filedThrough: string | null) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.filed)) return false;
+  return !filedThrough || entry.filed <= filedThrough;
+}
+
 function cadenceEntry(
   entry: FactEntry,
   kind: MetricDefinition["kind"],
@@ -210,10 +240,13 @@ function observations(
   entries: FactEntry[],
   cadence: SecFinancialCadence,
   limit: number,
+  filedThrough: string | null,
 ) {
   const byPeriod = new Map<string, FactEntry[]>();
-  for (const entry of entries.filter((item) =>
-    cadenceEntry(item, kind, cadence),
+  for (const entry of entries.filter(
+    (item) =>
+      cadenceEntry(item, kind, cadence) &&
+      availableByFilingDate(item, filedThrough),
   )) {
     const records = byPeriod.get(entry.end) ?? [];
     records.push(entry);
@@ -234,13 +267,29 @@ function observations(
     .map((entry) => observation(company, concept, unit, cadence, entry));
 }
 
-function metricFacts(facts: SecFacts, definition: MetricDefinition) {
+function metricFacts(
+  facts: SecFacts,
+  definition: MetricDefinition,
+  filedThrough: string | null,
+) {
+  let fallback: { concept: string; entries: FactEntry[] } | null = null;
   for (const concept of definition.concepts) {
     const fact = facts.facts[definition.taxonomy]?.[concept];
     const entries = fact?.units[definition.unit];
-    if (fact && entries?.length) return { concept, entries };
+    if (!fact || !entries?.length) continue;
+    fallback ??= { concept, entries };
+    if (
+      !filedThrough ||
+      entries.some(
+        (entry) =>
+          availableByFilingDate(entry, filedThrough) &&
+          (cadenceEntry(entry, definition.kind, "annual") ||
+            cadenceEntry(entry, definition.kind, "quarterly")),
+      )
+    )
+      return { concept, entries };
   }
-  return null;
+  return fallback;
 }
 
 export function buildSecFinancialTrends(
@@ -248,6 +297,7 @@ export function buildSecFinancialTrends(
   facts: SecFacts,
   annualLimit = 4,
   quarterlyLimit = 8,
+  filedThrough: string | null = null,
 ): SecFinancialTrends {
   if (!Number.isInteger(annualLimit) || annualLimit < 1 || annualLimit > 10)
     throw new Error("SEC annual trend limit must be between 1 and 10");
@@ -257,9 +307,19 @@ export function buildSecFinancialTrends(
     quarterlyLimit > 20
   )
     throw new Error("SEC quarterly trend limit must be between 1 and 20");
+  if (filedThrough) normalizeSecPointInTimeDate(filedThrough);
+  let excludedPostCutoffObservations = 0;
   const metrics = METRICS.flatMap((definition) => {
-    const source = metricFacts(facts, definition);
+    const source = metricFacts(facts, definition, filedThrough);
     if (!source) return [];
+    if (filedThrough) {
+      excludedPostCutoffObservations += source.entries.filter(
+        (entry) =>
+          (cadenceEntry(entry, definition.kind, "annual") ||
+            cadenceEntry(entry, definition.kind, "quarterly")) &&
+          !availableByFilingDate(entry, filedThrough),
+      ).length;
+    }
     const annual = observations(
       company,
       source.concept,
@@ -268,6 +328,7 @@ export function buildSecFinancialTrends(
       source.entries,
       "annual",
       annualLimit,
+      filedThrough,
     );
     const quarterly = observations(
       company,
@@ -277,6 +338,7 @@ export function buildSecFinancialTrends(
       source.entries,
       "quarterly",
       quarterlyLimit,
+      filedThrough,
     );
     if (!annual.length && !quarterly.length) return [];
     return [
@@ -312,11 +374,24 @@ export function buildSecFinancialTrends(
       latestPeriodEnd:
         all.toSorted((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0]
           ?.periodEnd ?? null,
+      latestFiled:
+        all.toSorted((a, b) => b.filed.localeCompare(a.filed))[0]?.filed ??
+        null,
+    },
+    pointInTime: {
+      mode: filedThrough ? "filing_date_cutoff" : "latest_available",
+      asOfDate: filedThrough,
+      cutoffAt: filedThrough ? `${filedThrough}T23:59:59.999Z` : null,
+      excludedPostCutoffObservations,
+      publicationPrecision: "sec_filed_date",
     },
     limitations: [
       "Quarterly duration trends include only directly reported standalone 10-Q periods between 70 and 120 days.",
-      "Fourth-quarter duration values are not derived from annual totals; amendments and later restatements replace earlier observations for the same period end.",
+      filedThrough
+        ? `Fourth-quarter duration values are not derived from annual totals; filings and amendments after ${filedThrough} are excluded before selecting one record per period.`
+        : "Fourth-quarter duration values are not derived from annual totals; amendments and later restatements replace earlier observations for the same period end.",
       "Values retain the exact SEC concept, unit, accession, form, filed date and filing index URL used for the observation.",
+      "SEC Company Facts exposes a filed date, not an intraday acceptance timestamp; point-in-time cutoffs therefore operate at end-of-day UTC precision.",
     ],
   };
 }

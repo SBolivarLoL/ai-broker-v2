@@ -10,7 +10,10 @@ import { getOpenFigiIdentity } from "../../integrations/openfigi";
 import { historicalRisk } from "../../shared/risk";
 import { SecEdgarClient, secUserAgentFromEnv, type SecFacts } from "../../integrations/sec-edgar";
 import { normalizeTimeProvenance } from "../../shared/time-provenance";
-import { buildSecFinancialTrends } from "./sec-financial-trends";
+import {
+  buildSecFinancialTrends,
+  normalizeSecPointInTimeDate,
+} from "./sec-financial-trends";
 import { buildValuationScenarioMemo, ValuationScenarioInput } from "./valuation-scenario";
 import { buildCompanyResearchCoverage } from "./company-research-coverage";
 
@@ -106,15 +109,31 @@ function secEdgarClient() {
   return sharedSecClient;
 }
 
-function selectedSecFacts(facts: SecFacts) {
+function selectedSecFacts(
+  facts: SecFacts,
+  filedThrough: string | null = null,
+) {
   const wanted = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "NetIncomeLoss", "Assets", "Liabilities", "CashAndCashEquivalentsAtCarryingValue", "EarningsPerShareDiluted"];
   const selected: Record<string, unknown> = {};
+  let excludedPostCutoffObservations = 0;
   for (const name of wanted) {
     const fact = facts.facts["us-gaap"]?.[name];
     if (!fact || selected.revenue && name === "Revenues") continue;
-    const entries = Object.entries(fact.units)
+    const candidates = Object.entries(fact.units)
       .flatMap(([unit, values]) => values.map(value => ({ unit, ...value })))
-      .filter(value => ["10-K", "10-Q"].includes(value.form))
+      .filter(value => ["10-K", "10-Q"].includes(value.form));
+    if (filedThrough)
+      excludedPostCutoffObservations += candidates.filter(
+        (value) =>
+          !/^\d{4}-\d{2}-\d{2}$/.test(value.filed) ||
+          value.filed > filedThrough,
+      ).length;
+    const entries = candidates
+      .filter(
+        (value) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(value.filed) &&
+          (!filedThrough || value.filed <= filedThrough),
+      )
       .sort((a, b) => b.end.localeCompare(a.end) || b.filed.localeCompare(a.filed));
     const latest = entries[0];
     if (latest) selected[name === "RevenueFromContractWithCustomerExcludingAssessedTax" || name === "Revenues" ? "revenue" : name] = {
@@ -122,7 +141,7 @@ function selectedSecFacts(facts: SecFacts) {
       form: latest.form, fiscalPeriod: latest.fp, accession: latest.accn,
     };
   }
-  return selected;
+  return { facts: selected, excludedPostCutoffObservations };
 }
 
 function aggregateSecTime(
@@ -176,31 +195,55 @@ export async function getCompanySecEvidence(
   rawSymbol: string,
   sec: SecEvidenceClient = secEdgarClient(),
   now: () => Date = () => new Date(),
+  filedThrough: string | null = null,
 ) {
   const symbol = SymbolSchema.parse(rawSymbol);
+  const today = now().toISOString().slice(0, 10);
+  if (filedThrough)
+    filedThrough = normalizeSecPointInTimeDate(filedThrough, today);
   const filingEvidence = await sec.filingEvidence(symbol);
   const company = await sec.company(symbol);
   const factsResult = await sec.companyFactsResult(company);
   const facts = factsResult.facts;
-  const selected = selectedSecFacts(facts);
-  const filingTime = aggregateSecTime(filingEvidence.filings, "Recent SEC filing report periods");
+  const selectedResult = selectedSecFacts(facts, filedThrough);
+  const selected = selectedResult.facts;
+  const eligibleFilings = filingEvidence.filings.filter(
+    (filing) =>
+      !filedThrough ||
+      (/^\d{4}-\d{2}-\d{2}$/.test(filing.filed) &&
+        filing.filed <= filedThrough),
+  );
+  const eligibleSections = filingEvidence.sections.filter(
+    (section) =>
+      !filedThrough ||
+      (/^\d{4}-\d{2}-\d{2}$/.test(section.filed) &&
+        section.filed <= filedThrough),
+  );
+  const filingTime = aggregateSecTime(eligibleFilings, "Point-in-time SEC filing report periods");
   const factTime = selectedSecFactTime(selected);
+  const trends = buildSecFinancialTrends(
+    company,
+    facts,
+    4,
+    8,
+    filedThrough,
+  );
   const serverRespondedAt = now().toISOString();
   const retrievedAt = [filingEvidence.retrievedAt, factsResult.retrievedAt].toSorted().at(-1)!;
   const asOf = serverRespondedAt;
-  const sections: ResearchEvidence[] = filingEvidence.sections.map(section => {
+  const sections: ResearchEvidence[] = eligibleSections.map(section => {
     const { id, ...data } = section;
     return researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, observedAt: null, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: secContent(data) });
   });
   const filingUrl = `https://data.sec.gov/submissions/CIK${filingEvidence.cik}.json`;
   const factsUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`;
   const sources: ResearchEvidence[] = [
-    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf: filingEvidence.asOf, observedAt: null, retrievedAt: filingEvidence.retrievedAt, serverRespondedAt: filingEvidence.serverRespondedAt, ...filingTime, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: filingEvidence.filings.map(secContent), sections: filingEvidence.sections.map(secContent), limitations: filingEvidence.limitations } }),
+    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf: filingEvidence.asOf, observedAt: null, retrievedAt: filingEvidence.retrievedAt, serverRespondedAt: filingEvidence.serverRespondedAt, ...filingTime, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: eligibleFilings.map(secContent), sections: eligibleSections.map(secContent), limitations: [...filingEvidence.limitations, ...(filedThrough ? [`Point-in-time mode excludes SEC filings and sections filed after ${filedThrough}.`] : [])] } }),
     ...sections,
-    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf: factsResult.asOf, observedAt: null, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, ...factTime, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends: buildSecFinancialTrends(company, facts) } }),
+    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf: factsResult.asOf, observedAt: null, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, ...factTime, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }),
   ];
   const deduped = dedupeEvidence(sources);
-  return { symbol, companyName: facts.entityName, retrievedAt, serverRespondedAt, time: normalizeTimeProvenance({ retrievalTime: retrievedAt, serverResponseTime: serverRespondedAt }), asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
+  return { symbol, companyName: facts.entityName, pointInTime: { status: filedThrough ? "applied" as const : "not_requested" as const, asOfDate: filedThrough, cutoffAt: filedThrough ? `${filedThrough}T23:59:59.999Z` : null, publicationPrecision: "sec_filed_date" as const, excluded: { filings: filingEvidence.filings.length - eligibleFilings.length, sections: filingEvidence.sections.length - eligibleSections.length, selectedFactObservations: selectedResult.excludedPostCutoffObservations, trendObservations: trends.pointInTime.excludedPostCutoffObservations }, classification: { status: "unavailable" as const, reason: "SEC submissions expose the current SIC classification without a historical classification series; point-in-time classification must remain unavailable." } }, retrievedAt, serverRespondedAt, time: normalizeTimeProvenance({ retrievalTime: retrievedAt, serverResponseTime: serverRespondedAt }), asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
 }
 
 export function getSecCompanyClassification(rawSymbol: string) {
@@ -301,7 +344,7 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
     async execute({ symbol: requested }) {
       if (requested !== symbol) throw new Error("Only the requested company may be researched");
       const company = await sec.company(symbol); const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`; const factsResult = await sec.companyFactsResult(company); const facts = factsResult.facts;
-      const selected = selectedSecFacts(facts);
+      const selected = selectedSecFacts(facts).facts;
       const trends = buildSecFinancialTrends(company, facts);
       return addEvidence(researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url, asOf: factsResult.asOf, observedAt: null, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, ...selectedSecFactTime(selected), entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }));
     },
