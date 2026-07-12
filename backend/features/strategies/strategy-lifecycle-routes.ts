@@ -1,4 +1,5 @@
 import { ClientError, json, requestJson } from "../../http/http";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import {
   parseStrategyParams,
   runBacktest,
@@ -345,7 +346,7 @@ export async function handleStrategyLifecycleRequest(
       : json({ error: "Strategy backtest not found" }, 404);
   }
   if (url.pathname === "/api/strategy/runs" && request.method === "GET")
-    return json({ runs: store.strategyRuns(), asOf: new Date().toISOString() });
+    return json({ runs: store.strategyRuns(), ...localResponseTimeFields(new Date()) });
   if (url.pathname === "/api/strategy/runs" && request.method === "POST") {
     if (!allow(`${actor}:strategy-runs`, 10))
       return json({ error: "Strategy run rate limit exceeded" }, 429);

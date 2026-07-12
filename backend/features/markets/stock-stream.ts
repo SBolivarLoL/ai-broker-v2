@@ -1,5 +1,6 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { securityHeaders } from "../../http/http";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import { streamBarDto, streamQuoteDto } from "./market-stream";
 
 /** Owns one shared Alpaca stock stream and fans it out to bounded SSE subscribers. */
@@ -84,14 +85,14 @@ export function createStockStreamService(alpaca: Alpaca) {
       kind: "status",
       state,
       symbols,
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
     return id;
   }
 
   stockUpdates.onStateChange((nextState) => {
     state = String(nextState);
-    broadcast({ kind: "status", state, asOf: new Date().toISOString() });
+    broadcast({ kind: "status", state, ...localResponseTimeFields(new Date()) });
   });
   stockUpdates.onConnect(() => {
     state = "authenticated";
@@ -100,16 +101,16 @@ export function createStockStreamService(alpaca: Alpaca) {
       stockUpdates.subscribeForQuotes(symbols);
       stockUpdates.subscribeForBars(symbols);
     }
-    broadcast({ kind: "status", state, asOf: new Date().toISOString() });
+    broadcast({ kind: "status", state, ...localResponseTimeFields(new Date()) });
   });
   stockUpdates.onDisconnect(() => {
     state = "disconnected";
-    broadcast({ kind: "status", state, asOf: new Date().toISOString() });
+    broadcast({ kind: "status", state, ...localResponseTimeFields(new Date()) });
   });
   stockUpdates.onError((error) => {
     state = "error";
     console.error("stock stream error", error);
-    broadcast({ kind: "status", state, asOf: new Date().toISOString() });
+    broadcast({ kind: "status", state, ...localResponseTimeFields(new Date()) });
   });
   stockUpdates.onQuote((quote) => {
     try {

@@ -47,7 +47,11 @@ test("order list separates broker observation, retrieval, and response times", a
     new Date("2026-07-11T10:00:00.500Z"),
     new Date("2026-07-11T10:00:01Z"),
   ];
-  const handle = routes(() => true, alpaca, () => times.shift()!);
+  const handle = routes(
+    () => true,
+    alpaca,
+    () => times.shift()!,
+  );
   const request = new Request("http://localhost/api/orders");
   const response = await handle(request, new URL(request.url), "test");
 
@@ -87,6 +91,22 @@ test("order routes reject invalid requests before broker calls", async () => {
   expect((await handle(receipt, new URL(receipt.url), "test"))?.status).toBe(
     404,
   );
+});
+
+test("decision audit uses local response time without provider retrieval", async () => {
+  const handle = routes();
+  const request = new Request("http://localhost/api/decision-audit");
+  const response = await handle(request, new URL(request.url), "test");
+  const body = await response?.json();
+
+  expect(body).toMatchObject({
+    auditTrail: [],
+    retrievedAt: null,
+    time: { retrievalTime: null },
+  });
+  expect(typeof body.serverRespondedAt).toBe("string");
+  expect(body.asOf).toBe(body.serverRespondedAt);
+  expect(body.time.serverResponseTime).toBe(body.serverRespondedAt);
 });
 
 test("order routes enforce mutation limits before broker calls", async () => {

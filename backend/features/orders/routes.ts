@@ -1,7 +1,10 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { ClientError, json, requestJson } from "../../http/http";
 import type { createStore } from "../../persistence/store";
-import { providerTimeFields } from "../../shared/time-provenance";
+import {
+  localResponseTimeFields,
+  providerTimeFields,
+} from "../../shared/time-provenance";
 import {
   buildReplacementPreview,
   canCancelOrder,
@@ -411,7 +414,7 @@ export function createOrderRoutes({
         receiptId,
         auditTrail: store.decisionAuditTrail(receiptId),
         verification: store.verifyDecisionAuditTrail(),
-        asOf: new Date().toISOString(),
+        ...localResponseTimeFields(new Date()),
       });
     }
     if (url.pathname === "/api/decision-audit" && request.method === "GET") {
@@ -424,7 +427,7 @@ export function createOrderRoutes({
       return json({
         auditTrail: store.decisionAuditTrail(undefined, limit),
         verification: store.verifyDecisionAuditTrail(),
-        asOf: new Date().toISOString(),
+        ...localResponseTimeFields(new Date()),
       });
     }
     if (url.pathname.startsWith("/api/receipts/") && request.method === "GET") {

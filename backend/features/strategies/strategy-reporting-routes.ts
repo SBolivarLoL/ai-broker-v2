@@ -1,4 +1,5 @@
 import { json } from "../../http/http";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import { buildStrategyDashboard } from "./strategy-dashboard";
 import { buildStrategyExperimentReport } from "./strategy-report";
 import type { StrategyRouteContext } from "./strategy-route-context";
@@ -50,7 +51,7 @@ export async function handleStrategyReportingRequest(
       runId,
       auditTrail: store.strategyAuditTrail(runId),
       verification: store.verifyStrategyAuditTrail(runId),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
   const strategyDashboardMatch = url.pathname.match(
@@ -129,7 +130,7 @@ export async function handleStrategyReportingRequest(
       runId,
       filters,
       decisions: store.strategyDecisions(runId, limit, filters),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
   const strategyRunTickMatch = url.pathname.match(

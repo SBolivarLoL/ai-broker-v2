@@ -6,7 +6,7 @@
   "scripts": {
     "start": "bun --env-file=.env backend/server.ts",
     "coverage": "bun scripts/check-coverage.ts",
-    "check": "bunx tsc --noEmit && bun run coverage",
+    "check": "bun scripts/check-time-taxonomy.ts && bunx tsc --noEmit && bun run coverage",
     "alpaca:doctor": "./scripts/alpaca.sh doctor",
     "smoke:read": "./scripts/alpaca.sh account get >/dev/null && ./scripts/alpaca.sh position list >/dev/null && ./scripts/alpaca.sh order list --status open >/dev/null",
     "smoke:order": "bun --env-file=.env scripts/smoke-order.ts",

@@ -1,5 +1,6 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { ClientError, json, requestJson } from "../../http/http";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import {
   getFinnhubCompanyEnrichment,
   type FinnhubCompanyEnrichment,
@@ -230,7 +231,7 @@ export async function handleResearchRequest(
     return json({
       entries,
       eligibleReceipts,
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
 

@@ -15,6 +15,9 @@ describe("coverage gate", () => {
       "tests",
       "scripts",
     ]);
+    expect((await Bun.file("package.json").json()).scripts.check).toStartWith(
+      "bun scripts/check-time-taxonomy.ts &&",
+    );
     expect(excludedFromCoverage("backend/features/orders/routes.ts")).toBe(
       true,
     );

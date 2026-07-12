@@ -53,6 +53,8 @@ export type UnavailableProviderTimeFields = {
   asOf: string;
 };
 
+export type LocalResponseTimeFields = UnavailableProviderTimeFields;
+
 export function normalizeIsoTime(value: string | Date | number, label: string) {
   const time = new Date(value);
   if (!String(value) || !Number.isFinite(time.getTime()))
@@ -143,4 +145,11 @@ export function unavailableProviderTimeFields(
     },
     asOf: serverRespondedAt,
   };
+}
+
+/** Represents a local-only response for which no provider retrieval occurred. */
+export function localResponseTimeFields(
+  serverResponseTime: string | Date | number,
+): LocalResponseTimeFields {
+  return unavailableProviderTimeFields(serverResponseTime);
 }

@@ -93,7 +93,15 @@ test("strategy routes create and list shadow runs through the runtime boundary",
 
   const list = new Request("http://localhost/api/strategy/runs");
   const listed = await handleStrategyRequest(list, new URL(list.url), context);
-  expect((await listed?.json()).runs).toHaveLength(1);
+  const listedBody = await listed?.json();
+  expect(listedBody.runs).toHaveLength(1);
+  expect(listedBody).toMatchObject({
+    retrievedAt: null,
+    time: { retrievalTime: null },
+  });
+  expect(typeof listedBody.serverRespondedAt).toBe("string");
+  expect(listedBody.asOf).toBe(listedBody.serverRespondedAt);
+  expect(listedBody.time.serverResponseTime).toBe(listedBody.serverRespondedAt);
   expect(store.verifyStrategyAuditTrail(createdBody.runId).valid).toBe(true);
 
   const dashboardRequest = new Request(

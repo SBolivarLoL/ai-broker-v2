@@ -29,9 +29,26 @@ test("stock stream shares symbol subscriptions and releases them on disconnect",
   const reader = response.body!.getReader();
   const first = await reader.read();
 
-  expect(new TextDecoder().decode(first.value)).toContain(
-    '"state":"connecting"',
+  const payload = JSON.parse(
+    new TextDecoder()
+      .decode(first.value)
+      .replace(/^data: /, "")
+      .trim(),
   );
+  expect(payload).toMatchObject({
+    state: "connecting",
+    observedAt: null,
+    publishedAt: null,
+    retrievedAt: null,
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      retrievalTime: null,
+    },
+  });
+  expect(typeof payload.serverRespondedAt).toBe("string");
+  expect(payload.asOf).toBe(payload.serverRespondedAt);
+  expect(payload.time.serverResponseTime).toBe(payload.serverRespondedAt);
   expect(service.size()).toBe(1);
   expect(subscribed).toEqual([["AAPL"]]);
 
