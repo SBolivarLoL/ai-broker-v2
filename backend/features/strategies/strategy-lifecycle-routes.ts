@@ -5,6 +5,7 @@ import {
   runBacktest,
   strategyFunctionFromPlugin,
   strategyPluginFromId,
+  strategySupportsPaperAutomation,
   walkForwardWindows,
 } from "./strategy-backtest";
 import {
@@ -516,6 +517,13 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyProtocolMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
+    if (!strategySupportsPaperAutomation(run.strategyId))
+      return json(
+        {
+          error: `${run.strategyId} is limited to backtest and shadow evaluation`,
+        },
+        409,
+      );
     if (!["shadow", "paused"].includes(run.status))
       return json(
         {
@@ -583,6 +591,13 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyPaperApprovalMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
+    if (!strategySupportsPaperAutomation(run.strategyId))
+      return json(
+        {
+          error: `${run.strategyId} is limited to backtest and shadow evaluation`,
+        },
+        409,
+      );
     if (!["shadow", "paused"].includes(run.status))
       return json(
         {

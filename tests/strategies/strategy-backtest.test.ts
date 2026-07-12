@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -239,6 +239,52 @@ test("moving-average trend waits for confirmation then follows the trend", () =>
   expect(decisions.at(-1)).toMatchObject({ targetExposure: 1, reason: "fast average above slow average" });
 });
 
+test("volatility-targeted trend uses lagged volatility and bounds exposure increases", () => {
+  const trendBars = [100, 101, 102, 200, 201].map((close, index) => ({
+    timestamp: `2026-01-0${index + 1}T00:00:00Z`,
+    close,
+  }));
+  const strategy = volatilityTargetedTrendStrategy({
+    fast: 2,
+    slow: 3,
+    volatilityLookback: 2,
+    targetVolatilityPercent: 2,
+    maxExposure: 0.8,
+    maxExposureIncreasePerBar: 0.25,
+  });
+  const decisions = trendBars.map((_, index) => strategy(trendBars, index));
+
+  expect(decisions[2]).toMatchObject({
+    targetExposure: 0,
+    reason: "waiting for trend and lagged volatility history",
+  });
+  expect(decisions[3]).toMatchObject({
+    targetExposure: 0.25,
+    reason: "volatility target constrained by exposure ramp",
+    features: {
+      rawTargetExposure: 0.8,
+      turnoverLimited: 1,
+      volatilityReturnCount: 2,
+    },
+    thresholds: {
+      volatilityLagBars: 1,
+      leverageAllowed: false,
+      maxExposure: 0.8,
+      maxExposureIncreasePerBar: 0.25,
+    },
+  });
+  expect(decisions[3]?.features?.laggedRealizedVolatilityPercent).toBeLessThan(
+    0.01,
+  );
+  expect(decisions[4]?.features?.laggedRealizedVolatilityPercent).toBeGreaterThan(
+    50,
+  );
+  expect(decisions[4]!.targetExposure).toBeLessThan(0.1);
+  expect(decisions.every((decision) => decision.targetExposure <= 0.8)).toBe(
+    true,
+  );
+});
+
 test("mean reversion enters on oversold z-score and exits near mean", () => {
   const reversionBars = [100, 100, 100, 90, 100].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
   const strategy = meanReversionStrategy({ lookback: 3, entryZScore: -1, exitZScore: -0.1 });
@@ -323,18 +369,22 @@ test("order-book liquidity scout requires tight spread and visible depth", () =>
 test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(strategyFromId("time-sliced-accumulation", { slices: 2 })(bars, 0).targetExposure).toBe(0.5);
   expect(typeof strategyFromId("moving-average-trend", { fast: 2, slow: 3 })).toBe("function");
+  expect(typeof strategyFromId("volatility-targeted-trend", { fast: 2, slow: 3, volatilityLookback: 2 })).toBe("function");
   expect(typeof strategyFromId("mean-reversion", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("breakout-momentum", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("volatility-filter", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("btc-eth-relative-strength", { lookback: 2 })).toBe("function");
   expect(typeof strategyFromId("order-book-liquidity-scout", { maxSpreadBps: 100 })).toBe("function");
   expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
+  expect(strategySupportsPaperAutomation("volatility-targeted-trend")).toBe(false);
+  expect(strategySupportsPaperAutomation("moving-average-trend")).toBe(true);
 });
 
 test("strategy configuration applies one canonical set of defaults", () => {
   expect(parseStrategyParams("cash")).toEqual({});
   expect(parseStrategyParams("time-sliced-accumulation")).toEqual({ slices: 10, maxExposure: 1 });
   expect(parseStrategyParams("moving-average-trend")).toEqual({ fast: 5, slow: 20, exposure: 1 });
+  expect(parseStrategyParams("volatility-targeted-trend")).toEqual({ fast: 5, slow: 20, volatilityLookback: 20, targetVolatilityPercent: 2, maxExposure: 1, maxExposureIncreasePerBar: 0.25 });
   expect(parseStrategyParams("mean-reversion")).toEqual({ lookback: 20, entryZScore: -2, exitZScore: -0.25, exposure: 1 });
   expect(parseStrategyParams("breakout-momentum", { lookback: 12 })).toEqual({ lookback: 12, volumeLookback: 12, volumeMultiple: 1.25, stopLossPercent: 8, exposure: 1 });
   expect(parseStrategyParams("volatility-filter")).toEqual({ lookback: 20, minVolatilityPercent: 0, maxVolatilityPercent: 6, exposure: 1 });
@@ -347,6 +397,8 @@ test("strategy configuration rejects malformed and contradictory parameters", ()
   expect(() => parseStrategyParams("cash", { exposure: 0 })).toThrow("Unrecognized key");
   expect(() => parseStrategyParams("moving-average-trend", { fast: "5", slow: 20 })).toThrow("expected number");
   expect(() => parseStrategyParams("moving-average-trend", { fast: 20, slow: 20 })).toThrow("slow must be greater than fast");
+  expect(() => parseStrategyParams("volatility-targeted-trend", { maxExposureIncreasePerBar: 0 })).toThrow("Too small");
+  expect(() => parseStrategyParams("volatility-targeted-trend", { maxExposure: 1.1 })).toThrow("Too big");
   expect(() => parseStrategyParams("mean-reversion", { entryZScore: 0, exitZScore: -1 })).toThrow("entryZScore must be less than exitZScore");
   expect(() => parseStrategyParams("volatility-filter", { minVolatilityPercent: 10, maxVolatilityPercent: 5 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
   expect(() => parseStrategyParams("breakout-momentum", { volumeMultiple: Number.NaN })).toThrow("expected number");

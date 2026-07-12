@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `712c438`: 2026-07-13.
+Last reviewed against `main` commit `934cf51`: 2026-07-13.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -74,7 +74,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 ### Strategy Lab
 
-- Nine deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence. Relative strength derives the opposite BTC/ETH peer from the ordered symbol pair rather than accepting a second peer override.
+- Ten deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, volatility-targeted trend, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. Volatility-targeted trend confirms fast-over-slow direction, sizes from realized returns ending one bar earlier, caps exposure at one or a stricter configured maximum, constrains only exposure increases through a deterministic per-bar ramp, and permits immediate risk reductions. It is available for backtests and shadow runs but fails closed at paper-protocol, approval, and runtime submission boundaries. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence. Relative strength derives the opposite BTC/ETH peer from the ordered symbol pair rather than accepting a second peer override.
 - Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, exact normalized dataset hashes, and legacy train/test boundary segmentation.
 - Backtest results include deterministic trade metrics: material simulated order count, position episodes, closed round trips, average holding bars/days, gross and net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings for high turnover, high trade frequency, or high exposure.
 - Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
@@ -153,6 +153,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 ## Current limitations
 
 - Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
+- Volatility-targeted trend uses per-bar, non-annualized volatility. A target calibrated for `1Day` is not interchangeable with `1Hour` or `15Min`; comparison compatibility already requires an identical timeframe, but parameter selection and validation remain the operator's experiment responsibility.
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.

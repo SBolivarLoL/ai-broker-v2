@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `712c438`: 2026-07-13.
+Last reviewed against `main` commit `934cf51`: 2026-07-13.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-13                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 467 tests, 0 failures, 2,463 assertions across 96 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 468 tests, 0 failures, 2,490 assertions across 96 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
 | `bun run coverage` | Pass: 98.01% functions, 97.37% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
@@ -95,6 +95,20 @@ masquerade as a completed drill. The strongest local result is
 `ready_for_external_review` with `externallyApproved:false`; these tests do not
 prove a real participant beta, a performed drill, or external approval.
 
+The volatility-targeted-trend slice adds a deterministic plugin/schema
+regression and extends direct composed-application and maintained browser
+contracts. The plugin test proves warm-up behavior, a one-complete-bar
+volatility lag, low-volatility scaling, a hard exposure ceiling, bounded
+upward exposure changes, immediate high-volatility reduction, and explicit
+non-leverage thresholds. Direct API coverage proves strict invalid-parameter
+rejection before provider work, stored-dataset execution without another
+provider read, immutable direct backtest-to-shadow lineage, and fail-closed
+409 responses at both paper-protocol and paper-approval routes. The runtime
+repeats the shadow-only gate before paper drafting or account/broker work. The
+browser contract verifies all new bounded fields and conservative presets.
+These checks do not establish profitability, a suitable cross-timeframe target,
+paper evidence, or promotion readiness.
+
 The in-app browser rendered all five new labeled coverage regions through the
 production Company Research workspace at 1280×720. SEC was complete; OpenFIGI
 was partial because mapping evidence is retrieval-only; GDELT was partial and
@@ -114,7 +128,7 @@ OpenAI request, order, policy, retention, or broker mutation.
 | Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `712c438`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `934cf51`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -139,7 +153,7 @@ OpenAI request, order, policy, retention, or broker mutation.
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
-| Browser UI                  | Maintained interaction plus targeted responsive rendering confidence | CI runs three isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, explicit confirmation, closed-beta evidence attachment, and packet export. Headed passes cover Company Research, Strategy comparison, and the closed-beta review at desktop/mobile widths without page-level overflow | No maintained visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
+| Browser UI                  | Maintained interaction plus targeted responsive rendering confidence | CI runs three isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, volatility-targeted strategy fields/presets, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, explicit confirmation, closed-beta evidence attachment, and packet export. Headed passes cover Company Research, Strategy comparison, and the closed-beta review at desktop/mobile widths without page-level overflow | No maintained visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
 | Production operations       | Audited local workflow plus fixture restore proof   | Readiness, backup export, incident packet, policy, auth, governance, append-only closed-beta review/packet contracts, exact audit linkage, and serialized restore tests                                                                                                                                                                                                                                                                                                                                       | No production-sized or real closed-beta restore drill, deployment, participant cohort, authenticated supporting artifacts, or external approval |
 
 ## Full documentation and repository audit
@@ -467,7 +481,9 @@ The following read-only checks were run:
   the single `aria-current="page"` state, changes the order filter through
   keyboard type-ahead, and verifies the resulting table status. It triggers a
   comparison validation error from the keyboard and verifies the visible live
-  status without moving focus. The destructive kill-switch fixture verifies
+  status without moving focus. It also selects volatility-targeted trend and
+  verifies the lagged-volatility, per-bar target, exposure-ramp, hard-cap, and
+  conservative-preset controls. The destructive kill-switch fixture verifies
   initial confirm focus, danger treatment, forward/reverse focus wrapping,
   Escape cancellation with zero mutation requests, trigger-focus restoration,
   and a second explicit keyboard confirmation before exactly one fixture POST.

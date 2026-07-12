@@ -12,17 +12,27 @@ const strategyLabels = {
   "buy-and-hold": "Buy and hold",
   "time-sliced-accumulation": "Time-sliced accumulation",
   "moving-average-trend": "Moving average trend",
+  "volatility-targeted-trend": "Volatility-targeted trend",
   "breakout-momentum": "Breakout momentum",
   "volatility-filter": "Volatility filter",
   "btc-eth-relative-strength": "BTC/ETH relative strength",
   "order-book-liquidity-scout": "Order-book liquidity scout",
   "mean-reversion": "Mean reversion",
 };
+const shadowOnlyStrategies = new Set(["volatility-targeted-trend"]);
 const strategyDefaultParams = {
   cash: {},
   "buy-and-hold": {},
   "time-sliced-accumulation": { slices: 10, maxExposure: 1 },
   "moving-average-trend": { fast: 5, slow: 20, exposure: 1 },
+  "volatility-targeted-trend": {
+    fast: 5,
+    slow: 20,
+    volatilityLookback: 20,
+    targetVolatilityPercent: 2,
+    maxExposure: 1,
+    maxExposureIncreasePerBar: 0.25,
+  },
   "breakout-momentum": {
     lookback: 20,
     volumeLookback: 20,
@@ -67,6 +77,9 @@ const strategyParameterLabels = {
   stopLossPercent: "Stop loss (%)",
   minVolatilityPercent: "Minimum volatility (%)",
   maxVolatilityPercent: "Maximum volatility (%)",
+  volatilityLookback: "Lagged volatility lookback",
+  targetVolatilityPercent: "Target per-bar volatility (%)",
+  maxExposureIncreasePerBar: "Maximum exposure increase per bar",
   minRelativeStrengthPercent: "Minimum relative strength (%)",
   maxSpreadBps: "Maximum spread (bps)",
   minVisibleAskNotional: "Minimum visible asks ($)",
@@ -89,6 +102,9 @@ const strategyParameterBounds = {
   stopLossPercent: [0, 100],
   minVolatilityPercent: [0, 1_000],
   maxVolatilityPercent: [0, 1_000],
+  volatilityLookback: [2, 10_000],
+  targetVolatilityPercent: [0.01, 1_000],
+  maxExposureIncreasePerBar: [0.01, 1],
   minRelativeStrengthPercent: [-1_000, 1_000],
   maxSpreadBps: [1, 10_000],
   minVisibleAskNotional: [0, 1_000_000_000_000],
@@ -148,6 +164,12 @@ function strategyPresetParams(strategyId, preset) {
   if (Object.hasOwn(params, "stopLossPercent"))
     params.stopLossPercent =
       preset === "conservative" ? 5 : preset === "aggressive" ? 10 : 8;
+  if (Object.hasOwn(params, "targetVolatilityPercent"))
+    params.targetVolatilityPercent =
+      preset === "conservative" ? 1 : preset === "aggressive" ? 3 : 2;
+  if (Object.hasOwn(params, "maxExposureIncreasePerBar"))
+    params.maxExposureIncreasePerBar =
+      preset === "conservative" ? 0.1 : preset === "aggressive" ? 0.4 : 0.25;
   return params;
 }
 
@@ -193,7 +215,8 @@ function localDateTimeValue(date) {
 function syncStrategyLifecycleControls() {
   const run = activeStrategyRun(),
     protocol = run?.config?.experimentProtocol,
-    protocolAllowed = run && ["shadow", "paused"].includes(run.status),
+    shadowOnly = Boolean(run && shadowOnlyStrategies.has(run.strategyId)),
+    protocolAllowed = run && !shadowOnly && ["shadow", "paused"].includes(run.status),
     protocolButton = $("#strategy-protocol-submit"),
     approvalButton = $("#strategy-paper-approve"),
     pauseButton = $("#strategy-pause-button"),
@@ -201,7 +224,7 @@ function syncStrategyLifecycleControls() {
     reviewButton = $("#strategy-review-submit"),
     now = new Date();
   protocolButton.disabled = !protocolAllowed;
-  approvalButton.disabled = !protocolAllowed || !protocol;
+  approvalButton.disabled = shadowOnly || !protocolAllowed || !protocol;
   pauseButton.disabled =
     !run || ["paused", "completed", "killed", "retired"].includes(run.status);
   killButton.disabled =
@@ -212,13 +235,17 @@ function syncStrategyLifecycleControls() {
     : "Required";
   $("#strategy-protocol-badge").className =
     `pill ${protocol ? "gain" : "loss"}`;
-  $("#strategy-paper-readiness").textContent = protocol
-    ? "Protocol ready"
-    : "Blocked";
+  $("#strategy-paper-readiness").textContent = shadowOnly
+    ? "Shadow only"
+    : protocol
+      ? "Protocol ready"
+      : "Blocked";
   $("#strategy-paper-readiness").className =
-    `pill ${protocol ? "gain" : "loss"}`;
+    `pill ${protocol && !shadowOnly ? "gain" : "loss"}`;
   $("#strategy-protocol-status").textContent = !run
     ? "Select a run to register its required protocol."
+    : shadowOnly
+      ? `${strategyLabels[run.strategyId] || run.strategyId} is limited to backtest and shadow evaluation; paper protocol and approval are unavailable.`
     : protocol
       ? `Version ${protocol.version} · ${new Date(protocol.startAt).toLocaleString()} to ${new Date(protocol.stopAt).toLocaleString()} · maximum ${money.format(protocol.maximumBudget)}.`
       : protocolAllowed
