@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `777b003`: 2026-07-12.
+Last reviewed against `main` commit `a433e1c`: 2026-07-13.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -20,7 +20,7 @@ The browser exposes seven workspaces:
 | Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                       |
 | AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                               |
 
-The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions.
+The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Navigation identifies only the current page rather than applying tab-only selected semantics to ordinary buttons. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions. A maintained Playwright/Chromium suite gates these keyboard and focus interactions in CI against isolated browser fixtures.
 
 ## Capability map
 
@@ -157,7 +157,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
 - Normalized provider DTOs and browser-facing time-bearing response envelopes use the explicit observation/publication/effective/retrieval/server-response taxonomy. `asOf`, `timestamp`, and `quoteAt` remain compatibility aliases where clients still consume them; they do not override the semantic fields.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
-- The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
+- The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, `scripts/`, and the Playwright configuration. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. CI separately runs the maintained Chromium keyboard/focus suite. Current counts and results live in `VALIDATION.md`.
 - Option chains are capped at 120 rendered contracts and show the number displayed versus available, two-sided quote/IV/Greek coverage, and an explicit partial-data warning when model-dependent fields are absent.
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.

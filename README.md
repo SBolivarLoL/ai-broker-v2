@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `777b003` on 2026-07-12.
+Code baseline reviewed: `main` at `a433e1c` on 2026-07-13.
 
 ## Quick start
 
@@ -73,7 +73,7 @@ Feature routes are independently owned, persistence uses ordered migrations, and
 | Instrumented coverage | The reviewed deterministic-module mean passes the 95% function and 96% line floors                                                                                                                                                                             |
 | API composition       | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional                                                                                            |
 | Data quality          | Provider health, strategy dataset quality, canonical time provenance, scheduled reconciliation, provider contracts, and selective bounded retention/pruning are implemented; external entitlement review remains separate |
-| Browser               | Targeted all-workspace dark-workstation, desktop/tablet/mobile, Strategy Lab, option coverage, privacy, and modal keyboard validation exists; no maintained browser regression suite                                                                           |
+| Browser               | Targeted all-workspace dark-workstation, desktop/tablet/mobile, Strategy Lab, option coverage, and privacy validation exists; a maintained Chromium suite gates keyboard navigation, table filtering, error announcements, modal focus, cancellation, restoration, and destructive confirmation in CI |
 | Persistence           | Transactional migrations through 0015 and a serialized fixture restore pass, including versioned strategy datasets and account-activity time provenance                                                                                                         |
 | Production            | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open                                                                                                                                                              |
 
@@ -84,6 +84,7 @@ See [`docs/VALIDATION.md`](docs/VALIDATION.md) for evidence and scope. Coverage 
 ```sh
 bun run check             # strict TypeScript, all tests, and the deterministic coverage floor
 bun run eval              # focused broker safety and agent trust-boundary suite
+bun run test:browser      # maintained Chromium keyboard/focus interaction suite
 bun run eval:research     # credentialed live research evaluation
 bun run coverage          # 95% function / 96% line coverage gate
 bun audit                 # dependency vulnerability audit
@@ -96,6 +97,13 @@ bun run smoke:finnhub     # missing-key or configured Finnhub check
 bun run smoke:openfigi    # live OpenFIGI identity/fallback check
 bun run smoke:comparables # live Alpaca plus SEC valuation check
 ```
+
+Install the browser used by the maintained interaction suite once per local
+machine with `bunx playwright install --only-shell chromium`. CI installs only
+the required headless Chromium shell and its Linux dependencies before
+running `bun run test:browser`; the suite serves committed frontend assets with
+isolated API fixtures and does not read `.env`, open SQLite, or contact a
+provider.
 
 Run or inspect the bounded read-only reconciliation locally with:
 

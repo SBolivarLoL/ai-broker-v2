@@ -335,7 +335,6 @@ function activateView(view) {
     $(`#${name}-view`).hidden = name !== view;
     const button = $(`[data-view="${name}"]`);
     button.classList.toggle("active", name === view);
-    button.setAttribute("aria-selected", String(name === view));
     if (name === view) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });

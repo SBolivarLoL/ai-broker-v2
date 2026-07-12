@@ -11,3 +11,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run eval
+      - run: bunx playwright install --with-deps --only-shell chromium
+      - run: bun run test:browser
+      - uses: actions/upload-artifact@v5
+        if: ${{ failure() }}
+        with:
+          name: playwright-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/playwright/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
