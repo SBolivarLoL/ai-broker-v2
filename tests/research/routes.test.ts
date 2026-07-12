@@ -7,11 +7,15 @@ import type { MacroContext } from "../../backend/integrations/macro-context";
 import { createStore } from "../../backend/persistence/store";
 import { canonicalEvidence } from "../../backend/shared/evidence";
 import type { getCompanySecEvidence } from "../../backend/features/research/research";
-import type {
-  getComparableValuations,
-  getPointInTimeComparableValuations,
-  getValuationScenarios,
-  runCompanyResearch,
+import {
+  buildCompanyResearchReplay,
+  evaluateResearch,
+  type CompanyResearch,
+  type getComparableValuations,
+  type getPointInTimeComparableValuations,
+  type getValuationScenarios,
+  type ResearchEvidence,
+  type runCompanyResearch,
 } from "../../backend/features/research/research";
 import type {
   runPortfolioCopilot,
@@ -761,6 +765,117 @@ test("company research route preserves the versioned coverage contract", async (
     schemaVersion: "company-research-v2",
     quality: { status: "partial" },
   });
+  store.close();
+});
+
+test("stored company research replays without a provider or model request", async () => {
+  const source = (
+    id: string,
+    category: ResearchEvidence["category"],
+    data: unknown,
+  ): ResearchEvidence =>
+    canonicalEvidence({
+      id,
+      provider: id.startsWith("sec:") ? "sec" : "alpaca",
+      sourceId: id,
+      category,
+      authority: id.startsWith("sec:") ? "official" : "regulated_broker",
+      claimStatus: id.startsWith("sec:")
+        ? "official_record"
+        : "broker_observation",
+      title: id,
+      url: `https://example.com/${encodeURIComponent(id)}`,
+      asOf: "2026-07-12T12:00:00.000Z",
+      observedAt: "2026-07-12T11:59:00.000Z",
+      retrievedAt: "2026-07-12T12:00:00.000Z",
+      entityIds: { symbol: "AAPL" },
+      data,
+    });
+  const evidence = [
+    source("market:AAPL", "market", { price: 200, volatility: 24 }),
+    source("sec:facts:AAPL", "fundamentals", { revenue: 1000 }),
+    source("sec:filings:AAPL", "filings", { form: "10-K" }),
+    source("news:AAPL", "news", { articles: [] }),
+  ];
+  const research: CompanyResearch = {
+    symbol: "AAPL",
+    companyName: "Apple Inc.",
+    stance: "balanced",
+    executiveSummary: "A bounded evidence summary.",
+    summaryEvidence: ["market:AAPL", "sec:facts:AAPL"],
+    keyMetrics: [
+      { label: "Price", value: 200, unit: "USD", period: "current", evidence: "market:AAPL" },
+      { label: "Volatility", value: 24, unit: "%", period: "one year", evidence: "market:AAPL" },
+      { label: "Revenue", value: 1000, unit: "USD", period: "latest", evidence: "sec:facts:AAPL" },
+    ],
+    thesis: [
+      { text: "Revenue is material.", evidence: ["sec:facts:AAPL"] },
+      { text: "Market evidence supplies context.", evidence: ["market:AAPL"] },
+    ],
+    risks: [
+      { text: "Volatility remains material.", evidence: ["market:AAPL"] },
+      { text: "Filings may change the view.", evidence: ["sec:filings:AAPL"] },
+    ],
+    catalysts: [],
+    limitations: ["This is frozen point-in-time evidence."],
+  };
+  const metrics = evaluateResearch(research, evidence, {
+    latencyMs: 10,
+    toolCalls: 5,
+    requests: 1,
+  });
+  const replay = buildCompanyResearchReplay({
+    schemaVersion: "company-research-v2",
+    runId: "company-replay-route",
+    model: "test-model",
+    research,
+    sources: evidence,
+    metrics,
+    serverRespondedAt: "2026-07-12T12:00:01.000Z",
+  });
+  const store = createStore(":memory:");
+  store.startResearch("company-replay-route", "AAPL", "test-model");
+  store.completeResearch(
+    "company-replay-route",
+    { schemaVersion: "company-research-v2", evidenceReplay: replay },
+    metrics,
+  );
+
+  const response = await route(
+    "/api/research/runs/company-replay-route/replay",
+    { method: "POST" },
+    () => true,
+    { store },
+  );
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    status: "verified",
+    providerRequests: 0,
+    modelRequests: 0,
+    replayHash: replay.contentHash,
+    report: { runId: "company-replay-route", research: { symbol: "AAPL" } },
+  });
+
+  store.startResearch("legacy-company-run", "AAPL", "test-model");
+  store.completeResearchArtifact("legacy-company-run", {
+    schemaVersion: "company-research-v2",
+  });
+  await expect(
+    route(
+      "/api/research/runs/legacy-company-run/replay",
+      { method: "POST" },
+      () => true,
+      { store },
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    await route(
+      "/api/research/runs/missing-company-run/replay",
+      { method: "POST" },
+      () => true,
+      { store },
+    ),
+  ).toMatchObject({ status: 404 });
   store.close();
 });
 

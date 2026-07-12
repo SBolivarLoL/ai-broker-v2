@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
-import { canonicalEvidence } from "../../backend/shared/evidence";
 import {
+  canonicalEvidence,
+  evidenceContentHash,
+} from "../../backend/shared/evidence";
+import {
+  buildCompanyResearchReplay,
   evaluateResearch,
+  replayCompanyResearch,
   validResearchOutput,
   type CompanyResearch,
   type ResearchEvidence,
@@ -353,6 +358,68 @@ test("company research coverage keeps missing context and accepted grounding gap
   expect(coverage.quality.impact.join(" ")).toContain("grounding confidence");
   expect(coverage.quality.impact.join(" ")).toContain(
     "cross-provider identity confidence",
+  );
+});
+
+test("company research replay re-evaluates frozen evidence without providers", () => {
+  const metrics = evaluateResearch(output(), sources, {
+    latencyMs: 1200,
+    toolCalls: 5,
+    requests: 1,
+    inputTokens: 100,
+    outputTokens: 50,
+    totalTokens: 150,
+  });
+  const replay = buildCompanyResearchReplay({
+    schemaVersion: "company-research-v2",
+    runId: "research-replay-1",
+    model: "test-model",
+    research: output(),
+    sources,
+    metrics,
+    serverRespondedAt: "2026-01-01T00:01:00.000Z",
+  });
+  const result = replayCompanyResearch(replay);
+  expect(result).toMatchObject({
+    schemaVersion: "company-research-replay-result-v1",
+    status: "verified",
+    providerRequests: 0,
+    modelRequests: 0,
+    replayHash: replay.contentHash,
+    report: {
+      runId: "research-replay-1",
+      research: { symbol: "AAPL" },
+      metrics: {
+        overallScore: 100,
+        latencyMs: 1200,
+        requests: 1,
+      },
+      quality: { status: "partial" },
+    },
+  });
+
+  const sourceTamper = structuredClone(replay);
+  sourceTamper.report.sources[0]!.data = { currentPrice: 999 };
+  const { contentHash: _sourceHash, ...sourceManifest } = sourceTamper;
+  sourceTamper.contentHash = evidenceContentHash(sourceManifest);
+  expect(() => replayCompanyResearch(sourceTamper)).toThrow(
+    "source integrity check failed",
+  );
+
+  const outputTamper = structuredClone(replay);
+  outputTamper.report.research.keyMetrics[0]!.value = 999;
+  const { contentHash: _outputHash, ...outputManifest } = outputTamper;
+  outputTamper.contentHash = evidenceContentHash(outputManifest);
+  expect(() => replayCompanyResearch(outputTamper)).toThrow(
+    "metrics do not match frozen evidence",
+  );
+
+  const identityTamper = structuredClone(replay);
+  identityTamper.report.symbol = "MSFT";
+  const { contentHash: _identityHash, ...identityManifest } = identityTamper;
+  identityTamper.contentHash = evidenceContentHash(identityManifest);
+  expect(() => replayCompanyResearch(identityTamper)).toThrow(
+    "run identity is invalid",
   );
 });
 
