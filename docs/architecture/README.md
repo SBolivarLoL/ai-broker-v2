@@ -200,6 +200,7 @@ The strategy boundary is split by responsibility the same way:
 - `strategies/strategy-walk-forward.ts` owns bounded train-only candidate selection, frozen test scoring, fold aggregation, and leakage evidence.
 - `strategies/strategy-lifecycle-routes.ts` owns backtests, strategy-run creation, scheduler ticks, and admin mutations (approval, pause, kill, review).
 - `strategies/strategy-reporting-routes.ts` owns read-only run reporting, evidence, and single-run manual ticks.
+- `strategies/strategy-dashboard-coverage.ts` owns the v2 expected/received/omitted, freshness, conclusion-impact, and normalized market-observation/local-retrieval/response-time contract for persisted runs.
 - `strategies/strategy-runtime-provenance.ts` owns pure symbol, definition, config-hash, provenance, and audit-snapshot helpers.
 - `strategies/strategy-runtime-reporting.ts` owns order reconciliation, attribution, performance, and alert reporting.
 
@@ -212,7 +213,7 @@ Persistence is composed behind the `createStore()` API:
 - `persistence/audit.ts` owns deterministic audit hashing.
 - `persistence/store.ts` composes those pieces with order, portfolio, research, and operations storage.
 
-The browser uses ordered, dependency-free scripts instead of a build step. `core.js` provides shared UI behavior, including the accessible expected/received/omitted/freshness/impact coverage renderer; `portfolio.js`, `strategies.js`, `market-detail.js`, and `research.js` own their workspaces; `app.js` starts initial loads and refresh timers.
+The browser uses ordered, dependency-free scripts instead of a build step. `core.js` provides shared UI behavior, including the accessible expected/received/omitted/freshness/impact coverage renderer; `portfolio.js`, `strategies.js`, `market-detail.js`, and `research.js` own their workspaces; `app.js` starts initial loads and refresh timers. The Strategy Lab places the shared coverage region before selected-run metrics so missing lineage, trace, market, and conditional execution evidence is visible before performance interpretation.
 
 `research/comparable-valuation.ts` and `research/valuation-scenario.ts` own
 deterministic valuation math and normalized v2 evidence contracts. SEC filing

@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `e38a21a`: 2026-07-10.
+Last reviewed against `main` commit `eccd0c2`: 2026-07-12.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -242,7 +242,7 @@ Preview checks include fresh crypto market evidence, a default 200 bps spread ga
 
 ## Metrics, alerts, and reports
 
-Run dashboards derive decision count, block rate, stale-data rate, exposure, budget use, order outcomes, fill ratio, estimated fill slippage, and top block reasons from persisted evidence.
+Run dashboards derive decision count, block rate, stale-data rate, exposure, budget use, order outcomes, fill ratio, estimated fill slippage, and top block reasons from persisted evidence. The v2 dashboard also exposes a visible evidence contract for run configuration, immutable backtest linkage, clean provenance, comparability, decisions, replayable traces, per-symbol market snapshots, provider observation times, fresh inputs, and applicable paper approval/order reconciliation/fill quality. A new run is `empty` until its first decision; stale or incomplete evidence is `partial`, with the effect on replay, performance, promotion, and execution conclusions stated explicitly.
 
 Active performance reconstructs strategy cash, units, equity, return, and drawdown from filled strategy orders and subsequent bars. It reports insufficient data rather than estimating when budget, fills, or marks are missing.
 
