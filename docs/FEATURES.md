@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `fe72d10`: 2026-07-11.
+Last reviewed against `main` commit `0c6f1f4`: 2026-07-12.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -53,7 +53,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps. Exposure root, asset-class/SIC/factor aggregates, positions, provider inputs, sources, cache metadata, and quality DTOs distinguish current Alpaca account/position retrieval, IEX bar observations/effective windows/retrieval, SEC classification retrieval, and server response time. Cache hits preserve external-evidence retrieval while refreshing current-state and response times; failed, unqueried, malformed, unsupported, and position-bound omissions remain explicit, and an irrelevant SPY benchmark is not queried for a portfolio without US-equity holdings.
 - Deterministic rate, technology, volatility, and user-entered held-symbol scenarios. The v2 scenario contract preserves the underlying exposure observation/effective/retrieval evidence separately from response time on roots, scenarios, and positions; identifies local calculations, Alpaca/IEX/SEC inputs, and user assumptions; and exposes expected, received, omitted, and unmodeled position evaluations with their effect on displayed losses. Volatility inputs older than seven days, more than five minutes in the future, or missing an observation time are excluded rather than treated as current.
 - Read-only risk-parity and shrunk mean-variance proposals. The v2 optimizer contract preserves current-account retrieval separately from IEX daily-bar observation/effective windows, market retrieval, and response time; exposes expected, received, omitted, malformed, duplicate, conflicting, stale, future-dated, and insufficient-history evidence plus proposal impact; and excludes unusable histories from target weights. The visible warning identifies IEX as a single-exchange feed rather than consolidated SIP. Targets flow into a constrained rebalance planner before the normal basket preview.
-- Rebalance planning with turnover, cash buffer, fee, imported FIFO lot, tax-rate, maximum-tax, precision, and minimum-notional constraints.
+- Rebalance planning with turnover, cash buffer, fee, imported FIFO lot, tax-rate, maximum-tax, precision, and minimum-notional constraints. The v2 planner contract preserves current account/position retrieval, rolling-order fill observations, durable activity retrieval, FIFO acquisition periods, operations-policy updates, explicit IEX latest-trade observations/retrieval, calculation time, and response time. Target trades older than seven days, more than five minutes in the future, missing an observation, or carrying malformed prices fail closed. Expected, received, omitted, rejected, freshness, tax-lot coverage, and conclusion impact are visible before a draft can flow into the separately revalidated basket preview.
 - Persisted operations policy for kill switch, order notional, symbol notional, position exposure, sector exposure, drawdown, and turnover.
 
 ### Research and AI

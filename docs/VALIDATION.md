@@ -1,16 +1,16 @@
 # Validation record
 
-Last reviewed against `main` commit `3110cbb`: 2026-07-12.
+Last reviewed against `main` commit `0c6f1f4`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check              | Result on 2026-07-11                                                              | Scope                                                                                             |
+| Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 388 tests, 0 failures, 1,792 assertions across 89 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 394 tests, 0 failures, 1,824 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 189 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.11% functions, 97.32% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.06% functions, 97.36% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 99 backend modules, 11 operational scripts, 88 files under `tests/`, and one coverage-gate test                                    |
+| TypeScript    | 100 backend modules, 11 operational scripts, 89 files under `tests/`, and one coverage-gate test                                   |
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `3110cbb`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `0c6f1f4`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -42,7 +42,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                                                                   | No production-sized restore timing or closed-beta operations drill                                                                        |
-| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and point-in-time fundamentals are not persisted |
+| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-rebalance/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and point-in-time fundamentals are not persisted |
 | Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats                                                                                                                                                                                                                                                                                     | Internal classifications are not legal approval; no automatic retention enforcement exists                                                |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                                                                                                                                                                                                                                                                                                     | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                                                                                                                                                                                                                                             | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
@@ -78,8 +78,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 99 backend TypeScript modules, 11 operational
-  scripts, 88 files under `tests/`, one coverage-gate test under `scripts/`, 15
+- Fresh inventory checks found 100 backend TypeScript modules, 11 operational
+  scripts, 89 files under `tests/`, one coverage-gate test under `scripts/`, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
   table is assigned exactly once.
@@ -177,6 +177,14 @@ Additional mechanical checks:
   seven days, more than five minutes in the future, or without an observation
   time cannot enter the volatility shock; classification observation remains
   explicitly unavailable rather than inferred from retrieval.
+- Constrained-rebalance root, summary, scale, tax, leg, projected-position,
+  input, and quality DTOs were checked through pure and direct API contracts.
+  Current account/position retrieval, rolling-order fill observations and
+  effective window, activity retrieval/FIFO acquisition periods, policy update
+  and retrieval, IEX latest-trade observation/retrieval, calculation time, and
+  response time remain distinct. Stale, future-dated, unavailable, malformed,
+  non-equity, and untradable target evidence fails closed; incomplete activity,
+  tax-lot, or order evidence and its impact remain explicit.
 - Mutation-origin regression coverage proves that blank or whitespace-only
   development `APP_ORIGIN` values use the actual request origin, accept a
   same-origin browser POST, and continue rejecting a cross-origin POST.
@@ -302,6 +310,15 @@ The following read-only checks were run:
   fourth card with 12/12 modeled evaluations. No broker order or live-trading
   action was created; the pass also exposed and verified the blank
   `APP_ORIGIN` same-origin regression above.
+- A 2026-07-12 headed browser pass submitted a held-symbol target through the
+  constrained planner against the configured paper account. The response used
+  `portfolio-rebalance-plan-v2`, explicit IEX trade observation/retrieval,
+  complete expected/received/freshness evidence, complete FIFO coverage, and a
+  separate response time; the visible status and evidence lines rendered the
+  same contract. The check created only the normal local plan-audit event and
+  did not load a basket, preview an order, submit an order, or enable live
+  trading. An initial pass also caught and fixed zero-filled broker orders being
+  misclassified as malformed fills.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
@@ -380,7 +397,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Migration identity drift stops startup, failed migration DDL and history roll back together, the 0011 fixture upgrades through 0015 without inventing activity provenance, and serialized restores preserve account-activity time fields plus both audit chains.
 - Every current SQLite table belongs to exactly one stored-output category; every external source is blocked or requires external review for live use.
 - Provider-health and stored-dataset quality reports expose local event and immutable dataset evidence, but do not imply entitlement approval or successful live provider probes.
-- Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, account-activity root/row/summary/quality DTOs, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance, portfolio-risk, portfolio-exposure, portfolio-scenario, portfolio-snapshot root/child, and portfolio-optimizer root/proposal/weight/input/quality DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and multi-asset market DTOs preserve retrieval/server-response timestamps separately from provider observation/publication/effective timestamps; official macro evidence records effective periods for dated, monthly, quarterly, and market-session calendar observations.
+- Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, account-activity root/row/summary/quality DTOs, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance, portfolio-risk, portfolio-exposure, portfolio-scenario, portfolio-rebalance, portfolio-snapshot root/child, and portfolio-optimizer root/proposal/weight/input/quality DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and multi-asset market DTOs preserve retrieval/server-response timestamps separately from provider observation/publication/effective timestamps; official macro evidence records effective periods for dated, monthly, quarterly, and market-session calendar observations.
 - Production readiness rejects incomplete proxy, secret-vault, preview-secret, or SEC identity configuration.
 - Plaintext vault values are not returned by vault API reads.
 

@@ -20,6 +20,12 @@ import {
   ConstrainedRebalancePlanRequest,
 } from "./rebalance-planner";
 import {
+  normalizeRebalanceMarketEvidence,
+  portfolioRebalanceDto,
+  rebalanceMarketEvidenceUsable,
+  type RebalanceMarketEvidence,
+} from "./rebalance-response";
+import {
   riskSnapshot,
   rollingTurnover,
 } from "../../shared/risk";
@@ -325,24 +331,40 @@ export async function handlePortfolioRequest(
     const targetSymbols = [
       ...new Set(plannerRequest.targets.map((target) => target.symbol)),
     ];
-    const [sync, account, positions, recentOrders, marketRows] =
+    const capture = async <T>(request: Promise<T>) => {
+      const value = await request;
+      return { value, retrievedAt: now() };
+    };
+    const [sync, accountRead, positionsRead, ordersRead, marketRows] =
       await Promise.all([
         context.syncAccountActivities(),
-        alpaca.trading.account.getAccount(),
-        alpaca.trading.positions.getAllOpenPositions(),
-        alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
+        capture(alpaca.trading.account.getAccount()),
+        capture(alpaca.trading.positions.getAllOpenPositions()),
+        capture(
+          alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
+        ),
         Promise.all(
           targetSymbols.map(async (symbol) => {
-            const [asset, price] = await Promise.all([
-              alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
-                symbolOrAssetId: symbol,
-              }),
-              alpaca.marketData.getLatestPrice(symbol),
+            const [assetRead, tradeRead] = await Promise.all([
+              capture(
+                alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
+                  symbolOrAssetId: symbol,
+                }),
+              ),
+              capture(
+                alpaca.marketData.stocks.stockLatestTradeSingle({
+                  symbol,
+                  feed: "iex",
+                }),
+              ),
             ]);
-            return { symbol, asset, price };
+            return { symbol, assetRead, tradeRead };
           }),
         ),
       ]);
+    const account = accountRead.value;
+    const positions = positionsRead.value;
+    const recentOrders = ordersRead.value;
     if (account.equity === undefined || account.cash === undefined) {
       throw new Error("Account risk data unavailable");
     }
@@ -362,33 +384,54 @@ export async function handlePortfolioRequest(
       );
     }
     for (const row of marketRows) {
-      if (!row.asset.tradable || row.asset._class !== "us_equity") {
+      if (
+        !row.assetRead.value.tradable ||
+        row.assetRead.value._class !== "us_equity"
+      ) {
         return json(
           { error: `${row.symbol} is not a tradable US stock or ETF` },
           400,
         );
       }
-      if (
-        typeof row.price !== "number" ||
-        !Number.isFinite(row.price) ||
-        row.price <= 0
-      ) {
-        return json({ error: `No valid current price for ${row.symbol}` }, 400);
-      }
     }
-    const market = marketRows.map((row) => ({
-      symbol: row.symbol,
-      price: row.price as number,
-      fractionable: Boolean(row.asset.fractionable),
-    }));
+    let market: RebalanceMarketEvidence[];
+    try {
+      market = marketRows.map((row) =>
+        normalizeRebalanceMarketEvidence({
+          symbol: row.symbol,
+          price: row.tradeRead.value.trade?.p,
+          observedAt: row.tradeRead.value.trade?.t,
+          fractionable: Boolean(row.assetRead.value.fractionable),
+          tradeRetrievedAt: row.tradeRead.retrievedAt,
+          assetRetrievedAt: row.assetRead.retrievedAt,
+        }),
+      );
+    } catch {
+      return json({ error: "Valid IEX latest-trade evidence is required" }, 400);
+    }
+    const evaluatedAt = now();
+    const unusableMarket = market.find(
+      (row) => !rebalanceMarketEvidenceUsable(row, evaluatedAt),
+    );
+    if (unusableMarket) {
+      return json(
+        {
+          error: `Fresh IEX trade evidence is unavailable for ${unusableMarket.symbol}`,
+        },
+        400,
+      );
+    }
     const marketBySymbol = new Map(
       market.map((row) => [row.symbol, row] as const),
     );
-    const ledger = ledgerSummary(store.activities(5_000), sync.truncated);
+    const activities = store.activities(5_000);
+    const ledger = ledgerSummary(activities, sync.truncated);
     const taxLotsComplete =
       !ledger.activityHistoryTruncated &&
       ledger.unmatchedSellQuantity <= 1e-8 &&
       ledger.unresolvedCorporateActions.length === 0;
+    const policy = store.operationsPolicy();
+    const policyRetrievedAt = now();
     const plan = buildConstrainedRebalancePlan({
       request: plannerRequest,
       account: {
@@ -413,11 +456,25 @@ export async function handlePortfolioRequest(
       openLots: ledger.openLots,
       taxLotsComplete,
       taxEvidenceWarnings: ledger.warnings,
-      currentTurnoverNotional: rollingTurnover(recentOrders),
-      policyMaxTurnoverPercent:
-        store.operationsPolicy().maxDailyTurnoverPercent,
-      asOf: new Date().toISOString(),
+      currentTurnoverNotional: rollingTurnover(
+        recentOrders,
+        evaluatedAt.getTime(),
+      ),
+      policyMaxTurnoverPercent: policy.maxDailyTurnoverPercent,
+      asOf: evaluatedAt.toISOString(),
     });
+    const serverRespondedAt = now();
+    const expiredMarket = market.find(
+      (row) => !rebalanceMarketEvidenceUsable(row, serverRespondedAt),
+    );
+    if (expiredMarket) {
+      return json(
+        {
+          error: `Fresh IEX trade evidence is unavailable for ${expiredMarket.symbol}`,
+        },
+        400,
+      );
+    }
     store.event("portfolio.rebalance_plan.created", actor, {
       targets: plannerRequest.targets,
       withinConstraints: plan.withinConstraints,
@@ -425,7 +482,32 @@ export async function handlePortfolioRequest(
       bindingConstraints: plan.bindingConstraints,
       taxEvidenceStatus: plan.tax.evidenceStatus,
     });
-    return json(plan);
+    return json(
+      portfolioRebalanceDto({
+        plan,
+        request: plannerRequest,
+        currentPositions: positions.map((position) => ({
+          symbol: String(position.symbol).toUpperCase(),
+          marketValue: Number(position.marketValue),
+        })),
+        marketEvidence: market,
+        recentOrders,
+        openLots: ledger.openLots,
+        accountRetrievedAt: accountRead.retrievedAt,
+        positionsRetrievedAt: positionsRead.retrievedAt,
+        ordersRetrievedAt: ordersRead.retrievedAt,
+        activitiesRetrievedAt: sync.retrievedAt,
+        activitiesCacheHit: sync.cacheHit,
+        activitiesTruncated: sync.truncated,
+        policy: {
+          schemaVersion: policy.schemaVersion,
+          maxDailyTurnoverPercent: policy.maxDailyTurnoverPercent,
+          updatedAt: policy.updatedAt,
+        },
+        policyRetrievedAt,
+        serverRespondedAt,
+      }),
+    );
   }
 
   if (url.pathname === "/api/portfolio/snapshots" && request.method === "GET") {
