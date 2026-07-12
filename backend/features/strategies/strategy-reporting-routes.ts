@@ -65,12 +65,16 @@ export async function handleStrategyReportingRequest(
     const traces = decisions
       .map((decision) => store.getStrategyDecisionTrace(decision.traceId))
       .filter(Boolean);
+    const retrievedAt = new Date().toISOString();
+    const serverRespondedAt = new Date().toISOString();
     return json(
       buildStrategyDashboard({
         run,
         decisions,
         traces: traces as any[],
         orders,
+        retrievedAt,
+        serverRespondedAt,
       }),
     );
   }

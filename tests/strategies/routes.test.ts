@@ -95,6 +95,49 @@ test("strategy routes create and list shadow runs through the runtime boundary",
   const listed = await handleStrategyRequest(list, new URL(list.url), context);
   expect((await listed?.json()).runs).toHaveLength(1);
   expect(store.verifyStrategyAuditTrail(createdBody.runId).valid).toBe(true);
+
+  const dashboardRequest = new Request(
+    `http://localhost/api/strategy/runs/${createdBody.runId}/dashboard`,
+  );
+  const dashboardResponse = await handleStrategyRequest(
+    dashboardRequest,
+    new URL(dashboardRequest.url),
+    context,
+  );
+  expect(dashboardResponse?.status).toBe(200);
+  expect(await dashboardResponse?.json()).toMatchObject({
+    dashboardVersion: "strategy-dashboard-v2",
+    run: { id: createdBody.runId, backtestId, comparable: true },
+    quality: {
+      status: "empty",
+      expected: {
+        runConfiguration: 1,
+        linkedBacktest: 1,
+        cleanProvenance: 1,
+        comparableRun: 1,
+        decisions: 1,
+        decisionTraces: 1,
+        marketSnapshots: 1,
+        snapshotObservationTimes: 1,
+        freshMarketSnapshots: 1,
+      },
+      received: {
+        runConfiguration: 1,
+        linkedBacktest: 1,
+        cleanProvenance: 1,
+        comparableRun: 1,
+        decisions: 0,
+      },
+      freshness: {
+        status: "unavailable",
+        expectedObservations: 1,
+        receivedObservations: 0,
+      },
+    },
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+  });
 });
 
 test("strategy routes enforce rate limits before strategy work", async () => {

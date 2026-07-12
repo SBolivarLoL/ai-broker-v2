@@ -2,6 +2,7 @@
 import type { StrategyDecisionKind, StrategyRunStatus } from "../../persistence/store";
 import type { StrategyProvenance } from "./strategy-provenance";
 import { strategyPaperState } from "./strategy-paper";
+import { buildStrategyDashboardCoverage } from "./strategy-dashboard-coverage";
 
 type StrategyRunDashboardInput = {
   id: string;
@@ -88,8 +89,13 @@ export function buildStrategyDashboard(input: {
   traces: StrategyDashboardTrace[];
   orders: StrategyDashboardOrder[];
   generatedAt?: string;
+  retrievedAt?: string;
+  serverRespondedAt?: string;
 }) {
-  const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const fallbackTime = input.generatedAt ?? new Date().toISOString();
+  const retrievedAt = input.retrievedAt ?? fallbackTime;
+  const serverRespondedAt = input.serverRespondedAt ?? fallbackTime;
+  const generatedAt = serverRespondedAt;
   const snapshots = input.traces.flatMap(trace => trace.snapshots ?? []);
   const staleSnapshotCount = snapshots.filter(snapshot => snapshot.stale).length;
   const reasons = input.decisions.flatMap(blockReasons);
@@ -112,9 +118,17 @@ export function buildStrategyDashboard(input: {
     input.orders.length ? null : "No strategy paper orders have been submitted for this run yet.",
     fillSamples.length ? null : "No filled strategy paper orders have fill-quality evidence yet.",
   ].filter(Boolean) as string[];
+  const coverage = buildStrategyDashboardCoverage({
+    run: input.run,
+    decisions: input.decisions,
+    traces: input.traces,
+    orders: input.orders,
+    retrievedAt,
+    serverRespondedAt,
+  });
 
   return {
-    dashboardVersion: "strategy-dashboard-v1",
+    dashboardVersion: "strategy-dashboard-v2",
     generatedAt,
     run: {
       id: input.run.id,
@@ -169,5 +183,6 @@ export function buildStrategyDashboard(input: {
       samples: fillSamples.slice(0, 10),
     },
     warnings,
+    ...coverage,
   };
 }
