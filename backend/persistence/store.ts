@@ -371,6 +371,50 @@ export function createStore(filename = "data/app.db") {
         "INSERT INTO events (type, actor, payload) VALUES (?, ?, ?)",
       ).run(type, actor, JSON.stringify(payload));
     },
+    closedBetaWorkflowRecord(input: {
+      eventType: string;
+      recordId: string;
+      auditKind: string;
+      actor: string;
+      payload: Record<string, unknown>;
+      recordedAt: string;
+    }) {
+      if (
+        !input.eventType.startsWith("operations.closed_beta.") ||
+        !input.auditKind.startsWith("closed_beta_") ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{7,80}$/.test(input.recordId)
+      )
+        throw new Error("Invalid closed-beta workflow persistence input");
+      return db.transaction(() => {
+        const audit = decisionAudit({
+          subjectId: `closed-beta:${input.recordId}`,
+          kind: input.auditKind,
+          actor: input.actor,
+          payload: input.payload,
+          retentionDays: 365 * 7,
+          createdAt: input.recordedAt,
+        });
+        const payload = {
+          ...input.payload,
+          auditEntryHash: audit.entryHash,
+        };
+        const inserted = db
+          .query(
+            "INSERT INTO events (type, actor, payload, created_at) VALUES (?, ?, ?, ?)",
+          )
+          .run(
+            input.eventType,
+            input.actor,
+            JSON.stringify(payload),
+            input.recordedAt,
+          );
+        return {
+          eventId: Number(inserted.lastInsertRowid),
+          payload,
+          auditEntryHash: audit.entryHash,
+        };
+      })();
+    },
     events(limit = 100, type?: string) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 1_000)
         throw new Error("Event limit is out of range");
@@ -833,6 +877,17 @@ export function createStore(filename = "data/app.db") {
             .query(`${decisionAuditSelect} ORDER BY id DESC LIMIT ?`)
             .all(limit);
       return (rows as any[]).map(mapDecisionAuditRow);
+    },
+    closedBetaAuditEntries(limit = 1_000) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 1_000)
+        throw new Error("Closed-beta audit limit is out of range");
+      return (
+        db
+          .query(
+            `${decisionAuditSelect} WHERE subject_id LIKE 'closed-beta:%' ORDER BY id DESC LIMIT ?`,
+          )
+          .all(limit) as any[]
+      ).map(mapDecisionAuditRow);
     },
     verifyDecisionAuditTrail() {
       const entries = (

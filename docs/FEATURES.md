@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `a433e1c`: 2026-07-13.
+Last reviewed against `main` commit `712c438`: 2026-07-13.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -12,7 +12,7 @@ The browser exposes seven workspaces:
 
 | Workspace  | Current capability                                                                                                                                                      |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home       | Paper account, holdings, operations policy, kill switch, closed-beta evidence, and order entry                                                                          |
+| Home       | Paper account, holdings, operations policy, kill switch, closed-beta operator review, and order entry                                                                   |
 | Markets    | Market session, watchlists, movers, most active stocks, monitored news/events, 8-K alerts, and multi-asset capability status                                            |
 | Portfolio  | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management                    |
 | Strategies | Crypto backtests, shadow/scheduled runs, protocol-gated paper approvals, manual crypto tickets, traces, metrics, alerts, performance, attribution, reviews, and reports |
@@ -20,7 +20,7 @@ The browser exposes seven workspaces:
 | Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                       |
 | AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                               |
 
-The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Navigation identifies only the current page rather than applying tab-only selected semantics to ordinary buttons. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions. A maintained Playwright/Chromium suite gates these keyboard and focus interactions in CI against isolated browser fixtures.
+The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Its paper-beta review renders all eight target details, supporting records, the newest recorded beta window, four required drills, unresolved incidents, warnings, append-only record forms, incident resolution, and packet export. Research provider reads begin only when the Research workspace is activated; recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Navigation identifies only the current page rather than applying tab-only selected semantics to ordinary buttons. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions. A maintained Playwright/Chromium suite gates these keyboard, focus, closed-beta attachment, and packet-export interactions in CI against isolated browser fixtures.
 
 ## Capability map
 
@@ -117,6 +117,7 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 - The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
 - `/api/operations/data-governance` inventories 16 provider/derived sources and all 23 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
 - `/api/operations/data-quality` surfaces provider and stored-dataset quality evidence from local observations so degraded, throttled, stale, unobserved, warning, and failed states are visible before relying on new decisions.
+- `/api/operations/closed-beta-review` builds a versioned review packet from measured paper evidence and append-only workflow events. Supporting records, backup-export/restore/kill-switch/incident-response drill outcomes, a 30-day one-to-five-participant beta window, incident openings, and incident resolutions are transactionally paired with exact SHA-256 decision-audit entries. Only target records and passing drills inside the newest recorded beta window count; undated receipts, decisions, and reviews fail closed, invalid or duplicate records remain visible, unresolved critical/high incidents block readiness, and the 1,000-event bound fails readiness rather than silently truncating proof. The packet download route is non-cacheable. Record and resolution writes are admin-only; reads remain operator/admin. `ready_for_external_review` is the strongest local status and `externallyApproved` is always false.
 
 ## Data flow
 
@@ -162,6 +163,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
 - SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
 - Ordered migrations through 0015, rollback/upgrade fixtures, and serialized backup restore with activity provenance and audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.
+- Closed-beta workflow references and notes are operator-supplied local records; the application verifies their shape, time scope, append-only audit linkage, and relationship to measured database evidence, but it does not fetch or independently authenticate the referenced external artifact. No real 30-day participant cohort or required operations drill has been completed by this implementation.
 - The governance registry is an internal decision record, not legal approval. Alpaca, Finnhub, GDELT, Treasury, FRED, BEA, SEC, BLS, OpenFIGI, and OpenAI terms still require an external entitlement review for the intended deployment.
 - Automatic retention is deliberately selective: order/decision/audit evidence, backtests, immutable bar datasets, notes, receipts, plans, account activity, portfolio snapshots, and non-research operations events remain until their separate policy changes or manual deletion. A scheduled run is local operational evidence, not proof of external legal/compliance approval or a production retention review.
 - Production hosting, real users, external compliance review, a measured paper beta, and live deployment review have not been completed.

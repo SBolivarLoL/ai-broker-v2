@@ -2404,6 +2404,84 @@ select.field {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+.closed-beta-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.closed-beta-workflow-grid > section,
+.closed-beta-target,
+.closed-beta-entry {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+.closed-beta-workflow-grid h4 {
+  margin: 0 0 10px;
+}
+#closed-beta-evidence {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.closed-beta-target summary,
+.closed-beta-entry > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.closed-beta-target summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.closed-beta-target-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.closed-beta-records {
+  display: grid;
+  gap: 8px;
+}
+.closed-beta-record {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.closed-beta-record strong,
+.closed-beta-record span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.closed-beta-record .muted {
+  margin-top: 3px;
+  font-size: 11px;
+}
+.closed-beta-entry {
+  margin-top: 10px;
+}
+.beta-record-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.beta-record-form label,
+.beta-record-form .wide-field {
+  min-width: 0;
+}
+.beta-record-form .wide-field,
+.beta-record-form > button {
+  grid-column: 1 / -1;
+}
+.closed-beta-limit {
+  margin-top: 12px;
+}
 .comparison-row {
   display: grid;
   grid-template-columns: minmax(180px, 1.3fr) repeat(3, minmax(100px, 0.7fr));
@@ -2528,7 +2606,9 @@ select.field {
   .compare-form,
   .comparison-row,
   .comparison-charts,
-  .comparison-experiments {
+  .comparison-experiments,
+  .closed-beta-workflow-grid,
+  .beta-record-form {
     grid-template-columns: 1fr;
   }
   .hero {
@@ -3376,7 +3456,8 @@ textarea.field {
     grid-template-columns: 1fr;
   }
   .comparison-charts,
-  .comparison-experiments {
+  .comparison-experiments,
+  .closed-beta-workflow-grid {
     grid-template-columns: 1fr;
   }
   .status-cluster {

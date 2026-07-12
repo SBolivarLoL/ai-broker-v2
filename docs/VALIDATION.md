@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `a433e1c`: 2026-07-13.
+Last reviewed against `main` commit `712c438`: 2026-07-13.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,10 +8,10 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-13                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 458 tests, 0 failures, 2,400 assertions across 95 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 467 tests, 0 failures, 2,463 assertions across 96 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run test:browser` | Pass: 2 tests, 0 failures across 1 Playwright file                            | Chromium keyboard navigation, table filter, error announcement, modal focus, cancellation, restoration, and confirmation wiring |
-| `bun run coverage` | Pass: 98.07% functions, 97.34% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
+| `bun run coverage` | Pass: 98.01% functions, 97.37% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -80,6 +80,21 @@ publication time, and use one identical `asOf`, server-response field, and neste
 server-response timestamp. Together with the provider and canonical-evidence
 contracts, this closes the normalized DTO and browser-facing time inventory.
 
+The closed-beta operator-workflow slice adds five deterministic packet/parser
+contracts, one transactional persistence contract, one strategy-system
+regression, and direct operations-handler and composed-application API
+coverage. They prove bounded input parsing; a minimum 30-day, one-to-five-
+participant window; newest-recorded correction selection; exact event-to-audit
+hash membership and exact subject/kind/actor/timestamp/payload binding; in-window target, receipt, decision, review, authentication,
+and drill evidence; explicit backup-export, restore, kill-switch, and incident-
+response drill semantics; append-only incident resolution; orphan, duplicate,
+pre-incident, malformed, future, undated, stale, and truncated evidence failure;
+admin-only writes; operator reads; stable 400/404/409 behavior; and a versioned,
+non-cacheable packet download. An ordinary backup or kill-switch event cannot
+masquerade as a completed drill. The strongest local result is
+`ready_for_external_review` with `externallyApproved:false`; these tests do not
+prove a real participant beta, a performed drill, or external approval.
+
 The in-app browser rendered all five new labeled coverage regions through the
 production Company Research workspace at 1280×720. SEC was complete; OpenFIGI
 was partial because mapping evidence is retrieval-only; GDELT was partial and
@@ -95,11 +110,11 @@ OpenAI request, order, policy, retention, or broker mutation.
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 107 backend modules, 13 operational/test-support scripts, 96 TypeScript files under `tests/`, and one Playwright configuration     |
-| Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 948 lines; browser behavior split across nine shell/style/script assets |
+| TypeScript    | 108 backend modules, 13 operational/test-support scripts, 97 TypeScript files under `tests/`, and one Playwright configuration     |
+| Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `a433e1c`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `712c438`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -124,8 +139,8 @@ OpenAI request, order, policy, retention, or broker mutation.
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
-| Browser UI                  | Maintained keyboard/focus plus targeted rendering confidence | CI runs two isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, and explicit confirmation. Earlier headed passes cover the Company Research panels and Strategy comparison workspace at 1440×1000, 768×1000, and 390×844 without page-level overflow | No maintained responsive or visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
-| Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                                                                                                                                                                                                                                                                                                       | No production-sized or closed-beta restore drill, deployment, real participants, or external approval                                     |
+| Browser UI                  | Maintained interaction plus targeted responsive rendering confidence | CI runs three isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, explicit confirmation, closed-beta evidence attachment, and packet export. Headed passes cover Company Research, Strategy comparison, and the closed-beta review at desktop/mobile widths without page-level overflow | No maintained visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
+| Production operations       | Audited local workflow plus fixture restore proof   | Readiness, backup export, incident packet, policy, auth, governance, append-only closed-beta review/packet contracts, exact audit linkage, and serialized restore tests                                                                                                                                                                                                                                                                                                                                       | No production-sized or real closed-beta restore drill, deployment, participant cohort, authenticated supporting artifacts, or external approval |
 
 ## Full documentation and repository audit
 
@@ -155,8 +170,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 107 backend TypeScript modules, 13 operational
-  and browser-test-support scripts, 96 TypeScript files under `tests/`, one
+- Fresh inventory checks found 108 backend TypeScript modules, 13 operational
+  and browser-test-support scripts, 97 TypeScript files under `tests/`, one
   coverage-gate test under `scripts/`, one Playwright browser file, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
@@ -445,7 +460,7 @@ exercised through the headed application pass recorded below.
 
 The following read-only checks were run:
 
-- A maintained 2026-07-13 Playwright 1.61.1 Chromium suite passed two tests
+- A maintained 2026-07-13 Playwright 1.61.1 Chromium suite passed three tests
   against a loopback server that exposes only the nine committed frontend
   assets. Browser-level API routes use bounded in-test JSON fixtures. The suite
   activates Portfolio and Strategy Lab from focused navigation buttons, checks
@@ -456,8 +471,20 @@ The following read-only checks were run:
   initial confirm focus, danger treatment, forward/reverse focus wrapping,
   Escape cancellation with zero mutation requests, trigger-focus restoration,
   and a second explicit keyboard confirmation before exactly one fixture POST.
+  The closed-beta fixture opens the supporting-record form, submits it through
+  the shared confirmation dialog, verifies the exact bounded POST and rendered
+  record, then downloads and verifies the versioned packet filename.
   The static server and fixtures read no `.env`, database, provider, account,
   or broker state; no real mutation or external request occurs.
+- A 2026-07-13 headed in-app browser pass rendered the production closed-beta
+  review against the configured local read-only server. At 1440×1000, all eight
+  targets, four drill slots, the beta window, incidents, warnings, and four
+  workflow forms rendered in three 380 CSS-pixel panels without page or card
+  overflow. At 390×844 the panels and opened supporting-record form collapsed
+  to one 330 CSS-pixel column while the document remained 390 pixels wide.
+  Private values remained masked. The pass opened the form but did not submit
+  a workflow record, resolve an incident, change policy, contact a broker for a
+  mutation, or create execution authority.
 - On 2026-07-12, the new reconciliation service ran once against the configured
   Alpaca paper account with an in-memory SQLite store. Account and IEX
   latest-versus-historical bar checks passed for three current symbols, no

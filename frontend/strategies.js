@@ -830,7 +830,7 @@ $("#strategy-tick-button").onclick = async (event) => {
       loadStrategyDecisions(activeStrategyRunId),
       loadReceipts(),
       loadOrders(),
-      loadClosedBetaEvidence(),
+      loadClosedBetaReview(),
     ]);
   } catch (error) {
     notify(error.message);
@@ -853,7 +853,7 @@ $("#strategy-scheduler-button").onclick = async (event) => {
     await Promise.all([
       loadStrategyRuns(),
       loadReceipts(),
-      loadClosedBetaEvidence(),
+      loadClosedBetaReview(),
     ]);
   } catch (error) {
     notify(error.message);
@@ -972,7 +972,7 @@ $("#strategy-paper-form").onsubmit = async (event) => {
     notify(
       `Paper automation approved for ${run.runId?.slice?.(0, 8) || activeStrategyRunId.slice(0, 8)}.`,
     );
-    await Promise.all([loadStrategyRuns(), loadClosedBetaEvidence()]);
+    await Promise.all([loadStrategyRuns(), loadClosedBetaReview()]);
   } catch (error) {
     notify(error.message);
   } finally {
@@ -1021,7 +1021,7 @@ $("#strategy-review-form").onsubmit = async (event) => {
     $("#strategy-review-note").value = "";
     $("#strategy-review-revision").value = "";
     notify(`Strategy review saved: ${action}.`);
-    await Promise.all([loadStrategyRuns(), loadClosedBetaEvidence()]);
+    await Promise.all([loadStrategyRuns(), loadClosedBetaReview()]);
   } catch (error) {
     notify(error.message);
   } finally {
@@ -1199,7 +1199,7 @@ $("#crypto-order-preview").onclick = async (event) => {
       loadReceipts(),
       load(),
       loadOperationsPolicy(),
-      loadClosedBetaEvidence(),
+      loadClosedBetaReview(),
     ]);
   } catch (error) {
     notify(error.message);

@@ -62,22 +62,61 @@ test("keeps unsupported crypto capabilities disabled until separate approval", (
 });
 
 test("measures closed beta targets from persisted paper evidence", () => {
+  const drillHashes = ["1", "2", "3", "4"].map(
+    (value) => `sha256:${value.repeat(64)}`,
+  );
+  const betaWindowHash = `sha256:${"5".repeat(64)}`;
   const report = buildClosedBetaEvidenceReport({
     paperClient: true,
     decisionAuditVerification: { valid: true, entries: 2, invalidEntryId: null },
-    receipts: [{ id: "receipt-1", orderId: "paper-order-1", idempotencyKey: "key-1", preview: { symbol: "BTC/USD" } }],
+    decisionAuditEntryHashes: [...drillHashes, betaWindowHash],
+    receipts: [{ id: "receipt-1", orderId: "paper-order-1", idempotencyKey: "key-1", preview: { symbol: "BTC/USD" }, createdAt: "2026-06-26T10:30:00.000Z" }],
     events: [
       { type: "operations.backup.exported", actor: "operator@example.com", payload: {}, createdAt: "2026-06-26T10:00:00.000Z" },
       { type: "operations.kill_switch.activated", actor: "operator@example.com", payload: {}, createdAt: "2026-06-26T10:05:00.000Z" },
       { type: "operations.kill_switch.cleared", actor: "operator@example.com", payload: {}, createdAt: "2026-06-26T10:10:00.000Z" },
+      ...["backup_export", "restore", "kill_switch", "incident_response"].map((drillType, index) => ({
+        type: "operations.closed_beta.drill_recorded",
+        actor: "operator@example.com",
+        payload: {
+          schemaVersion: "closed-beta-workflow-record-v1",
+          recordId: `drill-record-${index}`,
+          kind: "drill",
+          drillType,
+          outcome: "pass",
+          title: `${drillType} drill`,
+          reference: `local://drill/${drillType}`,
+          occurredAt: `2026-06-26T10:${20 + index}:00.000Z`,
+          auditEntryHash: drillHashes[index],
+        },
+        createdAt: `2026-06-26T10:${20 + index}:00.000Z`,
+      })),
+      {
+        type: "operations.closed_beta.beta_window_recorded",
+        actor: "operator@example.com",
+        payload: {
+          schemaVersion: "closed-beta-workflow-record-v1",
+          recordId: "beta-window-record-1",
+          kind: "beta_window",
+          title: "Paper beta window",
+          reference: "local://beta/window-1",
+          occurredAt: "2026-06-26T11:00:00.000Z",
+          startedAt: "2026-05-20T09:00:00.000Z",
+          endedAt: "2026-06-26T11:00:00.000Z",
+          participantCount: 3,
+          auditEntryHash: betaWindowHash,
+        },
+        createdAt: "2026-06-26T11:00:00.000Z",
+      },
     ],
-    strategyRuns: [{ id: "run-1", status: "paper", config: { paperApproval: {} }, reviewCount: 1 }],
+    strategyRuns: [{ id: "run-1", status: "paper", config: { paperApproval: {} }, reviewCount: 1, reviewTimes: ["2026-06-26T10:40:00.000Z"] }],
     strategyDecisions: [{
       runId: "run-1",
       decision: "block",
       riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: false },
       paperOrderId: null,
       orderOutcome: "none",
+      createdAt: "2026-06-26T10:45:00.000Z",
     }],
     backupMetadata: { sha256: "sha256:backup", sizeBytes: 1024, createdAt: "2026-06-26T10:00:00.000Z" },
   }, "2026-06-26T12:00:00.000Z");
@@ -85,6 +124,9 @@ test("measures closed beta targets from persisted paper evidence", () => {
   expect(report.summary).toMatchObject({ totalTargets: 8, pass: 8, fail: 0, needsEvidence: 0, readyForExitReview: true });
   expect(report.targets.find(target => target.id === "stale_data")).toMatchObject({ status: "pass" });
   expect(report.targets.find(target => target.id === "operations_drills")).toMatchObject({ status: "pass" });
+  expect(report.targets.find(target => target.id === "operations_drills")?.observedEvidence).toMatchObject({
+    requiredDrills: ["backup_export", "restore", "kill_switch", "incident_response"],
+  });
 });
 
 test("regression: closed beta evidence fails closed when safety evidence is incomplete", () => {
@@ -106,7 +148,7 @@ test("regression: closed beta evidence fails closed when safety evidence is inco
     backupMetadata: null,
   }, "2026-06-26T12:00:00.000Z");
 
-  expect(report.summary).toMatchObject({ pass: 0, fail: 7, needsEvidence: 1, readyForExitReview: false });
+  expect(report.summary).toMatchObject({ pass: 0, fail: 6, needsEvidence: 2, readyForExitReview: false });
   expect(report.summary.openTargets).toEqual([
     "paper_only_execution",
     "authorization_integrity",
@@ -119,10 +161,73 @@ test("regression: closed beta evidence fails closed when safety evidence is inco
   ]);
   expect(report.targets.find(target => target.id === "signed_preview_coverage")).toMatchObject({
     status: "fail",
-    actual: "1/2 submitted order receipts have preview or trace evidence.",
+    actual: "2 submitted order receipts lack a usable evidence time.",
   });
   expect(report.targets.find(target => target.id === "stale_data")).toMatchObject({
     status: "fail",
     observedEvidence: { staleSubmittedCount: 1 },
+  });
+});
+
+test("ordinary backup and kill-switch events do not masquerade as completed drills", () => {
+  const report = buildClosedBetaEvidenceReport(
+    {
+      paperClient: true,
+      decisionAuditVerification: {
+        valid: true,
+        entries: 1,
+        invalidEntryId: null,
+      },
+      decisionAuditEntryHashes: [],
+      receipts: [],
+      events: [
+        {
+          type: "operations.backup.exported",
+          actor: "operator@example.com",
+          payload: {},
+          createdAt: "2026-07-12T09:00:00.000Z",
+        },
+        {
+          type: "operations.kill_switch.activated",
+          actor: "operator@example.com",
+          payload: {},
+          createdAt: "2026-07-12T09:05:00.000Z",
+        },
+        {
+          type: "operations.kill_switch.cleared",
+          actor: "operator@example.com",
+          payload: {},
+          createdAt: "2026-07-12T09:10:00.000Z",
+        },
+      ],
+      strategyRuns: [],
+      strategyDecisions: [],
+      backupMetadata: {
+        sha256: "sha256:backup",
+        sizeBytes: 1_024,
+        createdAt: "2026-07-12T09:00:00.000Z",
+      },
+    },
+    "2026-07-13T10:00:00.000Z",
+  );
+
+  expect(
+    report.targets.find((target) => target.id === "operations_drills"),
+  ).toMatchObject({
+    status: "needs_evidence",
+    observedEvidence: {
+      backupExportsInWindow: 0,
+      killSwitchActivationsInWindow: 0,
+      killSwitchClearsInWindow: 0,
+      totalBackupExports: 1,
+      totalKillSwitchActivations: 1,
+      totalKillSwitchClears: 1,
+      drillEvidence: [
+        { drillType: "backup_export", passed: false },
+        { drillType: "restore", passed: false },
+        { drillType: "kill_switch", passed: false },
+        { drillType: "incident_response", passed: false },
+      ],
+    },
   });
 });

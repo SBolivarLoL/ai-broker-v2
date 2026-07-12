@@ -99,6 +99,208 @@ test("operations data-quality route exposes provider health evidence", async () 
   });
 });
 
+test("closed-beta review routes append evidence resolve incidents and export a packet", async () => {
+  const store = createStore(":memory:");
+  const initial = await route(store, "/api/operations/closed-beta-review");
+  expect(initial?.status).toBe(200);
+  expect(await initial?.json()).toMatchObject({
+    packetVersion: "closed-beta-review-packet-v1",
+    status: "needs_evidence",
+    scope: { executionMode: "paper_only", externallyApproved: false },
+    summary: {
+      totalTargets: 8,
+      targetsMissingSupportingRecords: expect.any(Array),
+      missingDrills: [
+        "backup_export",
+        "restore",
+        "kill_switch",
+        "incident_response",
+      ],
+    },
+  });
+
+  const supporting = await route(
+    store,
+    "/api/operations/closed-beta-review/records",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        kind: "supporting_record",
+        targetId: "paper_only_execution",
+        title: "Paper client configuration",
+        reference: "local://paper-client/1",
+        occurredAt: "2026-07-12T09:00:00.000Z",
+        note: "Reviewed paper-only construction.",
+      }),
+    },
+  );
+  expect(supporting?.status).toBe(201);
+  expect(await supporting?.json()).toMatchObject({
+    record: {
+      kind: "supporting_record",
+      targetId: "paper_only_execution",
+      auditEntryHash: expect.stringMatching(/^sha256:/),
+    },
+  });
+
+  for (const drillType of [
+    "backup_export",
+    "restore",
+    "kill_switch",
+    "incident_response",
+  ]) {
+    const response = await route(
+      store,
+      "/api/operations/closed-beta-review/records",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "drill",
+          drillType,
+          outcome: "pass",
+          title: `${drillType} drill`,
+          reference: `local://drill/${drillType}`,
+          occurredAt: "2026-07-12T10:00:00.000Z",
+        }),
+      },
+    );
+    expect(response?.status).toBe(201);
+  }
+
+  const betaWindow = await route(
+    store,
+    "/api/operations/closed-beta-review/records",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        kind: "beta_window",
+        title: "Paper beta window",
+        reference: "local://beta/window-1",
+        startedAt: "2026-06-10T09:00:00.000Z",
+        endedAt: "2026-07-12T12:00:00.000Z",
+        participantCount: 3,
+      }),
+    },
+  );
+  expect(betaWindow?.status).toBe(201);
+  expect(await betaWindow?.json()).toMatchObject({
+    record: { kind: "beta_window", participantCount: 3 },
+  });
+
+  const incidentResponse = await route(
+    store,
+    "/api/operations/closed-beta-review/records",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        kind: "incident",
+        severity: "high",
+        title: "Reconciliation discrepancy",
+        reference: "local://incident/1",
+        occurredAt: "2026-07-12T11:00:00.000Z",
+      }),
+    },
+  );
+  expect(incidentResponse?.status).toBe(201);
+  const incidentBody = (await incidentResponse?.json()) as any;
+  const incidentRecordId = String(incidentBody.record.recordId);
+
+  const openReview = await route(
+    store,
+    "/api/operations/closed-beta-review",
+  );
+  expect(await openReview?.json()).toMatchObject({
+    summary: {
+      unresolvedIncidentCount: 1,
+      unresolvedCriticalHighCount: 1,
+      missingDrills: [],
+      completedBetaWindow: true,
+    },
+    incidents: {
+      unresolved: [{ recordId: incidentRecordId, severity: "high" }],
+    },
+    measuredEvidence: {
+      targets: expect.arrayContaining([
+        expect.objectContaining({ id: "operations_drills", status: "pass" }),
+      ]),
+    },
+  });
+
+  const missingIncident = await route(
+    store,
+    "/api/operations/closed-beta-review/incidents/missing-incident/resolve",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        resolution: "Not found",
+        resolvedAt: "2026-07-12T12:00:00.000Z",
+      }),
+    },
+  );
+  expect(missingIncident?.status).toBe(404);
+
+  const earlyResolution = await route(
+    store,
+    `/api/operations/closed-beta-review/incidents/${incidentRecordId}/resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        resolution: "Too early",
+        resolvedAt: "2026-07-12T10:59:00.000Z",
+      }),
+    },
+  );
+  expect(earlyResolution?.status).toBe(400);
+
+  const resolved = await route(
+    store,
+    `/api/operations/closed-beta-review/incidents/${incidentRecordId}/resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        resolution: "Reconciled broker and local order evidence.",
+        resolvedAt: "2026-07-12T12:00:00.000Z",
+      }),
+    },
+  );
+  expect(resolved?.status).toBe(200);
+  expect(await resolved?.json()).toMatchObject({
+    resolution: {
+      incidentRecordId,
+      auditEntryHash: expect.stringMatching(/^sha256:/),
+    },
+    workflowSummary: { unresolvedCriticalHighCount: 0 },
+  });
+  const duplicateResolution = await route(
+    store,
+    `/api/operations/closed-beta-review/incidents/${incidentRecordId}/resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        resolution: "Duplicate",
+        resolvedAt: "2026-07-12T12:30:00.000Z",
+      }),
+    },
+  );
+  expect(duplicateResolution?.status).toBe(409);
+
+  const packet = await route(
+    store,
+    "/api/operations/closed-beta-review/packet",
+  );
+  expect(packet?.status).toBe(200);
+  expect(packet?.headers.get("content-disposition")).toContain(
+    "closed-beta-review-",
+  );
+  expect(await packet?.json()).toMatchObject({
+    incidents: {
+      records: [{ recordId: incidentRecordId, status: "resolved" }],
+    },
+  });
+  expect(store.verifyDecisionAuditTrail()).toMatchObject({ valid: true });
+  store.close();
+});
+
 test("operations reconciliation route reports evidence and owns manual runs", async () => {
   const store = createStore(":memory:");
   const unavailable = await route(store, "/api/operations/reconciliation", {

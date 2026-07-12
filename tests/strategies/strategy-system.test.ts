@@ -293,22 +293,61 @@ describe("strategy backend system flow", () => {
       reasonCodedFailures: { stale_data: 1 },
     });
 
+    const betaDrillHashes = ["1", "2", "3", "4"].map(
+      (value) => `sha256:${value.repeat(64)}`,
+    );
+    const betaWindowHash = `sha256:${"5".repeat(64)}`;
     const beta = buildClosedBetaEvidenceReport({
       paperClient: true,
       decisionAuditVerification: { valid: true, entries: 1, invalidEntryId: null },
+      decisionAuditEntryHashes: [...betaDrillHashes, betaWindowHash],
       receipts: [],
       events: [
         { type: "operations.backup.exported", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:00:00.000Z" },
         { type: "operations.kill_switch.activated", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:01:00.000Z" },
         { type: "operations.kill_switch.cleared", actor: "operator@example.com", payload: {}, createdAt: "2026-06-24T13:02:00.000Z" },
+        ...["backup_export", "restore", "kill_switch", "incident_response"].map((drillType, index) => ({
+          type: "operations.closed_beta.drill_recorded",
+          actor: "operator@example.com",
+          payload: {
+            schemaVersion: "closed-beta-workflow-record-v1",
+            recordId: `system-drill-${index}`,
+            kind: "drill",
+            drillType,
+            outcome: "pass",
+            title: `${drillType} drill`,
+            reference: `local://drill/${drillType}`,
+            occurredAt: `2026-06-24T12:${50 + index}:00.000Z`,
+            auditEntryHash: betaDrillHashes[index],
+          },
+          createdAt: `2026-06-24T12:${50 + index}:00.000Z`,
+        })),
+        {
+          type: "operations.closed_beta.beta_window_recorded",
+          actor: "operator@example.com",
+          payload: {
+            schemaVersion: "closed-beta-workflow-record-v1",
+            recordId: "system-beta-window",
+            kind: "beta_window",
+            title: "System paper beta",
+            reference: "local://beta/system",
+            occurredAt: "2026-06-24T13:05:00.000Z",
+            startedAt: "2026-05-20T13:05:00.000Z",
+            endedAt: "2026-06-24T13:05:00.000Z",
+            participantCount: 1,
+            auditEntryHash: betaWindowHash,
+          },
+          createdAt: "2026-06-24T13:05:00.000Z",
+        },
       ],
-      strategyRuns: [{ id: "run-blocked", status: "paper", config: { paperApproval: approval }, reviewCount: 1 }],
+      strategyRuns: [{ id: "run-blocked", status: "paper", config: { paperApproval: approval }, reviewCount: 1, reviewTimes: ["2026-06-24T13:03:00.000Z"] }],
       strategyDecisions: [{
         runId: "run-blocked",
         decision: "block",
         riskChecks: { mode: "paper", allowed: false, reasons: ["stale_data"], submittedOrder: false },
         paperOrderId: null,
         orderOutcome: "none",
+        createdAt: "2026-06-24T13:00:00.000Z",
       }],
       backupMetadata: { sha256: "sha256:backup", sizeBytes: 2048, createdAt: "2026-06-24T13:00:00.000Z" },
     }, "2026-06-24T13:10:00.000Z");

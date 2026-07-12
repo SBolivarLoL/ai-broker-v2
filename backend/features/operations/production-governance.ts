@@ -2,6 +2,8 @@
  * Produces release-readiness evidence for compliance, security, reliability,
  * and operational ownership without claiming automated legal approval.
  */
+import { CLOSED_BETA_DRILL_TYPES } from "./closed-beta-workflow";
+
 export type ComplianceReviewDomain = {
   id: string;
   name: string;
@@ -86,15 +88,23 @@ export type ClosedBetaEvidenceTarget = ClosedBetaSafetyTarget & {
 export type ClosedBetaEvidenceInput = {
   paperClient: boolean;
   decisionAuditVerification: { valid: boolean; entries: number; invalidEntryId: number | null };
+  decisionAuditEntryHashes?: string[];
   receipts: Record<string, unknown>[];
   events: { type: string; actor: string; payload: unknown; createdAt: string }[];
-  strategyRuns: { id: string; status: string; config: Record<string, unknown>; reviewCount: number }[];
+  strategyRuns: {
+    id: string;
+    status: string;
+    config: Record<string, unknown>;
+    reviewCount: number;
+    reviewTimes?: string[];
+  }[];
   strategyDecisions: {
     runId: string;
     decision: string;
     riskChecks: Record<string, unknown>;
     paperOrderId?: string | null;
     orderOutcome?: string | null;
+    createdAt?: string | null;
   }[];
   backupMetadata: { sha256: string; sizeBytes: number; createdAt: string } | null;
 };
@@ -239,7 +249,7 @@ const DISABLED_CRYPTO_CAPABILITIES: DisabledCryptoCapability[] = [
   },
 ];
 
-const CLOSED_BETA_TARGETS: ClosedBetaSafetyTarget[] = [
+export const CLOSED_BETA_TARGETS: ClosedBetaSafetyTarget[] = [
   {
     id: "paper_only_execution",
     metric: "Live order submissions",
@@ -300,8 +310,91 @@ function measuredTarget(id: string, status: ClosedBetaEvidenceStatus, actual: st
   return { ...target(id), status, actual, observedEvidence };
 }
 
-function eventCount(input: ClosedBetaEvidenceInput, type: string) {
-  return input.events.filter(event => event.type === type).length;
+function evidenceTime(value: unknown) {
+  const raw = String(value ?? "");
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
+    ? `${raw.replace(" ", "T")}Z`
+    : raw;
+  return new Date(normalized).getTime();
+}
+
+function passedDrillEvidence(
+  input: ClosedBetaEvidenceInput,
+  generatedAt: string,
+) {
+  const auditHashes = new Set(input.decisionAuditEntryHashes ?? []);
+  const maximumTime = new Date(generatedAt).getTime() + 5 * 60_000;
+  const betaWindow = input.events
+    .flatMap((event) => {
+      if (event.type !== "operations.closed_beta.beta_window_recorded")
+        return [];
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        return [];
+      const record = payload as Record<string, unknown>;
+      const startedAt = evidenceTime(record.startedAt);
+      const endedAt = evidenceTime(record.endedAt);
+      const occurredAt = evidenceTime(record.occurredAt);
+      const recordedAt = evidenceTime(record.recordedAt ?? event.createdAt);
+      const participants = Number(record.participantCount);
+      return record.schemaVersion === "closed-beta-workflow-record-v1" &&
+        record.kind === "beta_window" &&
+        /^[A-Za-z0-9][A-Za-z0-9_-]{7,80}$/.test(
+          String(record.recordId ?? ""),
+        ) &&
+        Boolean(String(record.title ?? "").trim()) &&
+        Boolean(String(record.reference ?? "").trim()) &&
+        Number.isFinite(startedAt) &&
+        Number.isFinite(endedAt) &&
+        occurredAt === endedAt &&
+        endedAt - startedAt >= 30 * 86_400_000 &&
+        endedAt <= maximumTime &&
+        Number.isFinite(recordedAt) &&
+        recordedAt <= maximumTime &&
+        Number.isInteger(participants) &&
+        participants >= 1 &&
+        participants <= 5 &&
+        auditHashes.has(String(record.auditEntryHash ?? ""))
+        ? [{ startedAt, endedAt, recordedAt, participantCount: participants }]
+        : [];
+    })
+    .toSorted((left, right) => right.recordedAt - left.recordedAt)[0] ?? null;
+  const drills = CLOSED_BETA_DRILL_TYPES.map((drillType) => {
+    const records = input.events.filter((event) => {
+      if (event.type !== "operations.closed_beta.drill_recorded") return false;
+      const payload = event.payload;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        return false;
+      const record = payload as Record<string, unknown>;
+      const occurredAt = evidenceTime(record.occurredAt);
+      return (
+        record.schemaVersion === "closed-beta-workflow-record-v1" &&
+        record.kind === "drill" &&
+        record.drillType === drillType &&
+        record.outcome === "pass" &&
+        /^[A-Za-z0-9][A-Za-z0-9_-]{7,80}$/.test(
+          String(record.recordId ?? ""),
+        ) &&
+        Boolean(String(record.title ?? "").trim()) &&
+        Boolean(String(record.reference ?? "").trim()) &&
+        Number.isFinite(occurredAt) &&
+        occurredAt <= maximumTime &&
+        Boolean(betaWindow) &&
+        occurredAt >= betaWindow!.startedAt &&
+        occurredAt <= betaWindow!.endedAt &&
+        auditHashes.has(String(record.auditEntryHash ?? ""))
+      );
+    });
+    return {
+      drillType,
+      passed: records.length > 0,
+      timestamps: records.map((event) => {
+        const payload = event.payload as Record<string, unknown>;
+        return String(payload.occurredAt ?? event.createdAt);
+      }),
+    };
+  });
+  return { betaWindow, drills };
 }
 
 function riskReasons(value: Record<string, unknown>) {
@@ -332,65 +425,204 @@ function receiptHasSignedEvidence(receipt: Record<string, unknown>) {
 }
 
 export function buildClosedBetaEvidenceReport(input: ClosedBetaEvidenceInput, generatedAt = new Date().toISOString()): ClosedBetaEvidenceReport {
-  const orderReceipts = input.receipts.filter(receiptLooksLikeSubmittedOrder);
+  const drillReview = passedDrillEvidence(input, generatedAt);
+  const betaWindow = drillReview.betaWindow;
+  const withinBetaWindow = (value: unknown) => {
+    if (!betaWindow) return false;
+    const time = evidenceTime(value);
+    return (
+      Number.isFinite(time) &&
+      time >= betaWindow.startedAt &&
+      time <= betaWindow.endedAt
+    );
+  };
+  const allOrderReceipts = input.receipts.filter(receiptLooksLikeSubmittedOrder);
+  const undatedOrderReceipts = allOrderReceipts.filter(
+    (receipt) => !Number.isFinite(evidenceTime(receipt.createdAt)),
+  );
+  const orderReceipts = allOrderReceipts.filter((receipt) =>
+    withinBetaWindow(receipt.createdAt),
+  );
   const signedOrderReceipts = orderReceipts.filter(receiptHasSignedEvidence);
-  const paperStrategyDecisions = input.strategyDecisions.filter(isPaperStrategyDecision);
+  const allPaperStrategyDecisions = input.strategyDecisions.filter(
+    isPaperStrategyDecision,
+  );
+  const undatedPaperStrategyDecisions = allPaperStrategyDecisions.filter(
+    (decision) =>
+      !Number.isFinite(evidenceTime(decision.createdAt)),
+  );
+  const paperStrategyDecisions = allPaperStrategyDecisions.filter((decision) =>
+    withinBetaWindow(decision.createdAt),
+  );
   const paperStrategyDecisionsWithRiskEvidence = paperStrategyDecisions.filter(decision => typeof decision.riskChecks.allowed === "boolean" && Array.isArray(decision.riskChecks.reasons));
-  const staleSubmitted = paperStrategyDecisions.filter(decision => riskReasons(decision.riskChecks).includes("stale_data") && (decision.riskChecks.submittedOrder === true || Boolean(decision.paperOrderId)));
+  const staleSubmitted = allPaperStrategyDecisions.filter(decision => riskReasons(decision.riskChecks).includes("stale_data") && (decision.riskChecks.submittedOrder === true || Boolean(decision.paperOrderId)));
   const approvedPaperRuns = input.strategyRuns.filter(run => run.status === "paper" || Boolean(run.config.paperApproval));
-  const reviewedPaperRuns = approvedPaperRuns.filter(run => run.reviewCount > 0);
-  const backupExports = eventCount(input, "operations.backup.exported");
-  const killSwitchActivations = eventCount(input, "operations.kill_switch.activated");
-  const killSwitchClears = eventCount(input, "operations.kill_switch.cleared");
+  const reviewedPaperRuns = approvedPaperRuns.filter((run) =>
+    (run.reviewTimes ?? []).some(withinBetaWindow),
+  );
+  const betaEvents = input.events.filter((event) =>
+    withinBetaWindow(event.createdAt),
+  );
+  const totalBackupExports = input.events.filter(
+    (event) => event.type === "operations.backup.exported",
+  ).length;
+  const totalKillSwitchActivations = input.events.filter(
+    (event) => event.type === "operations.kill_switch.activated",
+  ).length;
+  const totalKillSwitchClears = input.events.filter(
+    (event) => event.type === "operations.kill_switch.cleared",
+  ).length;
+  const backupExportsInWindow = betaEvents.filter(
+    (event) => event.type === "operations.backup.exported",
+  ).length;
+  const killSwitchActivationsInWindow = betaEvents.filter(
+    (event) => event.type === "operations.kill_switch.activated",
+  ).length;
+  const killSwitchClearsInWindow = betaEvents.filter(
+    (event) => event.type === "operations.kill_switch.cleared",
+  ).length;
+  const drillEvidence = drillReview.drills;
+  const passedDrills = drillEvidence.filter((drill) => drill.passed).length;
   const unauthorizedSuccesses = input.events.filter(event => /unauthorized|forbidden/i.test(event.type) && !/blocked|rejected|failed/i.test(event.type));
   const targets = [
     measuredTarget(
       "paper_only_execution",
       input.paperClient ? "pass" : "fail",
       input.paperClient ? "Broker client reports paper-only execution mode." : "Broker client is not confirmed paper-only.",
-      { paperClient: input.paperClient, orderReceiptCount: orderReceipts.length },
+      {
+        paperClient: input.paperClient,
+        inWindowOrderReceiptCount: orderReceipts.length,
+        totalOrderReceiptCount: allOrderReceipts.length,
+      },
     ),
     measuredTarget(
       "authorization_integrity",
-      unauthorizedSuccesses.length ? "fail" : input.events.length ? "pass" : "needs_evidence",
-      unauthorizedSuccesses.length ? `${unauthorizedSuccesses.length} suspicious privileged auth events need review.` : input.events.length ? "No successful unauthorized privileged operation events were found." : "No operations event history is available yet.",
-      { checkedEvents: input.events.length, suspiciousEvents: unauthorizedSuccesses.map(event => ({ type: event.type, createdAt: event.createdAt, actor: event.actor })) },
+      unauthorizedSuccesses.length
+        ? "fail"
+        : betaEvents.length
+          ? "pass"
+          : "needs_evidence",
+      unauthorizedSuccesses.length
+        ? `${unauthorizedSuccesses.length} suspicious privileged auth events need review.`
+        : betaEvents.length
+          ? "No successful unauthorized privileged operation events were found inside the beta window."
+          : "No in-window operations event history is available yet.",
+      {
+        checkedInWindowEvents: betaEvents.length,
+        checkedTotalEvents: input.events.length,
+        suspiciousEvents: unauthorizedSuccesses.map(event => ({ type: event.type, createdAt: event.createdAt, actor: event.actor })),
+      },
     ),
     measuredTarget(
       "decision_audit_validity",
-      input.decisionAuditVerification.entries ? input.decisionAuditVerification.valid ? "pass" : "fail" : "needs_evidence",
-      input.decisionAuditVerification.entries ? `${input.decisionAuditVerification.entries} decision-audit entries verified.` : "No decision-audit entries have been recorded yet.",
+      !input.decisionAuditVerification.valid
+        ? "fail"
+        : betaWindow && input.decisionAuditVerification.entries
+          ? "pass"
+          : "needs_evidence",
+      !input.decisionAuditVerification.valid
+        ? "The decision-audit chain is invalid."
+        : betaWindow && input.decisionAuditVerification.entries
+          ? `${input.decisionAuditVerification.entries} decision-audit entries verified against the recorded beta window.`
+          : "A beta window and at least one decision-audit entry are required.",
       { verification: input.decisionAuditVerification },
     ),
     measuredTarget(
       "signed_preview_coverage",
-      orderReceipts.length ? signedOrderReceipts.length === orderReceipts.length ? "pass" : "fail" : "needs_evidence",
-      orderReceipts.length ? `${signedOrderReceipts.length}/${orderReceipts.length} submitted order receipts have preview or trace evidence.` : "No submitted order receipts have been recorded yet.",
-      { orderReceiptCount: orderReceipts.length, signedEvidenceCount: signedOrderReceipts.length },
+      undatedOrderReceipts.length
+        ? "fail"
+        : orderReceipts.length
+          ? signedOrderReceipts.length === orderReceipts.length
+            ? "pass"
+            : "fail"
+          : "needs_evidence",
+      undatedOrderReceipts.length
+        ? `${undatedOrderReceipts.length} submitted order receipts lack a usable evidence time.`
+        : orderReceipts.length
+          ? `${signedOrderReceipts.length}/${orderReceipts.length} in-window submitted order receipts have preview or trace evidence.`
+          : "No submitted order receipts fall inside the beta window yet.",
+      {
+        totalOrderReceiptCount: allOrderReceipts.length,
+        inWindowOrderReceiptCount: orderReceipts.length,
+        undatedOrderReceiptCount: undatedOrderReceipts.length,
+        signedEvidenceCount: signedOrderReceipts.length,
+      },
     ),
     measuredTarget(
       "strategy_risk_blocks",
-      paperStrategyDecisions.length ? paperStrategyDecisionsWithRiskEvidence.length === paperStrategyDecisions.length ? "pass" : "fail" : "needs_evidence",
-      paperStrategyDecisions.length ? `${paperStrategyDecisionsWithRiskEvidence.length}/${paperStrategyDecisions.length} paper strategy decisions include persisted risk-check evidence.` : "No paper strategy decisions have been recorded yet.",
-      { paperStrategyDecisionCount: paperStrategyDecisions.length, withRiskEvidence: paperStrategyDecisionsWithRiskEvidence.length },
+      undatedPaperStrategyDecisions.length
+        ? "fail"
+        : paperStrategyDecisions.length
+          ? paperStrategyDecisionsWithRiskEvidence.length === paperStrategyDecisions.length
+            ? "pass"
+            : "fail"
+          : "needs_evidence",
+      undatedPaperStrategyDecisions.length
+        ? `${undatedPaperStrategyDecisions.length} paper strategy decisions lack a usable evidence time.`
+        : paperStrategyDecisions.length
+          ? `${paperStrategyDecisionsWithRiskEvidence.length}/${paperStrategyDecisions.length} in-window paper strategy decisions include persisted risk-check evidence.`
+          : "No paper strategy decisions fall inside the beta window yet.",
+      {
+        totalPaperStrategyDecisionCount: allPaperStrategyDecisions.length,
+        paperStrategyDecisionCount: paperStrategyDecisions.length,
+        undatedPaperStrategyDecisionCount: undatedPaperStrategyDecisions.length,
+        withRiskEvidence: paperStrategyDecisionsWithRiskEvidence.length,
+      },
     ),
     measuredTarget(
       "stale_data",
-      paperStrategyDecisions.length ? staleSubmitted.length ? "fail" : "pass" : "needs_evidence",
-      paperStrategyDecisions.length ? `${staleSubmitted.length} stale-data decisions submitted a paper order.` : "No paper strategy decisions have been recorded yet.",
+      staleSubmitted.length
+        ? "fail"
+        : paperStrategyDecisions.length
+          ? "pass"
+          : "needs_evidence",
+      staleSubmitted.length
+        ? `${staleSubmitted.length} stale-data decisions submitted a paper order.`
+        : paperStrategyDecisions.length
+          ? "No in-window stale-data decision submitted a paper order."
+          : "No paper strategy decisions fall inside the beta window yet.",
       { staleSubmittedCount: staleSubmitted.length, checkedPaperStrategyDecisions: paperStrategyDecisions.length },
     ),
     measuredTarget(
       "operations_drills",
-      backupExports > 0 && killSwitchActivations > 0 && killSwitchClears > 0 && input.backupMetadata ? "pass" : "needs_evidence",
-      `Backup exports: ${backupExports}; kill-switch activations: ${killSwitchActivations}; kill-switch clears: ${killSwitchClears}.`,
-      { backupExports, killSwitchActivations, killSwitchClears, latestBackup: input.backupMetadata },
+      passedDrills === CLOSED_BETA_DRILL_TYPES.length
+        ? "pass"
+        : "needs_evidence",
+      `${passedDrills}/${CLOSED_BETA_DRILL_TYPES.length} explicit backup, restore, kill-switch and incident-response drills have passing evidence.`,
+      {
+        requiredDrills: [...CLOSED_BETA_DRILL_TYPES],
+        betaWindow: drillReview.betaWindow
+          ? {
+              startedAt: new Date(drillReview.betaWindow.startedAt).toISOString(),
+              endedAt: new Date(drillReview.betaWindow.endedAt).toISOString(),
+              participantCount: drillReview.betaWindow.participantCount,
+            }
+          : null,
+        drillEvidence,
+        backupExportsInWindow,
+        killSwitchActivationsInWindow,
+        killSwitchClearsInWindow,
+        totalBackupExports,
+        totalKillSwitchActivations,
+        totalKillSwitchClears,
+        latestBackup: input.backupMetadata,
+      },
     ),
     measuredTarget(
       "review_cadence",
-      approvedPaperRuns.length ? reviewedPaperRuns.length === approvedPaperRuns.length ? "pass" : "fail" : "needs_evidence",
-      approvedPaperRuns.length ? `${reviewedPaperRuns.length}/${approvedPaperRuns.length} approved paper strategy runs have review notes.` : "No approved paper strategy runs have been recorded yet.",
-      { approvedPaperRuns: approvedPaperRuns.map(run => ({ id: run.id, status: run.status, reviewCount: run.reviewCount })), reviewedPaperRunCount: reviewedPaperRuns.length },
+      !betaWindow
+        ? "needs_evidence"
+        : approvedPaperRuns.length
+          ? reviewedPaperRuns.length === approvedPaperRuns.length
+            ? "pass"
+            : "fail"
+          : "needs_evidence",
+      !betaWindow
+        ? "A completed beta window is required before review cadence can pass."
+        : approvedPaperRuns.length
+          ? `${reviewedPaperRuns.length}/${approvedPaperRuns.length} approved paper strategy runs have an in-window review note.`
+          : "No approved paper strategy runs have been recorded yet.",
+      { approvedPaperRuns: approvedPaperRuns.map(run => ({ id: run.id, status: run.status, reviewCount: run.reviewCount, reviewTimes: run.reviewTimes ?? [] })), reviewedPaperRunCount: reviewedPaperRuns.length },
     ),
   ];
   const summary = {
