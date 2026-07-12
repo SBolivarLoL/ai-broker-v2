@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `a10f8f6`: 2026-07-12.
+Last reviewed against `main` commit `8afae5a`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 428 tests, 0 failures, 1,984 assertions across 92 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 442 tests, 0 failures, 2,312 assertions across 93 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.16% functions, 97.22% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.17% functions, 97.23% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -25,6 +25,17 @@ scheduler configuration. A separate order-runtime regression proves that a
 stale REST snapshot rejected by the tracker also cannot update durable receipt
 or strategy-order state.
 
+The provider-contract slice adds 14 fixture-backed contracts and a versioned
+manifest covering all 15 external governance source IDs. The committed payloads
+exercise malformed values and envelopes, partial endpoint/series responses,
+HTTP 429 handling, conflicting bar and FRED vintage revisions, SEC filing-date
+cutoffs, UTC/DST timestamp boundaries, unsafe URLs, provider allow-lists,
+entitlement fallback, and application-owned OpenAI output schemas. Integrity
+checks require every case payload to exist, require a raw digest or an explicit
+omission reason (but never both), distinguish live redactions from official-doc
+and application contracts, and reject credential, email, and account-identity
+fields. Private Alpaca state and licensed market/news values were not committed.
+
 The bundled Node runtime passed `node --check frontend/research.js` after the
 scenario v3 renderer changed from `currentPrice` to `referencePrice` and added
 the historical-close label. A new headed browser pass was not run because the
@@ -37,11 +48,11 @@ specific rendering change.
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 104 backend modules, 11 operational scripts, 91 files under `tests/`, and one coverage-gate test                                   |
+| TypeScript    | 104 backend modules, 11 operational scripts, 93 files under `tests/`, and one coverage-gate test                                   |
 | Concentration | `backend/app.ts` 376 lines; `backend/persistence/store.ts` 940 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `a10f8f6`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `8afae5a`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -49,6 +60,7 @@ specific rendering change.
 - Regression tests preserve specific failures such as malformed bars, missing lot basis, stale evidence, blocked strategy submissions, and post-fill accounting.
 - System tests compose portfolio and strategy functions with in-memory SQLite without browser automation.
 - Direct API tests own common authorization, origin, body-size, parsing, status, schema, 404 and error-sanitization contracts without starting streams or a server port. Broker-backed happy paths still need incremental route coverage.
+- Provider contract tests own versioned fixture provenance/redaction integrity and adapter behavior for malformed, partial, throttled, revised, and timestamp-edge responses. Restricted live values remain outside the committed fixtures.
 - Browser/computer-use validation is reserved for rendering, layout, accessibility, responsive behavior, and interaction wiring. It should not be used to populate or verify backend state that can be exercised through functions or HTTP.
 
 ## Confidence by area
@@ -59,7 +71,7 @@ specific rendering change.
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                             | No production-sized restore timing or closed-beta operations drill                                                                        |
-| Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, persisted point-in-time comparable valuation, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-rebalance/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
+| Provider normalization      | Good with recorded/redacted fixtures                | A versioned manifest covers all 15 external governance source IDs; 14 contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas, alongside canonical time-provenance and persisted point-in-time valuation coverage | CI fixtures cannot prove current live-provider behavior or entitlement; not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats                                                                                                                                                                                                                                                                                     | Internal classifications are not legal approval; no automatic retention enforcement exists                                                |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, deterministic replay hashes, and SQLite/API persistence                                                                                                                                                                                                                                                                                                                                               | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
@@ -492,26 +504,28 @@ The following read-only checks were run:
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
   `last_daytrading_buying_power`, and `bod_dtbp` were absent.
+- A fresh 2026-07-12 `bun run smoke:read` pass completed account, position, and
+  open-order reads against the configured Alpaca paper account without a
+  broker mutation. This proves current read access, not order readiness or
+  live-trading approval.
 - A deliberate read-only crypto history check fetched 203 daily BTC/USD bars
   across three adjacent provider chunks spanning 2025-01-01 through 2025-07-20.
-- The previously recorded `bun run smoke:sec` check passed with the configured
-  contact identity for AAPL filings, bounded sections, financial trends, and
-  material-event alerts. The smoke now asserts root and nested time-provenance
-  invariants, but it was not rerun for this DTO change; live provider calls
-  remain deliberate and opt-in.
-- The previously recorded `bun run smoke:macro` check passed with live Treasury
-  and BLS observations while preserving explicit `missing_key` states for FRED
-  and BEA. The smoke now asserts root, coverage, indicator, and evidence time
-  invariants, but it was not rerun for this DTO change; live provider calls
-  remain deliberate and opt-in.
-- The 2026-07-07 `bun run smoke:openfigi` check passed anonymously and mapped
-  AAPL to canonical FIGI `BBG000B9XRY4`. It was not rerun for this DTO change;
-  live provider calls remain deliberate and opt-in.
-- `bun run smoke:finnhub` passed its missing-key contract without making a
-  provider request.
-- `bun run smoke:gdelt` passed its explicit rate-limit fallback: zero articles
-  were returned with `rate_limited`, and the result warned that absence of
-  events must not be inferred.
+- A fresh 2026-07-12 `bun run smoke:sec` pass used the configured contact
+  identity and returned AAPL filings, bounded 10-K/10-Q sections, eight
+  financial-trend metrics, and material 8-K alerts with root and nested time
+  provenance intact.
+- A fresh 2026-07-12 `bun run smoke:macro` pass returned three Treasury and two
+  BLS indicators while preserving explicit `missing_key` states with null
+  retrieval for FRED and BEA.
+- A fresh 2026-07-12 `bun run smoke:openfigi` pass anonymously mapped AAPL to
+  canonical FIGI `BBG000B9XRY4` with one evidence record.
+- A fresh 2026-07-12 `bun run smoke:finnhub` pass validated the configured
+  `missing_key` contract without making a Finnhub request.
+- GDELT returned a non-rate-limit temporary-unavailable response on 2026-07-12.
+  The adapter failed closed with zero articles/evidence and warned that no
+  absence of events may be inferred. The diagnostic now accepts either this
+  explicit unavailable state or the existing explicit rate-limit state instead
+  of incorrectly requiring every provider failure to be HTTP 429.
 
 The isolated server/browser smoke used invalid placeholder broker credentials
 and a separate temporary SQLite database. It verified `200 /health`, fail-closed

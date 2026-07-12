@@ -1,0 +1,209 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "alpaca_2026_07_12",
+  "provider": "Alpaca Trading and Market Data APIs",
+  "sourceIds": [
+    "alpaca_paper_trading",
+    "alpaca_equity_iex",
+    "alpaca_stock_sip",
+    "alpaca_crypto_data",
+    "alpaca_fixed_income_broker_api",
+    "alpaca_news_benzinga"
+  ],
+  "origins": [
+    {
+      "endpoint": "paper account, positions, and open orders through alpaca-ts",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://docs.alpaca.markets/us/docs/paper-trading",
+      "rawSha256": null,
+      "digestOmissionReason": "The digest was omitted because the source response contained private paper-account state."
+    },
+    {
+      "endpoint": "IEX daily bars through alpaca-ts",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://docs.alpaca.markets/reference/stockbars",
+      "rawSha256": null,
+      "digestOmissionReason": "The digest was omitted with the licensed market values; only the normalized response shape was retained."
+    },
+    {
+      "endpoint": "historical news through alpaca-ts",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://docs.alpaca.markets/us/docs/historical-news-data",
+      "rawSha256": null,
+      "digestOmissionReason": "The digest was omitted with licensed article content; only a replaced shape fixture was retained."
+    },
+    {
+      "endpoint": "fixed-income capability boundary",
+      "kind": "application_capability_contract",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://docs.alpaca.markets/us/docs/fixed-income",
+      "rawSha256": null,
+      "digestOmissionReason": "No provider request is permitted from the personal Trading API client."
+    }
+  ],
+  "redaction": {
+    "removed": [
+      "account id and number",
+      "all balances and buying-power values",
+      "actual holdings, quantities, costs, and market values",
+      "actual order identifiers and client identifiers",
+      "article content, URLs, authors, headlines, and images"
+    ],
+    "replaced": [
+      "symbols with ACME",
+      "prices and quantities with deterministic non-production values",
+      "timestamps with fixed UTC boundary examples",
+      "news text and URLs with example.invalid placeholders"
+    ],
+    "review": "The committed fixture contains no paper-account identifier, balance, holding, order, credential, or licensed article text."
+  },
+  "payloads": {
+    "paper_state_partial": {
+      "account": {
+        "equity": "100000",
+        "cash": "75000",
+        "buyingPower": "150000",
+        "currency": "USD",
+        "status": "ACTIVE"
+      },
+      "positions": [
+        {
+          "symbol": "ACME",
+          "qty": "10",
+          "avgEntryPrice": "100",
+          "currentPrice": "101",
+          "marketValue": null,
+          "unrealizedPl": "10",
+          "unrealizedPlpc": "0.01"
+        }
+      ],
+      "orders": []
+    },
+    "iex_bar_timestamp_edge": {
+      "symbol": "ACME",
+      "timestamp": "2026-03-29T00:59:59.999Z",
+      "open": 100,
+      "high": 102,
+      "low": 99,
+      "close": 101,
+      "volume": 1000,
+      "vwap": 100.5,
+      "tradeCount": 50
+    },
+    "crypto_revision_bars": {
+      "BTC/USD": [
+        {
+          "t": "2026-10-25T00:59:00.000Z",
+          "o": 100,
+          "h": 102,
+          "l": 99,
+          "c": 101,
+          "v": 10,
+          "vw": 100.5,
+          "n": 5
+        },
+        {
+          "t": "2026-10-25T00:59:00.000Z",
+          "o": 100,
+          "h": 103,
+          "l": 99,
+          "c": 102,
+          "v": 11,
+          "vw": 101,
+          "n": 6
+        },
+        {
+          "t": "not-a-timestamp",
+          "o": 100,
+          "h": 101,
+          "l": 99,
+          "c": 100,
+          "v": 1
+        }
+      ]
+    },
+    "news_partial": [
+      {
+        "id": 1,
+        "headline": "ACME publishes an operating update",
+        "summary": "A replaced summary.",
+        "source": "Example Wire",
+        "symbols": ["ACME"],
+        "url": "https://example.invalid/acme-update",
+        "createdAt": "2026-07-12T19:00:00.000Z",
+        "updatedAt": "2026-07-12T19:05:00.000Z"
+      },
+      {
+        "id": 2,
+        "headline": "Malformed article",
+        "summary": "Invalid timestamp and URL must remain unusable.",
+        "source": "Example Wire",
+        "symbols": ["ACME"],
+        "url": "javascript:alert(1)",
+        "createdAt": "not-a-timestamp",
+        "updatedAt": null
+      }
+    ],
+    "sip_rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "1"
+      },
+      "body": {
+        "code": 42910000,
+        "message": "rate limit exceeded"
+      }
+    },
+    "fixed_income_unavailable": {
+      "available": false,
+      "reason": "broker_api_partner_access_required"
+    }
+  },
+  "cases": [
+    {
+      "id": "paper_state_partial",
+      "class": "partial",
+      "derivation": "redacted_recording_mutation",
+      "payload": "paper_state_partial",
+      "expected": "Missing position market value remains explicit and is not inferred from other balances."
+    },
+    {
+      "id": "iex_timestamp_edge",
+      "class": "timestamp_edge",
+      "derivation": "redacted_recording_mutation",
+      "payload": "iex_bar_timestamp_edge",
+      "expected": "UTC observation time survives a European daylight-saving boundary unchanged."
+    },
+    {
+      "id": "crypto_revision",
+      "class": "revision",
+      "derivation": "redacted_recording_mutation",
+      "payload": "crypto_revision_bars",
+      "expected": "Same-time conflicting bars are counted deterministically and malformed time is rejected."
+    },
+    {
+      "id": "news_malformed",
+      "class": "malformed",
+      "derivation": "redacted_recording_mutation",
+      "payload": "news_partial",
+      "expected": "Unsafe or undated article evidence is excluded."
+    },
+    {
+      "id": "sip_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "sip_rate_limit",
+      "expected": "The entitlement-aware fallback does not misclassify a transport throttle as entitlement denial."
+    },
+    {
+      "id": "fixed_income_capability",
+      "class": "baseline",
+      "derivation": "application_contract",
+      "payload": "fixed_income_unavailable",
+      "expected": "Personal Trading API access remains explicitly unavailable."
+    }
+  ]
+}

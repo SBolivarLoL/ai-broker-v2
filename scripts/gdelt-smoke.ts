@@ -23,18 +23,21 @@ if (result.available) {
   )
     throw new Error("GDELT article cites unknown evidence");
 } else if (
-  !result.rateLimited ||
+  result.articles.length !== 0 ||
+  result.sources.length !== 0 ||
   !result.warnings.some((warning) => warning.includes("no absence of events"))
 ) {
-  throw new Error(
-    "GDELT is unavailable without an explicit rate-limit fallback",
-  );
+  throw new Error("GDELT coverage loss is not explicit and fail-closed");
 }
 
 console.log(
   JSON.stringify(
     {
-      status: result.available ? "available" : "rate_limited",
+      status: result.available
+        ? "available"
+        : result.rateLimited
+          ? "rate_limited"
+          : "unavailable",
       query: result.query,
       windowDays: result.windowDays,
       articles: result.articles.length,

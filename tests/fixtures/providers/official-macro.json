@@ -1,0 +1,195 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "official_macro_2026_07_12",
+  "provider": "Treasury, BLS, FRED, and BEA",
+  "sourceIds": [
+    "treasury_fiscal_data",
+    "bls_public_data",
+    "fred_api",
+    "bea_data_api"
+  ],
+  "origins": [
+    {
+      "endpoint": "Treasury Debt to the Penny",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://fiscaldata.treasury.gov/api-documentation/",
+      "rawSha256": "sha256:47f90eeb2078a7e39648417181d0f81b428b1409b5c24a07b1ea66f3e4a073cd",
+      "digestOmissionReason": null
+    },
+    {
+      "endpoint": "BLS Public Data API v2",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://www.bls.gov/developers/api_signature_v2.htm",
+      "rawSha256": "sha256:bbd3024ae28aec05b93643ac7a5539982e4ddb8e487e63c0f977c8b6f92d4a1e",
+      "digestOmissionReason": null
+    },
+    {
+      "endpoint": "FRED series observations",
+      "kind": "official_documentation_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://fred.stlouisfed.org/docs/api/fred/series_observations.html",
+      "rawSha256": null,
+      "digestOmissionReason": "No FRED key was configured; the shape derives from the official JSON example."
+    },
+    {
+      "endpoint": "BEA Regional Product API",
+      "kind": "official_documentation_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://apps.bea.gov/api/_pdf/bea_web_service_api_user_guide.pdf",
+      "rawSha256": null,
+      "digestOmissionReason": "No BEA UserID was configured; the shape derives from the documented response contract."
+    }
+  ],
+  "redaction": {
+    "removed": [
+      "provider pagination links and request metadata",
+      "API keys and UserIDs",
+      "unneeded series and periods"
+    ],
+    "replaced": [
+      "published numeric values with deterministic placeholders",
+      "dates with fixed revision and calendar-boundary examples"
+    ],
+    "review": "Only public macro schema fields needed by the adapter remain; no credential or user identifier is present."
+  },
+  "payloads": {
+    "treasury_malformed": {
+      "data": [
+        {
+          "record_date": "2026-06-25",
+          "debt_held_public_amt": "31500.00",
+          "intragov_hold_amt": "7700.00",
+          "tot_pub_debt_out_amt": "39200.00"
+        },
+        {
+          "record_date": "not-a-date",
+          "debt_held_public_amt": "invalid",
+          "intragov_hold_amt": "7701.00",
+          "tot_pub_debt_out_amt": "39201.00"
+        }
+      ]
+    },
+    "bls_partial": {
+      "status": "REQUEST_SUCCEEDED",
+      "message": ["one requested series was omitted"],
+      "Results": {
+        "series": [
+          {
+            "seriesID": "CUUR0000SA0",
+            "data": [
+              {
+                "year": "2026",
+                "period": "M05",
+                "periodName": "May",
+                "value": "335.123"
+              },
+              {
+                "year": "2025",
+                "period": "M05",
+                "periodName": "May",
+                "value": "321.465"
+              },
+              {
+                "year": "2026",
+                "period": "M13",
+                "periodName": "Annual",
+                "value": "999"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "fred_revisions": {
+      "realtime_start": "2026-06-01",
+      "realtime_end": "2026-07-01",
+      "observations": [
+        {
+          "realtime_start": "2026-06-01",
+          "realtime_end": "2026-06-15",
+          "date": "2026-05-01",
+          "value": "3.60"
+        },
+        {
+          "realtime_start": "2026-06-16",
+          "realtime_end": "2026-07-01",
+          "date": "2026-05-01",
+          "value": "3.65"
+        },
+        {
+          "realtime_start": "2026-06-01",
+          "realtime_end": "2026-07-01",
+          "date": "2026-05-02",
+          "value": "."
+        }
+      ]
+    },
+    "bea_malformed": {
+      "BEAAPI": {
+        "Results": {
+          "Data": [
+            {
+              "LineNumber": "1",
+              "GeoName": "United States",
+              "TimePeriod": "2026Q1",
+              "DataValue": "invalid"
+            }
+          ]
+        }
+      }
+    },
+    "rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "1"
+      },
+      "body": "rate limited"
+    }
+  },
+  "cases": [
+    {
+      "id": "treasury_malformed",
+      "class": "malformed",
+      "derivation": "redacted_recording_mutation",
+      "payload": "treasury_malformed",
+      "expected": "Invalid numeric and publication fields are excluded without contaminating the valid record."
+    },
+    {
+      "id": "bls_partial",
+      "class": "partial",
+      "derivation": "redacted_recording_mutation",
+      "payload": "bls_partial",
+      "expected": "Missing requested series stays visible as partial provider coverage."
+    },
+    {
+      "id": "bls_timestamp_edge",
+      "class": "timestamp_edge",
+      "derivation": "redacted_recording_mutation",
+      "payload": "bls_partial",
+      "expected": "BLS annual M13 records are not mislabeled as monthly observations."
+    },
+    {
+      "id": "fred_revision",
+      "class": "revision",
+      "derivation": "official_documentation_mutation",
+      "payload": "fred_revisions",
+      "expected": "Revision windows and missing-value markers remain distinguishable."
+    },
+    {
+      "id": "bea_malformed",
+      "class": "malformed",
+      "derivation": "official_documentation_mutation",
+      "payload": "bea_malformed",
+      "expected": "A non-numeric BEA value yields no fabricated indicator."
+    },
+    {
+      "id": "macro_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "rate_limit",
+      "expected": "One throttled source does not erase independently available providers."
+    }
+  ]
+}

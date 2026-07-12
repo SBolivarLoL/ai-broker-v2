@@ -1,0 +1,46 @@
+{
+  "manifestVersion": "provider-fixture-manifest-v1",
+  "reviewedAt": "2026-07-12",
+  "fixtures": [
+    {
+      "file": "alpaca.json",
+      "sourceIds": [
+        "alpaca_paper_trading",
+        "alpaca_equity_iex",
+        "alpaca_stock_sip",
+        "alpaca_crypto_data",
+        "alpaca_fixed_income_broker_api",
+        "alpaca_news_benzinga"
+      ]
+    },
+    {
+      "file": "sec-edgar.json",
+      "sourceIds": ["sec_edgar"]
+    },
+    {
+      "file": "official-macro.json",
+      "sourceIds": [
+        "treasury_fiscal_data",
+        "bls_public_data",
+        "fred_api",
+        "bea_data_api"
+      ]
+    },
+    {
+      "file": "gdelt.json",
+      "sourceIds": ["gdelt_doc_2"]
+    },
+    {
+      "file": "finnhub.json",
+      "sourceIds": ["finnhub_free_enrichment"]
+    },
+    {
+      "file": "openfigi.json",
+      "sourceIds": ["openfigi_v3"]
+    },
+    {
+      "file": "openai.json",
+      "sourceIds": ["openai_api"]
+    }
+  ]
+}

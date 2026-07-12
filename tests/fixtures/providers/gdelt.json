@@ -1,0 +1,89 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "gdelt_2026_07_12",
+  "provider": "GDELT DOC 2.0",
+  "sourceIds": ["gdelt_doc_2"],
+  "origins": [
+    {
+      "endpoint": "DOC 2.0 ArticleList JSON",
+      "kind": "live_redacted",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/",
+      "rawSha256": "sha256:a0fe78eadb15b3afce104fa2737e8eed7cfc2a647c16aa7ca22a49bf3c829dd3",
+      "digestOmissionReason": null
+    }
+  ],
+  "redaction": {
+    "removed": ["live article titles, URLs, domains, and publisher metadata"],
+    "replaced": [
+      "company name with ACME Corp",
+      "article content with example.invalid placeholders",
+      "publication dates with fixed UTC examples"
+    ],
+    "review": "No live article text or link remains; the fixture preserves only the DOC 2.0 field contract."
+  },
+  "payloads": {
+    "articles_mixed": {
+      "articles": [
+        {
+          "url": "https://example.invalid/acme-update?utm_source=feed",
+          "title": "ACME &amp; supplier update",
+          "seendate": "20261025T013000Z",
+          "domain": "example.invalid",
+          "language": "English",
+          "sourcecountry": "Belgium"
+        },
+        {
+          "url": "javascript:alert(1)",
+          "title": "Unsafe URL",
+          "seendate": "20261025T013000Z"
+        },
+        {
+          "url": "https://example.invalid/missing-date",
+          "title": "Missing date",
+          "seendate": "invalid"
+        }
+      ]
+    },
+    "partial": {
+      "articles": []
+    },
+    "rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "0"
+      },
+      "body": "rate limited"
+    }
+  },
+  "cases": [
+    {
+      "id": "gdelt_malformed",
+      "class": "malformed",
+      "derivation": "redacted_recording_mutation",
+      "payload": "articles_mixed",
+      "expected": "Unsafe URL and invalid publication timestamp are excluded."
+    },
+    {
+      "id": "gdelt_timestamp_edge",
+      "class": "timestamp_edge",
+      "derivation": "redacted_recording_mutation",
+      "payload": "articles_mixed",
+      "expected": "Compact GDELT UTC timestamps normalize without local-time conversion."
+    },
+    {
+      "id": "gdelt_partial",
+      "class": "partial",
+      "derivation": "redacted_recording_mutation",
+      "payload": "partial",
+      "expected": "An empty bounded result does not imply absence outside the searched coverage."
+    },
+    {
+      "id": "gdelt_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "rate_limit",
+      "expected": "Coverage loss is explicit and cached without inventing no-news."
+    }
+  ]
+}

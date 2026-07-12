@@ -69,7 +69,11 @@ export type MacroRegimeDimension = {
 };
 
 export type MacroCoverageStatus =
-  "available" | "missing_key" | "misconfigured" | "unavailable";
+  | "available"
+  | "partial"
+  | "missing_key"
+  | "misconfigured"
+  | "unavailable";
 export type MacroProviderCoverage = MacroResponseTime & {
   status: MacroCoverageStatus;
   indicators: number;
@@ -95,6 +99,7 @@ type ProviderData = {
   sources: MacroEvidence[];
   warnings?: string[];
   retrievedAt: string;
+  status?: "available" | "partial";
 };
 type ProviderCoverageState = {
   status: MacroCoverageStatus;
@@ -473,7 +478,23 @@ export class MacroContextClient {
     );
     const payload = response.value;
     const retrievedAt = response.retrievedAt;
-    const rows = payload.data;
+    const rawRows = payload.data ?? [];
+    const rows = rawRows.filter((row) => {
+      const recordDate = new Date(`${row.record_date}T00:00:00.000Z`);
+      return (
+        typeof row.record_date === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(row.record_date) &&
+        Number.isFinite(recordDate.getTime()) &&
+        recordDate.toISOString().slice(0, 10) === row.record_date &&
+        [
+          row.tot_pub_debt_out_amt,
+          row.debt_held_public_amt,
+          row.intragov_hold_amt,
+        ].every((value) =>
+          Number.isFinite(Number(String(value).replaceAll(",", ""))),
+        )
+      );
+    });
     if (!rows?.length)
       throw new Error("Treasury returned no debt observations");
     const latest = rows[0]!;
@@ -549,7 +570,18 @@ export class MacroContextClient {
         retrievedAt,
       );
     });
-    return { indicators, sources: [source], retrievedAt };
+    return {
+      indicators,
+      sources: [source],
+      status: rows.length < rawRows.length ? "partial" : "available",
+      warnings:
+        rows.length < rawRows.length
+          ? [
+              "Treasury returned malformed debt rows; valid observations were retained and omitted rows were not inferred.",
+            ]
+          : undefined,
+      retrievedAt,
+    };
   }
 
   private async bls(): Promise<ProviderData> {
@@ -593,109 +625,125 @@ export class MacroContextClient {
       .find((item) => item.seriesID === "LNS14000000")
       ?.data.filter((item) => /^M(0[1-9]|1[0-2])$/.test(item.period))
       .sort((a, b) => monthIndex(b) - monthIndex(a));
-    if (!cpi?.length || !labor?.length)
-      throw new Error("BLS returned incomplete CPI or unemployment series");
-    const latestCpi = cpi[0]!;
-    const yearAgo = cpi.find(
-      (item) => monthIndex(item) === monthIndex(latestCpi) - 12,
-    );
-    if (!yearAgo)
-      throw new Error("BLS CPI response did not include a year-ago comparison");
-    const latestLabor = labor[0]!;
-    const previousLabor = labor[1];
-    const cpiValue = number(latestCpi.value);
-    const cpiYearAgo = number(yearAgo.value);
+    const latestCpi = cpi?.[0];
+    const yearAgo = latestCpi
+      ? cpi?.find(
+          (item) => monthIndex(item) === monthIndex(latestCpi) - 12,
+        )
+      : undefined;
+    const latestLabor = labor?.[0];
+    const previousLabor = labor?.[1];
+    if ((!latestCpi || !yearAgo) && !latestLabor)
+      throw new Error("BLS returned no usable CPI or unemployment series");
     const cpiEvidenceId = "macro:bls:CUUR0000SA0";
     const laborEvidenceId = "macro:bls:LNS14000000";
-    const cpiSource = canonicalEvidence({
-      id: cpiEvidenceId,
-      provider: "bls",
-      sourceId: `CUUR0000SA0:${latestCpi.year}-${latestCpi.period}`,
-      category: "macro",
-      authority: "official",
-      claimStatus: "official_record",
-      title: "BLS CPI for All Urban Consumers: All Items",
-      url: BLS_URL,
-      asOf: monthEnd(latestCpi),
-      observedAt: null,
-      retrievedAt,
-      serverRespondedAt: retrievedAt,
-      effectivePeriod: monthPeriod(latestCpi),
-      entityIds: {},
-      data: {
-        seriesId: "CUUR0000SA0",
-        seasonalAdjustment: "not seasonally adjusted",
-        latest: latestCpi,
-        yearAgo,
-        calculation: "(latest index / year-ago index - 1) * 100",
-      },
-    });
-    const laborSource = canonicalEvidence({
-      id: laborEvidenceId,
-      provider: "bls",
-      sourceId: `LNS14000000:${latestLabor.year}-${latestLabor.period}`,
-      category: "macro",
-      authority: "official",
-      claimStatus: "official_record",
-      title: "BLS unemployment rate",
-      url: BLS_URL,
-      asOf: monthEnd(latestLabor),
-      observedAt: null,
-      retrievedAt,
-      serverRespondedAt: retrievedAt,
-      effectivePeriod: monthPeriod(latestLabor),
-      entityIds: {},
-      data: {
-        seriesId: "LNS14000000",
-        seasonalAdjustment: "seasonally adjusted",
-        latest: latestLabor,
-        previous: previousLabor ?? null,
-      },
-    });
-    const unemployment = number(latestLabor.value);
-    const previousUnemployment = previousLabor
-      ? number(previousLabor.value)
-      : undefined;
-    const cpiEffectivePeriod = monthPeriod(latestCpi);
-    const laborEffectivePeriod = monthPeriod(latestLabor);
+    const sources: MacroEvidence[] = [];
+    const indicators: MacroIndicator[] = [];
+    if (latestCpi && yearAgo) {
+      const cpiValue = number(latestCpi.value);
+      const cpiYearAgo = number(yearAgo.value);
+      const cpiEffectivePeriod = monthPeriod(latestCpi);
+      sources.push(
+        canonicalEvidence({
+          id: cpiEvidenceId,
+          provider: "bls",
+          sourceId: `CUUR0000SA0:${latestCpi.year}-${latestCpi.period}`,
+          category: "macro",
+          authority: "official",
+          claimStatus: "official_record",
+          title: "BLS CPI for All Urban Consumers: All Items",
+          url: BLS_URL,
+          asOf: monthEnd(latestCpi),
+          observedAt: null,
+          retrievedAt,
+          serverRespondedAt: retrievedAt,
+          effectivePeriod: monthPeriod(latestCpi),
+          entityIds: {},
+          data: {
+            seriesId: "CUUR0000SA0",
+            seasonalAdjustment: "not seasonally adjusted",
+            latest: latestCpi,
+            yearAgo,
+            calculation: "(latest index / year-ago index - 1) * 100",
+          },
+        }),
+      );
+      indicators.push(macroIndicator(
+        {
+          id: "cpi_all_items_yoy",
+          label: "CPI all items, year over year",
+          value: round((cpiValue / cpiYearAgo - 1) * 100),
+          unit: "%",
+          period: `${latestCpi.periodName} ${latestCpi.year}`,
+          provider: "bls",
+          evidenceId: cpiEvidenceId,
+          calculation:
+            "Calculated from official BLS latest and year-ago CPI index values.",
+        },
+        { effectivePeriod: cpiEffectivePeriod },
+        retrievedAt,
+      ));
+    }
+    if (latestLabor) {
+      const unemployment = number(latestLabor.value);
+      const previousUnemployment = previousLabor
+        ? number(previousLabor.value)
+        : undefined;
+      const laborEffectivePeriod = monthPeriod(latestLabor);
+      sources.push(
+        canonicalEvidence({
+          id: laborEvidenceId,
+          provider: "bls",
+          sourceId: `LNS14000000:${latestLabor.year}-${latestLabor.period}`,
+          category: "macro",
+          authority: "official",
+          claimStatus: "official_record",
+          title: "BLS unemployment rate",
+          url: BLS_URL,
+          asOf: monthEnd(latestLabor),
+          observedAt: null,
+          retrievedAt,
+          serverRespondedAt: retrievedAt,
+          effectivePeriod: monthPeriod(latestLabor),
+          entityIds: {},
+          data: {
+            seriesId: "LNS14000000",
+            seasonalAdjustment: "seasonally adjusted",
+            latest: latestLabor,
+            previous: previousLabor ?? null,
+          },
+        }),
+      );
+      indicators.push(macroIndicator(
+        {
+          id: "unemployment_rate",
+          label: "Unemployment rate",
+          value: unemployment,
+          unit: "%",
+          period: `${latestLabor.periodName} ${latestLabor.year}`,
+          provider: "bls",
+          evidenceId: laborEvidenceId,
+          ...(previousUnemployment === undefined
+            ? {}
+            : {
+                previousValue: previousUnemployment,
+                change: round(unemployment - previousUnemployment),
+              }),
+        },
+        { effectivePeriod: laborEffectivePeriod },
+        retrievedAt,
+      ));
+    }
+    const partial = indicators.length < 2;
     return {
-      indicators: [
-        macroIndicator(
-          {
-            id: "cpi_all_items_yoy",
-            label: "CPI all items, year over year",
-            value: round((cpiValue / cpiYearAgo - 1) * 100),
-            unit: "%",
-            period: `${latestCpi.periodName} ${latestCpi.year}`,
-            provider: "bls",
-            evidenceId: cpiEvidenceId,
-            calculation:
-              "Calculated from official BLS latest and year-ago CPI index values.",
-          },
-          { effectivePeriod: cpiEffectivePeriod },
-          retrievedAt,
-        ),
-        macroIndicator(
-          {
-            id: "unemployment_rate",
-            label: "Unemployment rate",
-            value: unemployment,
-            unit: "%",
-            period: `${latestLabor.periodName} ${latestLabor.year}`,
-            provider: "bls",
-            evidenceId: laborEvidenceId,
-            ...(previousUnemployment === undefined
-              ? {}
-              : {
-                  previousValue: previousUnemployment,
-                  change: round(unemployment - previousUnemployment),
-                }),
-          },
-          { effectivePeriod: laborEffectivePeriod },
-          retrievedAt,
-        ),
-      ],
-      sources: [cpiSource, laborSource],
+      indicators,
+      sources,
+      status: partial ? "partial" : "available",
+      warnings: partial
+        ? [
+            "BLS returned only part of the requested CPI and unemployment coverage; missing series were not inferred.",
+          ]
+        : undefined,
       retrievedAt,
     };
   }
@@ -725,20 +773,49 @@ export class MacroContextClient {
       definitions.map(async ([seriesId, id, label, unit]) => {
         const publicUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&file_type=json&sort_order=desc&limit=4`;
         const response = await this.request<{
-          observations?: Array<{ date: string; value: string }>;
+          observations?: Array<{
+            date: string;
+            value: string;
+            realtime_start?: string;
+            realtime_end?: string;
+          }>;
         }>(
           `fred:${seriesId}`,
           `${publicUrl}&api_key=${encodeURIComponent(key)}`,
         );
         const payload = response.value;
         const retrievedAt = response.retrievedAt;
-        const observations = (payload.observations ?? []).filter((item) =>
-          Number.isFinite(Number(item.value)),
-        );
+        const valid = (payload.observations ?? []).filter((item) => {
+          const observationDate = new Date(`${item.date}T00:00:00.000Z`);
+          return (
+            /^\d{4}-\d{2}-\d{2}$/.test(item.date) &&
+            Number.isFinite(observationDate.getTime()) &&
+            observationDate.toISOString().slice(0, 10) === item.date &&
+            Number.isFinite(Number(item.value))
+          );
+        });
+        const byDate = new Map<string, typeof valid>();
+        for (const item of valid) {
+          const revisions = byDate.get(item.date) ?? [];
+          revisions.push(item);
+          byDate.set(item.date, revisions);
+        }
+        const observations = [...byDate.entries()]
+          .map(([date, revisions]) => ({
+            date,
+            revisions: revisions.toSorted((left, right) =>
+              String(right.realtime_start ?? "").localeCompare(
+                String(left.realtime_start ?? ""),
+              ),
+            ),
+          }))
+          .toSorted((left, right) => right.date.localeCompare(left.date));
         if (!observations.length)
           throw new Error(`${seriesId} returned no numeric observations`);
-        const latest = observations[0]!;
-        const previous = observations[1];
+        const latestGroup = observations[0]!;
+        const previousGroup = observations[1];
+        const latest = latestGroup.revisions[0]!;
+        const previous = previousGroup?.revisions[0];
         const value = number(latest.value);
         const previousValue = previous ? number(previous.value) : undefined;
         const evidenceId = `macro:fred:${seriesId}`;
@@ -757,7 +834,13 @@ export class MacroContextClient {
           serverRespondedAt: retrievedAt,
           effectivePeriod: datePeriod(latest.date),
           entityIds: {},
-          data: { seriesId, latest, previous: previous ?? null },
+          data: {
+            seriesId,
+            latest,
+            previous: previous ?? null,
+            revisions: latestGroup.revisions,
+            revisionCount: Math.max(0, latestGroup.revisions.length - 1),
+          },
         });
         const effectivePeriod = datePeriod(latest.date);
         const indicator = macroIndicator(
@@ -797,6 +880,8 @@ export class MacroContextClient {
       indicators,
       sources,
       warnings,
+      status:
+        indicators.length < definitions.length ? "partial" : "available",
       retrievedAt: latestTime(
         settled.flatMap((result) =>
           result.status === "fulfilled" ? [result.value.retrievedAt] : [],
@@ -965,7 +1050,7 @@ export class MacroContextClient {
         warnings.push(...(result.value.warnings ?? []));
         retrievalTimes.push(result.value.retrievedAt);
         coverageState[provider] = {
-          status: "available",
+          status: result.value.status ?? "available",
           indicators: result.value.indicators.length,
           retrievedAt: result.value.retrievedAt,
         };

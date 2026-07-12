@@ -1,0 +1,101 @@
+{
+  "fixtureVersion": "provider-contract-fixture-v1",
+  "id": "openai_structured_output_2026_07_12",
+  "provider": "OpenAI API through Agents SDK",
+  "sourceIds": ["openai_api"],
+  "origins": [
+    {
+      "endpoint": "application-owned structured output schemas",
+      "kind": "application_capability_contract",
+      "recordedAt": "2026-07-12T20:30:00.000Z",
+      "sourceUrl": "https://platform.openai.com/docs/guides/structured-outputs",
+      "rawSha256": null,
+      "digestOmissionReason": "The contract is the repository-owned Zod output schema; no model request was needed or represented as a recording."
+    }
+  ],
+  "redaction": {
+    "removed": ["API key, request IDs, usage/account metadata, and model-generated live text"],
+    "replaced": [
+      "issuer and claims with deterministic ACME examples",
+      "evidence IDs with local fixture identifiers"
+    ],
+    "review": "This fixture validates the application trust boundary and contains no live model response or credential."
+  },
+  "payloads": {
+    "company_research_partial": {
+      "symbol": "ACME",
+      "companyName": "ACME Corp",
+      "stance": "balanced",
+      "executiveSummary": "A bounded fixture summary.",
+      "summaryEvidence": ["fixture:market"],
+      "keyMetrics": [
+        {
+          "label": "Revenue",
+          "value": 100,
+          "unit": "USD",
+          "period": "2025",
+          "evidence": "fixture:fundamentals"
+        },
+        {
+          "label": "Price",
+          "value": 10,
+          "unit": "USD",
+          "period": "current",
+          "evidence": "fixture:market"
+        }
+      ],
+      "thesis": [
+        {
+          "text": "Only one thesis item is present.",
+          "evidence": ["fixture:market"]
+        }
+      ],
+      "risks": [],
+      "catalysts": [],
+      "limitations": ["Fixture evidence is intentionally incomplete."]
+    },
+    "portfolio_answer_malformed": {
+      "claims": [
+        {
+          "text": "This answer will definitely outperform.",
+          "evidence": ["missing:evidence"]
+        }
+      ],
+      "limitations": []
+    },
+    "transport_rate_limit": {
+      "status": 429,
+      "headers": {
+        "retry-after": "1"
+      },
+      "body": {
+        "error": {
+          "type": "rate_limit_error"
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "openai_partial",
+      "class": "partial",
+      "derivation": "application_contract",
+      "payload": "company_research_partial",
+      "expected": "Schema cardinality failures cannot become a completed research report."
+    },
+    {
+      "id": "openai_malformed",
+      "class": "malformed",
+      "derivation": "application_contract",
+      "payload": "portfolio_answer_malformed",
+      "expected": "Unsafe language and nonexistent citations fail the deterministic trust boundary."
+    },
+    {
+      "id": "openai_rate_limit",
+      "class": "rate_limit",
+      "derivation": "synthetic_transport_envelope",
+      "payload": "transport_rate_limit",
+      "expected": "Transport throttling remains an unavailable model state and creates no execution authority."
+    }
+  ]
+}

@@ -14,6 +14,7 @@ backend/integrations/     Alpaca and external data-provider adapters
 backend/persistence/      SQLite schema and storage operations
 backend/shared/           Code used by multiple backend boundaries
 tests/                    Tests grouped to mirror backend boundaries
+tests/fixtures/providers/ Versioned recorded/redacted provider contracts mapped to governance sources
 scripts/                  Diagnostics, smoke checks, and evaluations
 docs/                     Product and operating documentation
 ```
@@ -69,6 +70,7 @@ No route extraction may reorder or bypass that pipeline.
 
 - Put code in the feature that owns the behavior. Move it to `shared/` only after a second independent consumer exists.
 - Keep provider-specific payload handling in `integrations/`; expose normalized values to features.
+- Keep provider fixture provenance and redaction metadata versioned under `tests/fixtures/providers/`; restricted raw responses and credentials never cross into committed fixtures.
 - Comment safety constraints, provider quirks, and non-obvious decisions. Do not comment syntax that already explains itself.
 - Keep tests in the matching `tests/` boundary and run `bun run check` before merging.
 - Preserve paper-only execution, signed previews, fresh-state validation, and operational policy checks when moving order code.
