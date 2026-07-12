@@ -282,7 +282,7 @@ function renderComparableValuations(data) {
     warnings = [...providerWarnings, ...rowWarnings, ...sharedCaveats];
   $("#comparables-asof").textContent =
     `${data.rows.length} of ${data.peers.length + 1} companies · updated ${new Date(data.asOf).toLocaleString()} · annual periods shown per cell`;
-  return `${rows ? `<div class="valuation-table-wrap"><table class="valuation-table"><thead><tr><th>Company</th><th>Price</th><th>Market cap</th><th>Revenue</th><th>Revenue growth</th><th>Net margin</th><th>P/S</th><th>P/E</th><th>P/B</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty">No comparable rows are available.</div>'}${warnings.length ? `<div class="warnings">${warnings.map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}<div class="valuation-method">P/E uses annual diluted EPS. P/S and P/B use price-derived market capitalization. Revenue growth and margin compare directly reported annual SEC periods; missing or non-positive denominators remain unavailable.</div>`;
+  return `${calculationCoveragePanel("Comparable valuation", data.quality)}${rows ? `<div class="valuation-table-wrap"><table class="valuation-table"><thead><tr><th>Company</th><th>Price</th><th>Market cap</th><th>Revenue</th><th>Revenue growth</th><th>Net margin</th><th>P/S</th><th>P/E</th><th>P/B</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty">No comparable rows are available.</div>'}${warnings.length ? `<div class="warnings">${warnings.map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}<div class="valuation-method">P/E uses annual diluted EPS. P/S and P/B use price-derived market capitalization. Revenue growth and margin compare directly reported annual SEC periods; missing or non-positive denominators remain unavailable.</div>`;
 }
 async function loadComparableValuations() {
   const symbol = $("#research-symbol").value.trim().toUpperCase(),
@@ -330,7 +330,7 @@ function renderValuationScenarios(data) {
       : "";
   $("#scenarios-asof").innerHTML =
     `${esc(data.companyName)} · updated ${esc(new Date(data.asOf).toLocaleString())}${sec ? ` · <a href="${esc(safeUrl(sec.url))}" target="_blank" rel="noopener noreferrer">SEC inputs ↗</a>` : ""}`;
-  return `${reference}<div class="scenario-memos">${memos}</div>${warnings}<div class="valuation-method">Projected revenue = latest annual SEC revenue × scenario growth. Projected net income = projected revenue × scenario margin. Implied price = projected net income × scenario P/E ÷ latest SEC shares outstanding. Inputs are user assumptions, not forecasts.</div>`;
+  return `${calculationCoveragePanel("Scenario valuation", data.quality)}${reference}<div class="scenario-memos">${memos}</div>${warnings}<div class="valuation-method">Projected revenue = latest annual SEC revenue × scenario growth. Projected net income = projected revenue × scenario margin. Implied price = projected net income × scenario P/E ÷ latest SEC shares outstanding. Inputs are user assumptions, not forecasts.</div>`;
 }
 function scenarioValue(id) {
   return Number($(`#scenario-${id}`).value);

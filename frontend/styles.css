@@ -2327,16 +2327,16 @@ select.field {
 .coverage-strip .muted {
   display: block;
 }
-.portfolio-coverage-panel {
+.calculation-coverage-panel {
   margin-bottom: 18px;
 }
-.portfolio-coverage-grid {
+.calculation-coverage-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
-.portfolio-coverage-row {
+.calculation-coverage-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 3px 10px;
@@ -2345,13 +2345,13 @@ select.field {
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
 }
-.portfolio-coverage-row > span:first-child {
+.calculation-coverage-row > span:first-child {
   text-transform: capitalize;
 }
-.portfolio-coverage-row .muted {
+.calculation-coverage-row .muted {
   grid-column: 1 / -1;
 }
-.portfolio-coverage-impact {
+.calculation-coverage-impact {
   margin-top: 8px;
 }
 .option-chain-limit {

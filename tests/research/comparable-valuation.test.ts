@@ -176,6 +176,8 @@ test("builds provenance-bound comparable valuation metrics from SEC facts and br
     inputs: ["sec:valuation-inputs:AAPL", "market:valuation-price:AAPL"],
   });
   expect(result.sources[0]).toMatchObject({
+    observedAt: null,
+    publishedAt: "2025-05-01T00:00:00.000Z",
     retrievedAt: "2026-06-29T11:59:58.000Z",
     serverRespondedAt: "2026-06-29T11:59:59.000Z",
     time: {
@@ -250,11 +252,43 @@ test("validates bounded manual peer sets and aggregates canonical evidence", () 
     "2026-06-29T12:01:00Z",
   );
   expect(table).toMatchObject({
+    schemaVersion: "comparable-valuations-v2",
     subject: "AAPL",
     peers: ["MSFT"],
     rows: [{ symbol: "AAPL" }],
     warnings: ["MSFT unavailable"],
     asOf: "2026-06-29T12:01:00.000Z",
+    observedAt: null,
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:01:00.000Z",
+    quality: {
+      status: "partial",
+      expected: {
+        companies: 2,
+        secFundamentals: 2,
+        currentPrices: 2,
+        marketPriceObservations: 2,
+        valuationMetrics: 12,
+      },
+      received: {
+        companies: 1,
+        secFundamentals: 1,
+        currentPrices: 1,
+        marketPriceObservations: 0,
+        valuationMetrics: 6,
+      },
+      omitted: {
+        companies: 1,
+        secFundamentals: 1,
+        currentPrices: 1,
+        marketPriceObservations: 2,
+        valuationMetrics: 6,
+      },
+      freshness: {
+        status: "retrieval_time_only",
+        evaluatedAt: "2026-06-29T12:01:00.000Z",
+      },
+    },
   });
   expect(table.sources).toHaveLength(3);
 });

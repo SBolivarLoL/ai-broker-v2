@@ -181,6 +181,53 @@ const cardError = (
   detail = "Try again in a moment or check broker/data entitlements.",
 ) =>
   `<div class="empty error-state" role="alert"><strong>${esc(title)}</strong><div>${esc(error?.message || error || "The request failed.")}</div><span class="muted">${esc(detail)}</span></div>`;
+function calculationCoveragePanel(label, quality) {
+  if (!quality?.expected || !quality?.received) return "";
+  const entries = Object.entries(quality.expected).filter(([, value]) =>
+      Number.isFinite(Number(value)),
+    ),
+    omitted = quality.omitted || {},
+    rows = entries.map(([key, expected]) => {
+      const received = Number(quality.received[key] || 0),
+        missing = Number.isFinite(Number(omitted[key]))
+          ? Number(omitted[key])
+          : Math.max(0, Number(expected) - received),
+        name = key
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replaceAll("_", " ")
+          .toLowerCase();
+      return `<div class="calculation-coverage-row"><span>${esc(name)}</span><strong>${esc(received)}/${esc(expected)}</strong><span class="muted">${esc(missing)} omitted</span></div>`;
+    }),
+    omittedTotal = entries.reduce((sum, [key, expected]) => {
+      const value = Number.isFinite(Number(omitted[key]))
+        ? Number(omitted[key])
+        : Math.max(0, Number(expected) - Number(quality.received[key] || 0));
+      return sum + value;
+    }, 0),
+    status = String(
+      quality.coverageStatus || quality.status || "unknown",
+    ).replaceAll("_", " "),
+    partial =
+      omittedTotal > 0 || ["partial", "empty", "error"].includes(status),
+    freshness = quality.freshness || {},
+    observedAt =
+      freshness.latestObservedAt ||
+      freshness.portfolioObservedAt ||
+      freshness.latestCapturedAt ||
+      freshness.capturedAt ||
+      quality.observedAt ||
+      null,
+    evaluatedAt = freshness.evaluatedAt || quality.serverRespondedAt || null,
+    observationCoverage = Number.isFinite(
+      Number(freshness.expectedObservations),
+    )
+      ? `${freshness.receivedObservations}/${freshness.expectedObservations} provider observations`
+      : observedAt
+        ? `evidence through ${new Date(observedAt).toLocaleString()}`
+        : `freshness ${String(freshness.status || "unavailable").replaceAll("_", " ")}`,
+    impacts = Array.isArray(quality.impact) ? quality.impact : [];
+  return `<section class="calculation-coverage-panel" aria-label="${esc(label)} data coverage"><div class="coverage-strip"><div><strong>${esc(label)} evidence</strong><span class="muted">${esc(observationCoverage)} · evaluated ${evaluatedAt ? esc(new Date(evaluatedAt).toLocaleString()) : "time unavailable"}</span></div><span class="pill ${partial ? "loss" : "gain"}">${esc(status)}</span></div><div class="calculation-coverage-grid">${rows.join("")}</div>${impacts.length ? `<div class="${partial ? "warnings" : "muted"} calculation-coverage-impact">${impacts.map((impact) => `<div>${esc(impact)}</div>`).join("")}</div>` : ""}</section>`;
+}
 async function safeLoad(name, fn, target, detail) {
   // Independent dashboard cards should fail locally; one unavailable provider
   // must not prevent the rest of the workspace from rendering.

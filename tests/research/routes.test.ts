@@ -6,6 +6,10 @@ import type { OpenFigiIdentity } from "../../backend/integrations/openfigi";
 import type { MacroContext } from "../../backend/integrations/macro-context";
 import { createStore } from "../../backend/persistence/store";
 import type { getCompanySecEvidence } from "../../backend/features/research/research";
+import type {
+  getComparableValuations,
+  getValuationScenarios,
+} from "../../backend/features/research/research";
 
 type RouteOptions = {
   alpaca?: Alpaca;
@@ -20,6 +24,14 @@ type RouteOptions = {
     symbol: string,
   ) => ReturnType<typeof getCompanySecEvidence>;
   officialMacroContext?: () => Promise<MacroContext>;
+  comparableValuations?: (
+    symbol: string,
+    peers: string,
+  ) => ReturnType<typeof getComparableValuations>;
+  valuationScenarios?: (
+    symbol: string,
+    scenarios: unknown,
+  ) => ReturnType<typeof getValuationScenarios>;
 };
 
 const route = async (
@@ -39,6 +51,8 @@ const route = async (
     openFigiIdentity: options.openFigiIdentity,
     secCompanyEvidence: options.secCompanyEvidence,
     officialMacroContext: options.officialMacroContext,
+    comparableValuations: options.comparableValuations,
+    valuationScenarios: options.valuationScenarios,
   });
 };
 
@@ -92,6 +106,63 @@ test("research routes preserve rate limits and local metrics", async () => {
   const metrics = await route("/api/research/metrics");
   expect(metrics?.status).toBe(200);
   expect(await metrics?.json()).toMatchObject({ totalRuns: 0 });
+});
+
+test("valuation routes preserve normalized coverage contracts", async () => {
+  const comparablePayload = {
+    schemaVersion: "comparable-valuations-v2",
+    quality: {
+      status: "partial",
+      expected: { companies: 2 },
+      received: { companies: 1 },
+      omitted: { companies: 1 },
+    },
+  } as unknown as Awaited<ReturnType<typeof getComparableValuations>>;
+  const comparableInputs: [string, string][] = [];
+  const comparable = await route(
+    "/api/research/comparables?symbol=aapl&peers=MSFT",
+    undefined,
+    () => true,
+    {
+      comparableValuations: async (symbol, peers) => {
+        comparableInputs.push([symbol, peers]);
+        return comparablePayload;
+      },
+    },
+  );
+  expect(comparableInputs).toEqual([["aapl", "MSFT"]]);
+  expect(comparable?.status).toBe(200);
+  expect(await comparable?.json()).toEqual(comparablePayload);
+
+  const scenarioPayload = {
+    schemaVersion: "valuation-scenarios-v2",
+    quality: {
+      status: "partial",
+      expected: { scenarioOutputs: 3 },
+      received: { scenarioOutputs: 2 },
+      omitted: { scenarioOutputs: 1 },
+    },
+  } as unknown as Awaited<ReturnType<typeof getValuationScenarios>>;
+  const scenarioInputs: [string, unknown][] = [];
+  const scenarios = { bear: {}, base: {}, bull: {} };
+  const scenario = await route(
+    "/api/research/scenarios",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbol: "AAPL", scenarios }),
+    },
+    () => true,
+    {
+      valuationScenarios: async (symbol, input) => {
+        scenarioInputs.push([symbol, input]);
+        return scenarioPayload;
+      },
+    },
+  );
+  expect(scenarioInputs).toEqual([["AAPL", scenarios]]);
+  expect(scenario?.status).toBe(200);
+  expect(await scenario?.json()).toEqual(scenarioPayload);
 });
 
 test("SEC research route preserves provider retrieval and server response time", async () => {
