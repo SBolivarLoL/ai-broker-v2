@@ -157,8 +157,12 @@ function renderOptimizer(data) {
       proposal.targetDraft,
     ]),
   );
+  const observation = data.observedAt
+      ? `IEX through ${new Date(data.observedAt).toLocaleDateString()}`
+      : "IEX history unavailable",
+    quality = String(data.quality?.status || "unknown").replaceAll("_", " ");
   $("#optimizer-asof").textContent =
-    `${data.coverage.optimizedSymbols.length} optimized symbols · updated ${new Date(data.asOf).toLocaleString()}`;
+    `${data.coverage.optimizedSymbols.length} optimized symbols · ${observation} · ${quality} coverage · retrieved ${new Date(data.retrievedAt).toLocaleTimeString()}`;
   if (!data.proposals.length) {
     $("#optimizer-output").innerHTML =
       `<div class="empty">No optimizer proposal is available.</div>${data.warnings.length ? `<div class="warnings">${data.warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>` : ""}`;

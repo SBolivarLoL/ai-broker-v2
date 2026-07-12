@@ -169,6 +169,180 @@ test("account activities separate provider, effective, retrieval, and response t
   }
 });
 
+test("portfolio optimizer separates account, market-history, freshness, and response evidence", async () => {
+  const store = createStore(":memory:");
+  const requests: Record<string, unknown>[] = [];
+  const bars = Array.from({ length: 12 }, (_, index) => ({
+    timestamp: new Date(Date.UTC(2026, 0, 8 + index, 20)),
+    close: 100 + index,
+  }));
+  const alpaca = {
+    trading: {
+      account: {
+        getAccount: async () => ({ equity: "100000" }),
+      },
+      positions: {
+        getAllOpenPositions: async () => [
+          {
+            symbol: "AAPL",
+            assetClass: "us_equity",
+            qty: "10",
+            marketValue: "2000",
+          },
+          {
+            symbol: "BTCUSD",
+            assetClass: "crypto",
+            qty: "1",
+            marketValue: "1000",
+          },
+        ],
+      },
+    },
+    marketData: {
+      getStockBarsFor: async (
+        _symbol: string,
+        request: Record<string, unknown>,
+      ) => {
+        requests.push(request);
+        return bars;
+      },
+    },
+  } as unknown as Alpaca;
+  const times = [
+    new Date("2026-01-20T10:00:00.000Z"),
+    new Date("2026-01-20T10:00:01.000Z"),
+    new Date("2026-01-20T10:00:02.000Z"),
+    new Date("2026-01-20T10:00:03.000Z"),
+  ];
+  try {
+    const request = new Request(
+      "http://localhost/api/portfolio/optimizer?minObservations=10&maxWeightPercent=100&maxTurnoverPercent=100&cashReservePercent=0",
+    );
+    const response = await handlePortfolioRequest(
+      request,
+      new URL(request.url),
+      {
+        alpaca,
+        store,
+        actor: "test-operator",
+        allow: () => true,
+        syncAccountActivities: async () => ({
+          imported: 0,
+          truncated: false,
+          retrievedAt: "2026-01-20T10:00:00.000Z",
+          cacheHit: false,
+        }),
+        currentPortfolioExposure: async () => {
+          throw new Error("unexpected exposure request");
+        },
+        capturePortfolioSnapshot: async () => {
+          throw new Error("unexpected snapshot capture");
+        },
+        now: () => times.shift()!,
+      },
+    );
+
+    expect(response?.status).toBe(200);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      start: new Date("2025-10-22T10:00:00.000Z"),
+      end: new Date("2026-01-20T10:00:00.000Z"),
+      feed: "iex",
+    });
+    const body = await response!.json();
+    expect(body).toMatchObject({
+      schemaVersion: "portfolio-optimizer-v2",
+      observedAt: "2026-01-19T20:00:00.000Z",
+      publishedAt: null,
+      effectivePeriod: {
+        start: "2026-01-08T20:00:00.000Z",
+        end: "2026-01-19T20:00:00.000Z",
+        label: "Aligned optimizer market-history window",
+      },
+      retrievedAt: "2026-01-20T10:00:02.000Z",
+      serverRespondedAt: "2026-01-20T10:00:03.000Z",
+      inputs: {
+        account: {
+          observedAt: null,
+          retrievedAt: "2026-01-20T10:00:01.000Z",
+        },
+        positions: {
+          total: 2,
+          eligibleLongUsEquity: 1,
+          omitted: 1,
+          retrievedAt: "2026-01-20T10:00:01.000Z",
+        },
+        marketHistory: {
+          queried: true,
+          count: 1,
+          retrievedAt: "2026-01-20T10:00:02.000Z",
+        },
+        marketHistories: [
+          {
+            symbol: "AAPL",
+            inputBars: 12,
+            acceptedBars: 12,
+            returnObservations: 11,
+            used: true,
+            freshness: {
+              status: "fresh",
+              staleAfterSeconds: 604800,
+            },
+            retrievedAt: "2026-01-20T10:00:02.000Z",
+          },
+        ],
+      },
+      quality: {
+        status: "partial",
+        expected: { currentPositions: 2, eligibleMarketHistories: 1 },
+        received: {
+          currentPositions: 2,
+          marketHistories: 1,
+          usableMarketHistories: 1,
+        },
+        omitted: { currentPositions: 1, marketHistories: 0 },
+        rejected: {
+          malformedBars: 0,
+          duplicateBars: 0,
+          conflictingBars: 0,
+        },
+        freshness: {
+          evaluatedAt: "2026-01-20T10:00:02.000Z",
+          freshHistories: 1,
+          staleHistories: 0,
+          unavailableHistories: 0,
+          futureHistories: 0,
+        },
+      },
+      source: {
+        account: { provider: "alpaca", api: "trading" },
+        marketHistory: { provider: "alpaca", feed: "iex" },
+        calculation: { provider: "local", component: "portfolio-optimizer" },
+      },
+    });
+    expect(body.quality.missing).toContain(
+      "1 current positions are outside the eligible long US-equity set.",
+    );
+    expect(body.warnings).toContain(
+      "Optimizer return histories use Alpaca IEX single-exchange bars, not consolidated SIP market data.",
+    );
+    expect(body.proposals[0]).toMatchObject({
+      source: { provider: "local", component: "portfolio-optimizer" },
+      observedAt: "2026-01-19T20:00:00.000Z",
+      weights: [
+        {
+          symbol: "AAPL",
+          source: { provider: "alpaca", feed: "iex" },
+          observedAt: "2026-01-19T20:00:00.000Z",
+          retrievedAt: "2026-01-20T10:00:02.000Z",
+        },
+      ],
+    });
+  } finally {
+    store.close();
+  }
+});
+
 test("portfolio performance route separates portfolio, benchmark, and response times", async () => {
   const alpaca = {
     trading: {

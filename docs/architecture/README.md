@@ -139,6 +139,13 @@ retrieval and server response independently. A benchmark skipped because no
 portfolio points exist remains explicitly unqueried rather than inheriting the
 portfolio retrieval timestamp.
 
+`portfolio/portfolio-optimizer.ts` owns deterministic allocation math, while
+`portfolio/optimizer-response.ts` owns provider-bar normalization and the
+browser contract. Current account retrieval, IEX observation windows, market
+retrieval, freshness, rejected/duplicate/conflicting bars, eligibility gaps,
+calculation impact, and response delivery remain separate; stale or future data
+cannot enter optimizer weights.
+
 `portfolio/risk-response.ts` owns deterministic portfolio-risk response
 composition. `portfolio/routes.ts` captures current account/position retrieval
 before its bounded entitlement-aware historical-bar and IEX-snapshot stage.

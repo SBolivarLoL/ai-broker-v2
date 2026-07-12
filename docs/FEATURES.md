@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `ecd2c18`: 2026-07-11.
+Last reviewed against `main` commit `fe72d10`: 2026-07-11.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -52,7 +52,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Diversification reports both whole-account concentration, including cash, and invested-asset concentration over gross position value so a cash-heavy account does not make a concentrated invested sleeve appear diversified.
 - Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps. Exposure root, asset-class/SIC/factor aggregates, positions, provider inputs, sources, cache metadata, and quality DTOs distinguish current Alpaca account/position retrieval, IEX bar observations/effective windows/retrieval, SEC classification retrieval, and server response time. Cache hits preserve external-evidence retrieval while refreshing current-state and response times; failed, unqueried, malformed, unsupported, and position-bound omissions remain explicit, and an irrelevant SPY benchmark is not queried for a portfolio without US-equity holdings.
 - Deterministic rate, technology, volatility, and user-entered held-symbol scenarios.
-- Read-only risk-parity and shrunk mean-variance proposals. Targets flow into a constrained rebalance planner before the normal basket preview.
+- Read-only risk-parity and shrunk mean-variance proposals. The v2 optimizer contract preserves current-account retrieval separately from IEX daily-bar observation/effective windows, market retrieval, and response time; exposes expected, received, omitted, malformed, duplicate, conflicting, stale, future-dated, and insufficient-history evidence plus proposal impact; and excludes unusable histories from target weights. The visible warning identifies IEX as a single-exchange feed rather than consolidated SIP. Targets flow into a constrained rebalance planner before the normal basket preview.
 - Rebalance planning with turnover, cash buffer, fee, imported FIFO lot, tax-rate, maximum-tax, precision, and minimum-notional constraints.
 - Persisted operations policy for kill switch, order notional, symbol notional, position exposure, sector exposure, drawdown, and turnover.
 

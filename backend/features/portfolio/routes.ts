@@ -28,6 +28,11 @@ import {
 import { portfolioRiskDto } from "./risk-response";
 import { portfolioSnapshotsDto } from "./snapshot-response";
 import { accountActivitiesDto } from "./activity-response";
+import {
+  normalizeOptimizerHistory,
+  optimizerHistoryUsable,
+  portfolioOptimizerDto,
+} from "./optimizer-response";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -163,6 +168,7 @@ export async function handlePortfolioRequest(
   }
 
   if (url.pathname === "/api/portfolio/optimizer" && request.method === "GET") {
+    const requestedAt = now();
     const parsed = PortfolioOptimizerRequest.safeParse(
       Object.fromEntries(url.searchParams),
     );
@@ -179,6 +185,7 @@ export async function handlePortfolioRequest(
       alpaca.trading.account.getAccount(),
       alpaca.trading.positions.getAllOpenPositions(),
     ]);
+    const accountRetrievedAt = now();
     if (account.equity === undefined) {
       throw new Error("Account optimizer data unavailable");
     }
@@ -191,30 +198,48 @@ export async function handlePortfolioRequest(
       )
       .slice(0, 50);
     const start = new Date(
-      Date.now() -
+      requestedAt.getTime() -
         Math.max(90, optimizerRequest.minObservations * 3) * 86_400_000,
     );
-    const positionData = await Promise.all(
+    const rawPositionData = await Promise.all(
       equityPositions.map(async (position) => {
         const bars = await alpaca.marketData.getStockBarsFor(position.symbol, {
           timeframe: TimeFrame.Day,
           start,
+          end: requestedAt,
           feed: "iex",
         });
         return {
           symbol: position.symbol,
           marketValue: Number(position.marketValue),
-          closes: bars
-            .map((bar) => Number(bar.close))
-            .filter((value) => Number.isFinite(value) && value > 0),
+          bars,
         };
+      }),
+    );
+    const marketRetrievedAt = now();
+    const histories = rawPositionData.map((position) =>
+      normalizeOptimizerHistory({
+        symbol: position.symbol,
+        marketValue: position.marketValue,
+        rawBars: position.bars,
+        retrievedAt: marketRetrievedAt,
       }),
     );
     const report = buildPortfolioOptimizerReport({
       equity: Number(account.equity),
-      positions: positionData,
+      positions: histories.map((history) => ({
+        symbol: history.symbol,
+        marketValue: history.marketValue,
+        closes: optimizerHistoryUsable(
+          history,
+          optimizerRequest.minObservations,
+          marketRetrievedAt,
+        )
+          ? history.bars.map((bar) => bar.close)
+          : [],
+      })),
       request: optimizerRequest,
-      asOf: new Date().toISOString(),
+      asOf: marketRetrievedAt.toISOString(),
     });
     const omittedNonEquity = positions.length - equityPositions.length;
     const warnings =
@@ -229,7 +254,18 @@ export async function handlePortfolioRequest(
       constraints: report.constraints,
       optimizedSymbols: report.coverage.optimizedSymbols,
     });
-    return json({ ...report, warnings });
+    return json(
+      portfolioOptimizerDto({
+        report: { ...report, warnings },
+        histories,
+        totalPositionCount: positions.length,
+        omittedPositionCount: omittedNonEquity,
+        minObservations: optimizerRequest.minObservations,
+        accountRetrievedAt,
+        evaluatedAt: marketRetrievedAt,
+        serverRespondedAt: now(),
+      }),
+    );
   }
 
   if (
