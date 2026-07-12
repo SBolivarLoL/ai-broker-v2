@@ -32,10 +32,16 @@ import { normalizeSecPointInTimeDate } from "./sec-financial-trends";
 import {
   getCompanySecEvidence,
   getComparableValuations,
+  getPointInTimeComparableValuations,
   getValuationScenarios,
   openaiModel,
   runCompanyResearch,
 } from "./research";
+import {
+  buildComparableValuationReplay,
+  parseComparableSymbols,
+  replayComparableValuation,
+} from "./comparable-valuation";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -67,7 +73,12 @@ type ResearchContext = {
   officialMacroContext?: () => Promise<MacroContext>;
   comparableValuations?: (
     symbol: string,
-    peers: string,
+    peers: string | string[],
+  ) => Promise<ComparableValuations>;
+  pointInTimeComparableValuations?: (
+    symbol: string,
+    peers: string | string[],
+    asOf: string,
   ) => Promise<ComparableValuations>;
   valuationScenarios?: (
     symbol: string,
@@ -453,6 +464,89 @@ export async function handleResearchRequest(
               : "Invalid comparable valuation request",
         },
         400,
+      );
+    }
+  }
+
+  if (
+    url.pathname === "/api/research/valuation-runs" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:historical-valuation`, 6))
+      return json({ error: "Historical valuation rate limit exceeded" }, 429);
+    const input = await requestJson(request);
+    let parsed: ReturnType<typeof parseComparableSymbols>;
+    let asOf: string;
+    try {
+      parsed = parseComparableSymbols(
+        String(input.symbol ?? ""),
+        Array.isArray(input.peers) ? input.peers.map(String) : String(input.peers ?? ""),
+      );
+      asOf = normalizeSecPointInTimeDate(String(input.asOf ?? ""));
+    } catch (error) {
+      return json(
+        { error: error instanceof Error ? error.message : "Invalid historical valuation request" },
+        400,
+      );
+    }
+    const runId = crypto.randomUUID();
+    const model = "deterministic-comparable-valuations-v3";
+    store.startResearch(runId, parsed.subject, model);
+    try {
+      const report = await (
+        context.pointInTimeComparableValuations ??
+        ((symbol, peers, cutoff) =>
+          getPointInTimeComparableValuations(alpaca, symbol, peers, cutoff))
+      )(parsed.subject, parsed.peers, asOf);
+      if (
+        report.priceMode !== "historical_daily_close" ||
+        report.pointInTime.status !== "applied" ||
+        report.pointInTime.asOfDate !== asOf
+      )
+        throw new Error("Historical valuation did not preserve the requested cutoff");
+      const evidenceReplay = buildComparableValuationReplay(report);
+      replayComparableValuation(evidenceReplay);
+      const payload = {
+        schemaVersion: "historical-comparable-valuation-run-v1" as const,
+        runId,
+        model,
+        report,
+        evidenceReplay,
+      };
+      store.completeResearchArtifact(runId, payload);
+      store.event("research.historical_valuation.completed", actor, {
+        runId,
+        subject: parsed.subject,
+        peers: parsed.peers,
+        asOf,
+        replayHash: payload.evidenceReplay.contentHash,
+      });
+      return json(payload, 201);
+    } catch (error) {
+      store.failResearch(
+        runId,
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+  }
+
+  if (
+    url.pathname.startsWith("/api/research/valuation-runs/") &&
+    url.pathname.endsWith("/replay") &&
+    request.method === "POST"
+  ) {
+    const parts = url.pathname.split("/");
+    const runId = parts.at(-2) ?? "";
+    const stored = store.getResearch(runId);
+    if (!stored || stored.model !== "deterministic-comparable-valuations-v3")
+      return json({ error: "Historical valuation run not found" }, 404);
+    try {
+      return json(replayComparableValuation(stored.payload?.evidenceReplay));
+    } catch {
+      throw new ClientError(
+        "Stored valuation replay failed integrity verification",
+        409,
       );
     }
   }

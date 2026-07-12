@@ -5,6 +5,8 @@
 import {
   canonicalEvidence,
   dedupeEvidence,
+  evidenceContentHash,
+  stableEvidenceJson,
   type CanonicalEvidence,
 } from "../../shared/evidence";
 import type { SecCompany, SecFacts } from "../../integrations/sec-edgar";
@@ -48,7 +50,20 @@ export type ComparableValuationEvidence = CanonicalEvidence<
   "fundamentals" | "market" | "valuation"
 >;
 export type ComparableValuationTable = {
-  schemaVersion: "comparable-valuations-v2";
+  schemaVersion: "comparable-valuations-v3";
+  priceMode: "latest_retrieval" | "historical_daily_close";
+  pointInTime: {
+    status: "not_requested" | "applied";
+    asOfDate: string | null;
+    cutoffAt: string | null;
+    publicationPrecision: "sec_filed_date";
+    marketObservationPolicy: "latest_price_observation_unavailable" | "last_daily_bar_at_or_before_cutoff";
+    excludedPostCutoffValuationObservations: number;
+    historicalClassification: {
+      status: "unavailable";
+      reason: string;
+    };
+  };
   subject: string;
   peers: string[];
   rows: ComparableValuationRow[];
@@ -60,21 +75,21 @@ export type ComparableValuationTable = {
     expected: {
       companies: number;
       secFundamentals: number;
-      currentPrices: number;
+      prices: number;
       marketPriceObservations: number;
       valuationMetrics: number;
     };
     received: {
       companies: number;
       secFundamentals: number;
-      currentPrices: number;
+      prices: number;
       marketPriceObservations: number;
       valuationMetrics: number;
     };
     omitted: {
       companies: number;
       secFundamentals: number;
-      currentPrices: number;
+      prices: number;
       marketPriceObservations: number;
       valuationMetrics: number;
     };
@@ -88,7 +103,7 @@ export type ComparableValuationTable = {
       } | null;
       retrievedAt: string;
       evaluatedAt: string;
-      agePolicy: "market_price_observation_unavailable";
+      agePolicy: "market_price_observation_unavailable" | "historical_price_must_not_exceed_cutoff";
     };
     missing: string[];
     impact: string[];
@@ -96,6 +111,14 @@ export type ComparableValuationTable = {
   } & ReturnType<typeof providerTimeFields>;
   asOf: string;
 } & ReturnType<typeof providerTimeFields>;
+
+export type ComparableValuationReplay = {
+  schemaVersion: "comparable-valuation-replay-v1";
+  payloadPolicy: "bounded_canonical_valuation_report";
+  calculationVersion: "comparable-valuations-v3";
+  report: ComparableValuationTable;
+  contentHash: string;
+};
 
 const symbolPattern = /^[A-Z.]{1,10}$/;
 const round = (value: number) => Number(value.toFixed(6));
@@ -190,11 +213,23 @@ export function buildComparableValuationRow(
     retrievedAt,
     serverRespondedAt: retrievedAt,
   },
+  pointInTime: {
+    filedThrough?: string | null;
+    priceObservedAt?: string | null;
+    priceFeed?: "sip" | "iex";
+    priceDelayed?: boolean;
+  } = {},
 ) {
   if (!Number.isFinite(price) || price <= 0)
     throw new Error("Comparable valuation requires a positive market price");
   const asOf = new Date(retrievedAt).toISOString();
-  const trends = buildSecFinancialTrends(company, facts, 3, 3);
+  const trends = buildSecFinancialTrends(
+    company,
+    facts,
+    3,
+    3,
+    pointInTime.filedThrough ?? null,
+  );
   // Income multiples use annual facts while balance-sheet/share metrics use
   // latest instant facts. Their separate periods keep that mismatch visible.
   const revenueMetric = metric(trends, "revenue");
@@ -234,7 +269,7 @@ export function buildComparableValuationRow(
     dilutedEps: dilutedEps?.periodEnd ?? null,
     stockholdersEquity: equity?.periodEnd ?? null,
     sharesOutstanding: shares?.periodEnd ?? null,
-    price: asOf,
+    price: pointInTime.priceObservedAt ?? asOf,
   };
   const selectedObservations = [
     revenue,
@@ -295,7 +330,7 @@ export function buildComparableValuationRow(
   const priceSource = canonicalEvidence({
     id: priceEvidenceId,
     provider: "alpaca",
-    sourceId: `${company.ticker}:valuation-price:${asOf}`,
+    sourceId: `${company.ticker}:valuation-price:${pointInTime.priceObservedAt ?? asOf}`,
     category: "market",
     authority: "regulated_broker",
     claimStatus: "broker_observation",
@@ -303,13 +338,17 @@ export function buildComparableValuationRow(
     url: "https://alpaca.markets/data",
     asOf,
     retrievedAt: asOf,
-    observedAt: null,
+    observedAt: pointInTime.priceObservedAt ?? null,
     entityIds: { symbol: company.ticker },
     data: {
       symbol: company.ticker,
       price,
       currency: "USD",
-      feed: "IEX",
+      feed: (pointInTime.priceFeed ?? "iex").toUpperCase(),
+      delayed: pointInTime.priceDelayed ?? false,
+      priceType: pointInTime.priceObservedAt
+        ? "daily_close"
+        : "latest_returned_price",
       retrievedAt: asOf,
     },
   });
@@ -380,6 +419,7 @@ export function buildComparableValuationRow(
       priceSource,
       valuationSource,
     ] as ComparableValuationEvidence[],
+    pointInTime: trends.pointInTime,
   };
 }
 
@@ -389,6 +429,10 @@ export function comparableValuationTable(
   results: Array<ReturnType<typeof buildComparableValuationRow>>,
   warnings: string[],
   asOf = new Date().toISOString(),
+  options: {
+    priceMode?: "latest_retrieval" | "historical_daily_close";
+    filedThrough?: string | null;
+  } = {},
 ): ComparableValuationTable {
   const deduped = dedupeEvidence(results.flatMap((result) => result.sources));
   const rows = results.map((result) => result.row);
@@ -416,14 +460,14 @@ export function comparableValuationTable(
   const expected = {
     companies: requested,
     secFundamentals: requested,
-    currentPrices: requested,
+    prices: requested,
     marketPriceObservations: requested,
     valuationMetrics: requested * 6,
   };
   const received = {
     companies: rows.length,
     secFundamentals: rows.length,
-    currentPrices: rows.length,
+    prices: rows.length,
     marketPriceObservations: marketSources.filter(
       (source) => source.observedAt !== null,
     ).length,
@@ -432,7 +476,7 @@ export function comparableValuationTable(
   const omitted = {
     companies: expected.companies - received.companies,
     secFundamentals: expected.secFundamentals - received.secFundamentals,
-    currentPrices: expected.currentPrices - received.currentPrices,
+    prices: expected.prices - received.prices,
     marketPriceObservations:
       expected.marketPriceObservations - received.marketPriceObservations,
     valuationMetrics: expected.valuationMetrics - received.valuationMetrics,
@@ -463,17 +507,25 @@ export function comparableValuationTable(
     latestTime(externalSources.map((source) => source.retrievedAt)) ??
     new Date(asOf).toISOString();
   const rootTime = providerTimeFields({
-    observationTime: null,
+    observationTime: latestTime(
+      marketSources.map((source) => source.observedAt),
+    ),
     publicationTime: rootPublishedAt,
     effectivePeriod: rootEffectivePeriod,
     retrievalTime: rootRetrievedAt,
     serverResponseTime: asOf,
   });
+  const retrievalOnlyPrices = marketSources.filter(
+    (source) => source.observedAt === null,
+  ).length;
   const missing = [
     ...omittedSymbols.map((symbol) => `${symbol}:valuation_inputs`),
-    ...(omitted.marketPriceObservations
+    ...(omitted.prices
+      ? [`${omitted.prices} requested market prices are unavailable.`]
+      : []),
+    ...(retrievalOnlyPrices
       ? [
-          `${omitted.marketPriceObservations} market prices have retrieval time but no provider observation time.`,
+          `${retrievalOnlyPrices} market prices have retrieval time but no provider observation time.`,
         ]
       : []),
     ...(omitted.valuationMetrics
@@ -494,18 +546,40 @@ export function comparableValuationTable(
           "All requested companies and valuation metrics are available with explicit source timing.",
         ];
   return {
-    schemaVersion: "comparable-valuations-v2",
+    schemaVersion: "comparable-valuations-v3",
+    priceMode: options.priceMode ?? "latest_retrieval",
+    pointInTime: {
+      status: options.filedThrough ? "applied" : "not_requested",
+      asOfDate: options.filedThrough ?? null,
+      cutoffAt: options.filedThrough
+        ? `${options.filedThrough}T23:59:59.999Z`
+        : null,
+      publicationPrecision: "sec_filed_date",
+      marketObservationPolicy: options.filedThrough
+        ? "last_daily_bar_at_or_before_cutoff"
+        : "latest_price_observation_unavailable",
+      excludedPostCutoffValuationObservations: results.reduce(
+        (total, result) =>
+          total + result.pointInTime.excludedPostCutoffObservations,
+        0,
+      ),
+      historicalClassification: {
+        status: "unavailable",
+        reason:
+          "SEC submissions expose current SIC without a historical classification series.",
+      },
+    },
     subject,
     peers,
     rows,
     sources: deduped.records,
     warnings: [...new Set(warnings)],
     formulas: {
-      marketCap: "Current IEX price x latest SEC shares outstanding",
+      marketCap: `${options.filedThrough ? "Historical daily close" : "Latest returned market price"} x latest eligible SEC shares outstanding`,
       priceToSales:
         "Derived market cap / latest directly reported annual SEC revenue",
       priceToEarnings:
-        "Current IEX price / latest directly reported annual SEC diluted EPS",
+        `${options.filedThrough ? "Historical daily close" : "Latest returned market price"} / latest eligible directly reported annual SEC diluted EPS`,
       priceToBook: "Derived market cap / latest SEC stockholders' equity",
       revenueGrowth: "Latest annual SEC revenue vs prior annual SEC revenue",
       netMargin:
@@ -525,7 +599,9 @@ export function comparableValuationTable(
         effectivePeriod: rootEffectivePeriod,
         retrievedAt: rootRetrievedAt,
         evaluatedAt: rootTime.serverRespondedAt,
-        agePolicy: "market_price_observation_unavailable",
+        agePolicy: options.filedThrough
+          ? "historical_price_must_not_exceed_cutoff"
+          : "market_price_observation_unavailable",
       },
       missing,
       impact,
@@ -533,5 +609,60 @@ export function comparableValuationTable(
       ...rootTime,
     },
     ...rootTime,
+  };
+}
+
+export function buildComparableValuationReplay(
+  report: ComparableValuationTable,
+): ComparableValuationReplay {
+  if (report.pointInTime.status !== "applied")
+    throw new Error("Comparable valuation replay requires a point-in-time report");
+  const canonicalReport = JSON.parse(
+    stableEvidenceJson(report),
+  ) as ComparableValuationTable;
+  const manifest = {
+    schemaVersion: "comparable-valuation-replay-v1" as const,
+    payloadPolicy: "bounded_canonical_valuation_report" as const,
+    calculationVersion: "comparable-valuations-v3" as const,
+    report: canonicalReport,
+  };
+  return { ...manifest, contentHash: evidenceContentHash(manifest) };
+}
+
+export function replayComparableValuation(value: unknown) {
+  if (!value || typeof value !== "object")
+    throw new Error("Comparable valuation replay is invalid");
+  const replay = value as ComparableValuationReplay;
+  const { contentHash, ...manifest } = replay;
+  if (
+    replay.schemaVersion !== "comparable-valuation-replay-v1" ||
+    replay.calculationVersion !== "comparable-valuations-v3" ||
+    contentHash !== evidenceContentHash(manifest)
+  )
+    throw new Error("Comparable valuation replay integrity check failed");
+  const cutoffAt = replay.report.pointInTime.cutoffAt;
+  if (replay.report.pointInTime.status !== "applied" || !cutoffAt)
+    throw new Error("Comparable valuation replay lacks a point-in-time cutoff");
+  for (const source of replay.report.sources) {
+    if (source.contentHash !== evidenceContentHash(source.data))
+      throw new Error(`Comparable valuation source ${source.id} failed integrity`);
+    if (
+      source.category === "fundamentals" &&
+      source.publishedAt &&
+      source.publishedAt > cutoffAt
+    )
+      throw new Error(`Comparable valuation source ${source.id} exceeds the filing cutoff`);
+    if (
+      source.category === "market" &&
+      (!source.observedAt || source.observedAt > cutoffAt)
+    )
+      throw new Error(`Comparable valuation source ${source.id} exceeds the market cutoff`);
+  }
+  return {
+    schemaVersion: "comparable-valuation-replay-result-v1" as const,
+    status: "verified" as const,
+    providerRequests: 0 as const,
+    replayHash: contentHash,
+    report: replay.report,
   };
 }
