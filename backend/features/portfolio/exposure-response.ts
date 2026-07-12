@@ -62,9 +62,7 @@ function observationWindow(
   label: string,
 ): EffectivePeriodInput | null {
   const times = orderedTimes(values);
-  return times.length
-    ? { start: times[0], end: times.at(-1), label }
-    : null;
+  return times.length ? { start: times[0], end: times.at(-1), label } : null;
 }
 
 function successfulTime(input: {
@@ -122,9 +120,7 @@ export function portfolioExposureDto(input: {
   const allBarTimes = [...positionBarTimes, ...benchmarkBarTimes];
   const marketRetrievals = [
     input.benchmarkRetrievedAt,
-    ...input.positionEvidence.map(
-      (position) => position.marketDataRetrievedAt,
-    ),
+    ...input.positionEvidence.map((position) => position.marketDataRetrievedAt),
   ];
   const classificationRetrievals = input.positionEvidence.map(
     (position) => position.classificationRetrievedAt,
@@ -251,6 +247,42 @@ export function portfolioExposureDto(input: {
     missing.push(`SPY:malformed_bars:${input.benchmarkRejectedBars}`);
   if (input.omittedPositionCount > 0)
     missing.push(`portfolio:omitted_positions:${input.omittedPositionCount}`);
+  const expected = {
+    account: 1,
+    positions: input.positionEvidence.length + input.omittedPositionCount,
+    positionHistories: input.positionEvidence.length,
+    classifications: expectedEquityEvidence.length,
+    benchmarkHistories: benchmarkExpected ? 1 : 0,
+  };
+  const received = {
+    account: 1,
+    positions: input.positionEvidence.length,
+    positionHistories: input.positionEvidence.filter(
+      (position) => position.bars.length >= 2,
+    ).length,
+    classifications: expectedEquityEvidence.filter(
+      (position) => position.classificationAvailable,
+    ).length,
+    benchmarkHistories:
+      benchmarkExpected && input.benchmarkBars.length >= 2 ? 1 : 0,
+  };
+  const observationExpected =
+    input.positionEvidence.filter((position) => position.marketDataQueried)
+      .length + (benchmarkExpected ? 1 : 0);
+  const observationReceived =
+    input.positionEvidence.filter(
+      (position) =>
+        position.marketDataQueried &&
+        latestTime(position.bars.map((bar) => bar.observedAt)) !== null,
+    ).length +
+    (benchmarkExpected && latestTime(benchmarkBarTimes) !== null ? 1 : 0);
+  const impact = missing.length
+    ? [
+        "Asset, SEC SIC, or return-factor exposure may exclude positions or use reduced history; omitted and malformed evidence is not imputed.",
+      ]
+    : [
+        "The bounded exposure evidence set is complete; SEC SIC is a retrieval-time classification and is not presented as a point-in-time historical classification.",
+      ];
 
   return {
     ...input.report,
@@ -311,24 +343,27 @@ export function portfolioExposureDto(input: {
           : missing.length
             ? ("partial" as const)
             : ("complete" as const),
-      expected: {
-        account: 1,
-        positions: input.positionEvidence.length,
-        positionHistories: input.positionEvidence.length,
-        classifications: expectedEquityEvidence.length,
-        benchmarkHistories: benchmarkExpected ? 1 : 0,
-      },
-      received: {
-        account: 1,
-        positions: input.positionEvidence.length,
-        positionHistories: input.positionEvidence.filter(
-          (position) => position.bars.length >= 2,
-        ).length,
-        classifications: expectedEquityEvidence.filter(
-          (position) => position.classificationAvailable,
-        ).length,
+      expected,
+      received,
+      omitted: {
+        account: expected.account - received.account,
+        positions: expected.positions - received.positions,
+        positionHistories:
+          expected.positionHistories - received.positionHistories,
+        classifications: expected.classifications - received.classifications,
         benchmarkHistories:
-          benchmarkExpected && input.benchmarkBars.length >= 2 ? 1 : 0,
+          expected.benchmarkHistories - received.benchmarkHistories,
+      },
+      freshness: {
+        status:
+          observationReceived === observationExpected
+            ? ("observed" as const)
+            : ("partial" as const),
+        expectedObservations: observationExpected,
+        receivedObservations: observationReceived,
+        latestObservedAt: rootTime.observedAt,
+        evaluatedAt: rootTime.serverRespondedAt,
+        agePolicy: "provider_timestamps_only" as const,
       },
       omittedPositions: input.omittedPositionCount,
       rejected: {
@@ -339,6 +374,7 @@ export function portfolioExposureDto(input: {
         benchmarkBars: input.benchmarkRejectedBars,
       },
       missing,
+      impact,
       cache: {
         hit: input.cacheHit,
         externalEvidenceExpiresAt: isoTime(input.cacheExpiresAt),

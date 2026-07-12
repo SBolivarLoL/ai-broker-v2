@@ -415,6 +415,29 @@ test("portfolio performance route separates portfolio, benchmark, and response t
         retrievedAt: "2026-01-02T20:00:01.000Z",
       },
     ],
+    quality: {
+      status: "complete",
+      expected: {
+        portfolioHistory: 1,
+        currentPositions: 1,
+        benchmarkHistory: 1,
+      },
+      received: {
+        portfolioHistory: 1,
+        currentPositions: 1,
+        benchmarkHistory: 1,
+      },
+      omitted: {
+        portfolioHistory: 0,
+        currentPositions: 0,
+        benchmarkHistory: 0,
+      },
+      freshness: {
+        status: "observed",
+        evaluatedAt: "2026-01-02T20:00:03.000Z",
+      },
+      missing: [],
+    },
     asOf: "2026-01-02T20:00:03.000Z",
   });
 });

@@ -122,7 +122,39 @@ describe("portfolio risk response", () => {
         observedAt: null,
         retrievedAt: "2026-01-03T22:00:01.000Z",
       },
-      quality: { status: "complete", missing: [], warnings: [] },
+      quality: {
+        status: "complete",
+        expected: {
+          account: 1,
+          positions: 1,
+          positionHistories: 1,
+          positionQuotes: 1,
+          benchmarkHistories: 1,
+        },
+        received: {
+          account: 1,
+          positions: 1,
+          positionHistories: 1,
+          positionQuotes: 1,
+          benchmarkHistories: 1,
+        },
+        omitted: {
+          account: 0,
+          positions: 0,
+          positionHistories: 0,
+          positionQuotes: 0,
+          benchmarkHistories: 0,
+        },
+        freshness: {
+          status: "observed",
+          expectedObservations: 3,
+          receivedObservations: 3,
+          latestObservedAt: "2026-01-03T21:01:00.000Z",
+          evaluatedAt: "2026-01-03T22:00:03.000Z",
+        },
+        missing: [],
+        warnings: [],
+      },
     });
     expect(response.stressTests[0]).toMatchObject({
       observedAt: null,
@@ -158,6 +190,16 @@ describe("portfolio risk response", () => {
         positionHistories: 0,
         positionQuotes: 0,
         benchmarkHistories: 0,
+      },
+      omitted: {
+        positionHistories: 1,
+        positionQuotes: 1,
+        benchmarkHistories: 1,
+      },
+      freshness: {
+        status: "partial",
+        expectedObservations: 3,
+        receivedObservations: 0,
       },
       missing: [
         "AAPL:historical_bars",

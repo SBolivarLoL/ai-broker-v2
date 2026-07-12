@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `0c6f1f4`: 2026-07-12.
+Last reviewed against `main` commit `c3b3f0c`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 394 tests, 0 failures, 1,824 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 394 tests, 0 failures, 1,825 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 189 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.06% functions, 97.36% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.06% functions, 97.34% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `0c6f1f4`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `c3b3f0c`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -152,7 +152,10 @@ Additional mechanical checks:
   portfolio retrieval, benchmark-bar observation/retrieval, position
   observation unavailability, and server response remain distinct. When no
   valid portfolio points exist, the benchmark is not queried and reports null
-  retrieval rather than inheriting portfolio retrieval.
+  retrieval rather than inheriting portfolio retrieval. Expected, received,
+  omitted, observation coverage, missing inputs, and conclusion impact are
+  explicit for portfolio history, aligned benchmark history, and current
+  attribution positions.
 - Portfolio-risk root, current account/position inputs, position-history and
   IEX-quote inputs, SPY benchmark, advanced-risk, liquidity, allocation,
   diversification, stress, and quality DTOs were checked through pure and
@@ -160,7 +163,8 @@ Additional mechanical checks:
   quote event times, historical effective windows, account retrieval, market
   retrieval, and server response remain distinct. The bounded historical reads
   report their actual SIP/IEX/delayed fallback, and partial evidence identifies
-  expected, received, and missing inputs without inventing observations.
+  expected, received, omitted, observation coverage, and conclusion impact
+  without inventing observations or claiming one shared bar/quote age cutoff.
 - Portfolio-exposure root, asset-class/SIC/factor aggregates, positions,
   provider inputs, sources, cache metadata, and quality DTOs were checked
   through pure, service, failure, malformed-data, cache-hit, non-equity, and
@@ -168,7 +172,9 @@ Additional mechanical checks:
   bar observations/effective windows/retrieval, SEC classification retrieval,
   cached external evidence, fresh current-state retrieval, and response time
   remain distinct. Rejected bars, failed/unqueried providers, unsupported
-  position histories, and the 100-position bound remain explicit.
+  position histories, and the 100-position bound remain explicit. Expected,
+  received, omitted, observation coverage, and conclusion impact are exposed,
+  including the point-in-time limitation of retrieval-time SEC SIC.
 - Portfolio-scenario root, scenario, position, input, and quality DTOs were
   checked through pure and direct API contracts. Exposure observation,
   effective windows, retrieval, source/feed identity, and fresh response time
@@ -195,7 +201,9 @@ Additional mechanical checks:
   retrieval while response time refreshes; current account/position observation
   remains null. Stream-event observation, unavailable stream receipt, REST
   recovery retrieval, UTC snapshot periods, and legacy/malformed coverage gaps
-  remain distinct without changing the applied database schema.
+  remain distinct without changing the applied database schema. Collection and
+  row quality expose exact omissions, original capture freshness, and replay or
+  reconciliation impact without relabeling historical captures as current.
 - Multi-asset index, FX, and crypto DTOs were checked for explicit provider
   observation, retrieval, and per-response server timestamps; the route cache
   preserves provider retrieval time while refreshing server response time.
@@ -319,6 +327,16 @@ The following read-only checks were run:
   did not load a basket, preview an order, submit an order, or enable live
   trading. An initial pass also caught and fixed zero-filled broker orders being
   misclassified as malformed fills.
+- A 2026-07-12 headed browser pass loaded the configured paper portfolio and
+  rendered four labeled calculation-coverage regions for risk, exposure,
+  snapshots, and performance. Each showed expected/received/omitted rows,
+  observation or capture freshness, evaluation time, status, and conclusion
+  impact. The real risk response visibly remained partial because two of three
+  two-sided quotes were unavailable, while exposure, snapshot, and performance
+  evidence were complete. The four panels produced no browser-console errors
+  and no page-level horizontal overflow at 1440×1000 or 390×844. The pass was
+  read-only: it created no basket, preview, order, policy mutation, or live
+  trading authority.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,

@@ -220,29 +220,31 @@ export function portfolioPerformanceDto(input: {
     input.benchmarkBars,
   );
   const benchmarkObservedAt = coveredBenchmark.at(-1)?.timestamp ?? null;
-  const benchmarkTime = input.benchmarkRetrievedAt !== null
-    ? providerTimeFields({
-        observationTime: benchmarkObservedAt,
-        publicationTime: null,
-        effectivePeriod: observationWindow(
-          coveredBenchmark.map((bar) => bar.timestamp),
-          `${input.period} benchmark window`,
-        ),
-        retrievalTime: input.benchmarkRetrievedAt,
-        serverResponseTime: input.serverRespondedAt,
-      })
-    : unavailableProviderTimeFields(input.serverRespondedAt);
+  const benchmarkTime =
+    input.benchmarkRetrievedAt !== null
+      ? providerTimeFields({
+          observationTime: benchmarkObservedAt,
+          publicationTime: null,
+          effectivePeriod: observationWindow(
+            coveredBenchmark.map((bar) => bar.timestamp),
+            `${input.period} benchmark window`,
+          ),
+          retrievalTime: input.benchmarkRetrievedAt,
+          serverResponseTime: input.serverRespondedAt,
+        })
+      : unavailableProviderTimeFields(input.serverRespondedAt);
   const rootObservedAt =
     [portfolioObservedAt, benchmarkObservedAt]
       .filter((value): value is number => value !== null)
       .sort((left, right) => left - right)
       .at(-1) ?? null;
-  const rootRetrievedAt = input.benchmarkRetrievedAt === null
-    ? input.portfolioRetrievedAt
-    : new Date(input.benchmarkRetrievedAt).getTime() >=
-        new Date(input.portfolioRetrievedAt).getTime()
-      ? input.benchmarkRetrievedAt
-      : input.portfolioRetrievedAt;
+  const rootRetrievedAt =
+    input.benchmarkRetrievedAt === null
+      ? input.portfolioRetrievedAt
+      : new Date(input.benchmarkRetrievedAt).getTime() >=
+          new Date(input.portfolioRetrievedAt).getTime()
+        ? input.benchmarkRetrievedAt
+        : input.portfolioRetrievedAt;
   const rootTime = providerTimeFields({
     observationTime: rootObservedAt,
     publicationTime: null,
@@ -268,8 +270,7 @@ export function portfolioPerformanceDto(input: {
       ),
     )
     .sort(
-      (left, right) =>
-        right.unrealizedProfitLoss - left.unrealizedProfitLoss,
+      (left, right) => right.unrealizedProfitLoss - left.unrealizedProfitLoss,
     )
     .map((item) => ({
       ...item,
@@ -282,6 +283,43 @@ export function portfolioPerformanceDto(input: {
         serverResponseTime: input.serverRespondedAt,
       }),
     }));
+  const expected = {
+    portfolioHistory: 1,
+    currentPositions: input.positions.length,
+    benchmarkHistory: input.points.length ? 1 : 0,
+  };
+  const received = {
+    portfolioHistory: input.points.length ? 1 : 0,
+    currentPositions: attribution.length,
+    benchmarkHistory: benchmark.quality === "complete" ? 1 : 0,
+  };
+  const omitted = {
+    portfolioHistory: expected.portfolioHistory - received.portfolioHistory,
+    currentPositions: expected.currentPositions - received.currentPositions,
+    benchmarkHistory: expected.benchmarkHistory - received.benchmarkHistory,
+  };
+  const missing = [
+    ...(omitted.portfolioHistory ? ["portfolio_history"] : []),
+    ...(omitted.currentPositions
+      ? [`current_positions:${omitted.currentPositions}`]
+      : []),
+    ...(omitted.benchmarkHistory ? ["benchmark_history"] : []),
+  ];
+  const impact = omitted.portfolioHistory
+    ? [
+        "Portfolio-return, chart, and benchmark conclusions are unavailable because no usable portfolio-history observations were returned.",
+      ]
+    : omitted.benchmarkHistory
+      ? [
+          "Portfolio returns remain available, but benchmark and active-return conclusions are unavailable because aligned benchmark coverage is insufficient.",
+        ]
+      : omitted.currentPositions
+        ? [
+            "Portfolio and benchmark returns remain available, but current unrealized attribution omits malformed position records.",
+          ]
+        : [
+            "Portfolio history, aligned benchmark evidence, and current-position attribution are available for the requested period.",
+          ];
   return {
     period: input.period,
     summary: {
@@ -312,9 +350,31 @@ export function portfolioPerformanceDto(input: {
     })),
     attribution,
     quality: {
+      status:
+        input.points.length === 0
+          ? ("empty" as const)
+          : missing.length
+            ? ("partial" as const)
+            : ("complete" as const),
       cashflowAdjusted: true,
       benchmarkCoverage: benchmark.quality,
       benchmarkSource: input.benchmarkSource,
+      expected,
+      received,
+      omitted,
+      freshness: {
+        status:
+          portfolioObservedAt &&
+          (!expected.benchmarkHistory || benchmarkObservedAt)
+            ? ("observed" as const)
+            : ("partial" as const),
+        portfolioObservedAt: portfolioTime.observedAt,
+        benchmarkObservedAt: benchmarkTime.observedAt,
+        evaluatedAt: rootTime.serverRespondedAt,
+        agePolicy: "provider_timestamps_only" as const,
+      },
+      missing,
+      impact,
       source: "Derived from portfolio and benchmark evidence",
       ...rootTime,
     },

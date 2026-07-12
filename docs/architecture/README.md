@@ -181,6 +181,12 @@ history. Original broker-read capture remains stable across SQLite reads,
 delivery time refreshes per request, tracker stream observation and recovery
 retrieval remain distinct, and missing legacy capture evidence stays null.
 
+`frontend/portfolio.js` renders the normalized expected, received, omitted,
+freshness, and conclusion-impact fields through one portfolio coverage-panel
+vocabulary. Risk and exposure retain provider observation coverage without
+claiming a shared staleness cutoff; snapshots remain labeled as historical
+captures, and performance keeps benchmark insufficiency consequential.
+
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.

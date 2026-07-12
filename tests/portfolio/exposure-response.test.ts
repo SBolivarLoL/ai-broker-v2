@@ -108,6 +108,34 @@ describe("portfolio exposure response", () => {
       ],
       quality: {
         status: "complete",
+        expected: {
+          account: 1,
+          positions: 1,
+          positionHistories: 1,
+          classifications: 1,
+          benchmarkHistories: 1,
+        },
+        received: {
+          account: 1,
+          positions: 1,
+          positionHistories: 1,
+          classifications: 1,
+          benchmarkHistories: 1,
+        },
+        omitted: {
+          account: 0,
+          positions: 0,
+          positionHistories: 0,
+          classifications: 0,
+          benchmarkHistories: 0,
+        },
+        freshness: {
+          status: "observed",
+          expectedObservations: 2,
+          receivedObservations: 2,
+          latestObservedAt: "2026-03-11T00:00:00.000Z",
+          evaluatedAt: "2026-03-12T20:00:03.000Z",
+        },
         missing: [],
         omittedPositions: 0,
         cache: {
