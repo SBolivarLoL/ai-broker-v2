@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `6136e6d` on 2026-07-12.
+Code baseline reviewed: `main` at `50e6277` on 2026-07-12.
 
 ## Quick start
 

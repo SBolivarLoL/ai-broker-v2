@@ -6,6 +6,7 @@ import {
 } from "../../http/http";
 import { secUserAgentFromEnv } from "../../integrations/sec-edgar";
 import type { createStore } from "../../persistence/store";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import { buildDataGovernanceReport, DATA_GOVERNANCE_SOURCES } from "./data-governance";
 import { buildDataQualityReport } from "./data-quality";
 import {
@@ -81,7 +82,7 @@ export async function handleOperationsRequest(
   if (url.pathname === "/api/operations/policy" && request.method === "GET") {
     return json({
       policy: store.operationsPolicy(),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
 
@@ -97,7 +98,7 @@ export async function handleOperationsRequest(
       await requestJson(request),
     );
     store.event("operations.policy.updated", actor, { policy });
-    return json({ policy, asOf: new Date().toISOString() });
+    return json({ policy, ...localResponseTimeFields(new Date()) });
   }
 
   if (
@@ -129,13 +130,13 @@ export async function handleOperationsRequest(
       actor,
       { reason, policy },
     );
-    return json({ policy, asOf: new Date().toISOString() });
+    return json({ policy, ...localResponseTimeFields(new Date()) });
   }
 
   if (url.pathname === "/api/operations/secrets" && request.method === "GET") {
     return json({
       secrets: store.encryptedSecretMetadata(),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
 
@@ -161,7 +162,7 @@ export async function handleOperationsRequest(
       keyDigest: secret.keyDigest,
       ciphertextBytes: secret.ciphertextBytes,
     });
-    return json({ secret, asOf: new Date().toISOString() });
+    return json({ secret, ...localResponseTimeFields(new Date()) });
   }
 
   const secretMatch = url.pathname.match(
@@ -176,7 +177,7 @@ export async function handleOperationsRequest(
       secret: store
         .encryptedSecretMetadata()
         .find((item) => item.name === secret.name),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
 
@@ -216,7 +217,7 @@ export async function handleOperationsRequest(
         secUserAgentConfigured: secIdentityConfigured(env),
       },
       incident: store.incidentPacket(50),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
   }
 

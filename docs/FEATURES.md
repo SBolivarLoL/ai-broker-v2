@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `6136e6d`: 2026-07-12.
+Last reviewed against `main` commit `50e6277`: 2026-07-12.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -155,7 +155,7 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
 - Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
-- The explicit time taxonomy is not yet present on every normalized provider DTO or browser-facing object. `asOf`, `timestamp`, and `quoteAt` remain legacy compatibility fields while call sites migrate to observation/publication/effective/retrieval/server-response fields.
+- Normalized provider DTOs and browser-facing time-bearing response envelopes use the explicit observation/publication/effective/retrieval/server-response taxonomy. `asOf`, `timestamp`, and `quoteAt` remain compatibility aliases where clients still consume them; they do not override the semantic fields.
 - The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
 - The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, and `scripts/`. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. Current counts and results live in `VALIDATION.md`.
 - Option chains are capped at 120 rendered contracts and show the number displayed versus available, two-sided quote/IV/Greek coverage, and an explicit partial-data warning when model-dependent fields are absent.

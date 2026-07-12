@@ -27,6 +27,16 @@ test("operations routes own policy and kill-switch lifecycle", async () => {
   const store = createStore(":memory:");
   expect(await route(store, "/api/account")).toBeNull();
 
+  const policy = await route(store, "/api/operations/policy");
+  const policyBody = await policy?.json();
+  expect(policyBody).toMatchObject({
+    retrievedAt: null,
+    time: { retrievalTime: null },
+  });
+  expect(typeof policyBody.serverRespondedAt).toBe("string");
+  expect(policyBody.asOf).toBe(policyBody.serverRespondedAt);
+  expect(policyBody.time.serverResponseTime).toBe(policyBody.serverRespondedAt);
+
   const missingReason = await route(store, "/api/operations/kill-switch", {
     method: "POST",
     body: JSON.stringify({ active: true }),

@@ -1,4 +1,5 @@
 import { ClientError, json, requestJson } from "../../http/http";
+import { localResponseTimeFields } from "../../shared/time-provenance";
 import {
   buildVersionedCryptoDataset,
   cryptoDatasetChunks,
@@ -41,7 +42,7 @@ export async function handleStrategyDatasetRequest(
       datasets: store.strategyBarDatasets(actor).map((dataset) =>
         datasetDto(dataset!),
       ),
-      asOf: new Date().toISOString(),
+      ...localResponseTimeFields(new Date()),
     });
 
   const datasetMatch = url.pathname.match(

@@ -134,6 +134,9 @@ test("research routes reject invalid and unavailable requests before provider ca
   expect(await journal?.json()).toMatchObject({
     entries: [],
     eligibleReceipts: [],
+    retrievedAt: null,
+    serverRespondedAt: expect.any(String),
+    time: { retrievalTime: null, serverResponseTime: expect.any(String) },
   });
 });
 

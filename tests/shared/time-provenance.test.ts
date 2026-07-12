@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  localResponseTimeFields,
   normalizeTimeProvenance,
   providerTimeFields,
   unavailableProviderTimeFields,
@@ -96,5 +97,21 @@ test("keeps an unqueried or failed provider retrieval explicitly unavailable", (
       serverResponseTime: "2026-06-29T12:00:01.000Z",
     },
     asOf: "2026-06-29T12:00:01.000Z",
+  });
+});
+
+test("marks local-only response time without inventing provider retrieval", () => {
+  expect(localResponseTimeFields("2026-07-12T12:00:01Z")).toMatchObject({
+    observedAt: null,
+    publishedAt: null,
+    retrievedAt: null,
+    serverRespondedAt: "2026-07-12T12:00:01.000Z",
+    asOf: "2026-07-12T12:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      retrievalTime: null,
+      serverResponseTime: "2026-07-12T12:00:01.000Z",
+    },
   });
 });
