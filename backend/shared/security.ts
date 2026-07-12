@@ -104,7 +104,8 @@ export function authorize(context: AuthContext, allowed: AuthRole[]) {
 export function validMutationOrigin(request: Request, env: Env = process.env) {
   const origin = request.headers.get("origin");
   if (!origin) return relaxedEnv(env);
-  return origin === (env.APP_ORIGIN ?? new URL(request.url).origin);
+  const configuredOrigin = env.APP_ORIGIN?.trim();
+  return origin === (configuredOrigin || new URL(request.url).origin);
 }
 
 export function securityReady(env: Env = process.env) {

@@ -81,8 +81,14 @@ async function loadPortfolioExposure() {
     : "";
 }
 function renderPortfolioScenarios(data) {
+  const quality = String(data.quality?.status || "unknown").replaceAll(
+      "_",
+      " ",
+    ),
+    modeled = data.quality?.received?.modeledPositionEvaluations ?? 0,
+    expected = data.quality?.expected?.positionEvaluations ?? 0;
   $("#portfolio-scenarios-asof").textContent =
-    `Current positions · updated ${new Date(data.asOf).toLocaleString()}`;
+    `${quality} coverage · ${modeled}/${expected} position evaluations modeled · inputs retrieved ${new Date(data.retrievedAt).toLocaleString()} · response ${new Date(data.serverRespondedAt).toLocaleTimeString()}`;
   $("#portfolio-scenarios").innerHTML =
     `<div class="portfolio-scenario-grid">${data.scenarios
       .map((scenario) => {
@@ -92,7 +98,7 @@ function renderPortfolioScenarios(data) {
               position.estimatedPnl !== null && position.shockPercent !== 0,
           )
           .slice(0, 4);
-        return `<div class="portfolio-scenario"><h3>${esc(scenario.name)}</h3><div class="price ${scenario.estimatedPnl >= 0 ? "gain" : "loss"}">${esc(signedMoney(scenario.estimatedPnl))}</div><div class="muted">${esc(pct(scenario.equityImpactPercent))} equity · ${esc(pct(scenario.coveragePercent))} modeled</div><p class="muted">${esc(scenario.description)}</p>${positions.map((position) => `<div class="scenario-position"><strong>${esc(position.symbol)}</strong><span>${esc(pct(position.shockPercent))}</span><span class="${position.estimatedPnl >= 0 ? "gain" : "loss"}">${esc(signedMoney(position.estimatedPnl))}</span></div>`).join("")}<details class="scenario-details"><summary>Assumptions</summary>${scenario.assumptions.map((assumption) => `<div>${esc(assumption)}</div>`).join("")}</details></div>`;
+        return `<div class="portfolio-scenario"><h3>${esc(scenario.name)}</h3><div class="price ${scenario.estimatedPnl >= 0 ? "gain" : "loss"}">${esc(signedMoney(scenario.estimatedPnl))}</div><div class="muted">${esc(pct(scenario.equityImpactPercent))} equity · ${esc(pct(scenario.coveragePercent))} gross exposure · ${esc(scenario.quality.modeledPositions)}/${esc(scenario.quality.expectedPositions)} positions modeled</div><p class="muted">${esc(scenario.description)}</p>${positions.map((position) => `<div class="scenario-position"><strong>${esc(position.symbol)}</strong><span>${esc(pct(position.shockPercent))}</span><span class="${position.estimatedPnl >= 0 ? "gain" : "loss"}">${esc(signedMoney(position.estimatedPnl))}</span></div>`).join("")}<details class="scenario-details"><summary>Assumptions</summary>${scenario.assumptions.map((assumption) => `<div>${esc(assumption)}</div>`).join("")}</details></div>`;
       })
       .join("")}</div>`;
   $("#portfolio-scenario-warnings").innerHTML = data.warnings.length
