@@ -3,13 +3,17 @@
  * formula-backed valuation memo; it does not generate forecasts.
  */
 import { z } from "zod";
-import type {
-  ComparableValuationEvidence,
-  ComparableValuationRow,
+import {
+  replayComparableValuation,
+  type ComparableValuationReplay,
+  type ComparableValuationEvidence,
+  type ComparableValuationRow,
 } from "./comparable-valuation";
 import {
   canonicalEvidence,
   dedupeEvidence,
+  evidenceContentHash,
+  stableEvidenceJson,
   type CanonicalEvidence,
 } from "../../shared/evidence";
 import { providerTimeFields } from "../../shared/time-provenance";
@@ -47,6 +51,9 @@ export const ValuationScenarioInput = z
       });
     }
   });
+export type ValuationScenarioAssumptions = z.infer<
+  typeof ValuationScenarioInput
+>;
 
 const round = (value: number) => Number(value.toFixed(6));
 const label = (scenario: (typeof cases)[number]) =>
@@ -66,6 +73,14 @@ export function buildValuationScenarioMemo(
   sources: ComparableValuationEvidence[],
   rawAssumptions: unknown,
   retrievedAt = new Date().toISOString(),
+  context: {
+    priceMode?: "latest_retrieval" | "historical_daily_close";
+    pointInTime?: {
+      status: "not_requested" | "applied";
+      asOfDate: string | null;
+      cutoffAt: string | null;
+    };
+  } = {},
 ) {
   const assumptions = ValuationScenarioInput.parse(rawAssumptions);
   const asOf = new Date(retrievedAt).toISOString();
@@ -117,7 +132,7 @@ export function buildValuationScenarioMemo(
     const memo =
       impliedPrice === null
         ? `${assumptionText} A mechanical implied price is unavailable because the source inputs or projected earnings are not positive.`
-        : `${assumptionText} Applied to the latest annual SEC revenue and SEC shares outstanding, the model implies $${impliedPrice.toFixed(2)} per share, ${returnPercent! >= 0 ? "+" : ""}${returnPercent!.toFixed(1)}% versus the current Alpaca IEX price.`;
+        : `${assumptionText} Applied to the latest eligible annual SEC revenue and SEC shares outstanding, the model implies $${impliedPrice.toFixed(2)} per share, ${returnPercent! >= 0 ? "+" : ""}${returnPercent!.toFixed(1)}% versus the ${context.priceMode === "historical_daily_close" ? "selected historical IEX daily close" : "latest returned Alpaca IEX price"}.`;
     return {
       case: scenario,
       horizonMonths: 12,
@@ -142,7 +157,7 @@ export function buildValuationScenarioMemo(
     projectedNetIncome: "projected revenue * user net margin assumption",
     impliedMarketCap: "positive projected net income * user P/E assumption",
     impliedPrice: "implied market cap / latest SEC shares outstanding",
-    returnPercent: "(implied price / current Alpaca IEX price - 1) * 100",
+    returnPercent: `(implied price / ${context.priceMode === "historical_daily_close" ? "selected historical IEX daily close" : "latest returned Alpaca IEX price"} - 1) * 100`,
   };
   const sourceUrl =
     sources.find((source) => source.id === row.evidence.sec)?.url ??
@@ -198,19 +213,19 @@ export function buildValuationScenarioMemo(
       : null;
   const externalRetrievedAt =
     latestTime(selectedSources.map((source) => source.retrievedAt)) ?? asOf;
+  const marketSource = selectedSources.find(
+    (source) => source.category === "market",
+  );
   const rootTime = providerTimeFields({
-    observationTime: null,
+    observationTime: marketSource?.observedAt ?? null,
     publicationTime: publishedAt,
     effectivePeriod,
     retrievalTime: externalRetrievedAt,
     serverResponseTime: asOf,
   });
-  const marketSource = selectedSources.find(
-    (source) => source.category === "market",
-  );
   const expected = {
     secFundamentals: 2,
-    currentPrices: 1,
+    prices: 1,
     marketPriceObservations: 1,
     assumptionCases: 3,
     scenarioOutputs: 3,
@@ -219,7 +234,7 @@ export function buildValuationScenarioMemo(
     secFundamentals:
       Number(row.annualRevenue !== null && row.annualRevenue > 0) +
       Number(row.sharesOutstanding !== null && row.sharesOutstanding > 0),
-    currentPrices: Number(Number.isFinite(row.price) && row.price > 0),
+    prices: Number(Number.isFinite(row.price) && row.price > 0),
     marketPriceObservations: Number(
       marketSource?.observedAt !== null &&
         marketSource?.observedAt !== undefined,
@@ -231,7 +246,7 @@ export function buildValuationScenarioMemo(
   };
   const omitted = {
     secFundamentals: expected.secFundamentals - received.secFundamentals,
-    currentPrices: expected.currentPrices - received.currentPrices,
+    prices: expected.prices - received.prices,
     marketPriceObservations:
       expected.marketPriceObservations - received.marketPriceObservations,
     assumptionCases: expected.assumptionCases - received.assumptionCases,
@@ -245,7 +260,7 @@ export function buildValuationScenarioMemo(
       : []),
     ...(omitted.marketPriceObservations
       ? [
-          "The current IEX price has retrieval time but no provider observation time.",
+          "The latest returned IEX price has retrieval time but no provider observation time.",
         ]
       : []),
     ...(omitted.scenarioOutputs
@@ -266,10 +281,16 @@ export function buildValuationScenarioMemo(
           "All three user-assumption cases are calculated from the disclosed SEC and market inputs with explicit source timing.",
         ];
   return {
-    schemaVersion: "valuation-scenarios-v2",
+    schemaVersion: "valuation-scenarios-v3",
+    priceMode: context.priceMode ?? "latest_retrieval",
+    pointInTime: context.pointInTime ?? {
+      status: "not_requested" as const,
+      asOfDate: null,
+      cutoffAt: null,
+    },
     symbol: row.symbol,
     companyName: row.companyName,
-    currentPrice: row.price,
+    referencePrice: row.price,
     calculatedAt: asOf,
     baseline: {
       annualRevenue: row.annualRevenue,
@@ -277,7 +298,10 @@ export function buildValuationScenarioMemo(
       priceToEarnings: row.priceToEarnings,
       sharesOutstanding: row.sharesOutstanding,
       periods: row.periods,
-      source: "SEC fundamentals and Alpaca IEX price",
+      source:
+        context.priceMode === "historical_daily_close"
+          ? "Point-in-time SEC fundamentals and historical Alpaca IEX daily close"
+          : "SEC fundamentals and latest returned Alpaca IEX price",
       ...rootTime,
     },
     scenarios: scenarios.map((scenario) => ({
@@ -301,7 +325,10 @@ export function buildValuationScenarioMemo(
         effectivePeriod,
         retrievedAt: externalRetrievedAt,
         evaluatedAt: rootTime.serverRespondedAt,
-        agePolicy: "market_price_observation_unavailable",
+        agePolicy:
+          context.priceMode === "historical_daily_close"
+            ? "historical_price_must_not_exceed_cutoff"
+            : "market_price_observation_unavailable",
       },
       missing,
       impact,
@@ -310,5 +337,96 @@ export function buildValuationScenarioMemo(
       ...rootTime,
     },
     ...rootTime,
+  };
+}
+
+export type ValuationScenarioReplay = {
+  schemaVersion: "valuation-scenario-replay-v1";
+  payloadPolicy: "stored_point_in_time_parent_and_user_assumptions";
+  calculationVersion: "valuation-scenarios-v3";
+  parentReplay: ComparableValuationReplay;
+  assumptions: ValuationScenarioAssumptions;
+  memo: ReturnType<typeof buildValuationScenarioMemo>;
+  contentHash: string;
+};
+
+function scenarioParentInputs(parentReplay: ComparableValuationReplay) {
+  const parent = replayComparableValuation(parentReplay).report;
+  const row = parent.rows.find((candidate) => candidate.symbol === parent.subject);
+  if (!row)
+    throw new Error("Historical valuation subject inputs are unavailable");
+  return { parent, row };
+}
+
+export function buildValuationScenarioReplay(
+  parentReplay: ComparableValuationReplay,
+  rawAssumptions: unknown,
+  calculatedAt = new Date().toISOString(),
+): ValuationScenarioReplay {
+  const assumptions = ValuationScenarioInput.parse(rawAssumptions);
+  const { parent, row } = scenarioParentInputs(parentReplay);
+  const memo = buildValuationScenarioMemo(
+    row,
+    parent.sources,
+    assumptions,
+    calculatedAt,
+    {
+      priceMode: parent.priceMode,
+      pointInTime: {
+        status: parent.pointInTime.status,
+        asOfDate: parent.pointInTime.asOfDate,
+        cutoffAt: parent.pointInTime.cutoffAt,
+      },
+    },
+  );
+  const manifest = JSON.parse(
+    stableEvidenceJson({
+      schemaVersion: "valuation-scenario-replay-v1" as const,
+      payloadPolicy: "stored_point_in_time_parent_and_user_assumptions" as const,
+      calculationVersion: "valuation-scenarios-v3" as const,
+      parentReplay,
+      assumptions,
+      memo,
+    }),
+  ) as Omit<ValuationScenarioReplay, "contentHash">;
+  return { ...manifest, contentHash: evidenceContentHash(manifest) };
+}
+
+export function replayValuationScenario(value: unknown) {
+  if (!value || typeof value !== "object")
+    throw new Error("Valuation scenario replay is invalid");
+  const replay = value as ValuationScenarioReplay;
+  const { contentHash, ...manifest } = replay;
+  if (
+    replay.schemaVersion !== "valuation-scenario-replay-v1" ||
+    replay.calculationVersion !== "valuation-scenarios-v3" ||
+    contentHash !== evidenceContentHash(manifest)
+  )
+    throw new Error("Valuation scenario replay integrity check failed");
+  const assumptions = ValuationScenarioInput.parse(replay.assumptions);
+  const { parent, row } = scenarioParentInputs(replay.parentReplay);
+  const recomputed = buildValuationScenarioMemo(
+    row,
+    parent.sources,
+    assumptions,
+    replay.memo.calculatedAt,
+    {
+      priceMode: parent.priceMode,
+      pointInTime: {
+        status: parent.pointInTime.status,
+        asOfDate: parent.pointInTime.asOfDate,
+        cutoffAt: parent.pointInTime.cutoffAt,
+      },
+    },
+  );
+  if (evidenceContentHash(recomputed) !== evidenceContentHash(replay.memo))
+    throw new Error("Valuation scenario deterministic recomputation failed");
+  return {
+    schemaVersion: "valuation-scenario-replay-result-v1" as const,
+    status: "verified" as const,
+    providerRequests: 0 as const,
+    replayHash: contentHash,
+    parentReplayHash: replay.parentReplay.contentHash,
+    memo: recomputed,
   };
 }

@@ -5,6 +5,7 @@ import type { FinnhubCompanyEnrichment } from "../../backend/integrations/finnhu
 import type { OpenFigiIdentity } from "../../backend/integrations/openfigi";
 import type { MacroContext } from "../../backend/integrations/macro-context";
 import { createStore } from "../../backend/persistence/store";
+import { canonicalEvidence } from "../../backend/shared/evidence";
 import type { getCompanySecEvidence } from "../../backend/features/research/research";
 import type {
   getComparableValuations,
@@ -363,7 +364,7 @@ test("valuation routes preserve normalized coverage contracts", async () => {
   expect(await comparable?.json()).toEqual(comparablePayload);
 
   const scenarioPayload = {
-    schemaVersion: "valuation-scenarios-v2",
+    schemaVersion: "valuation-scenarios-v3",
     quality: {
       status: "partial",
       expected: { scenarioOutputs: 3 },
@@ -409,6 +410,39 @@ test("historical valuation runs persist and replay without another provider call
     },
     asOf: "2026-07-12T12:00:01.000Z",
   };
+  const valuationSources = [
+    canonicalEvidence({
+      id: "sec:valuation-inputs:AAPL",
+      provider: "sec",
+      sourceId: "AAPL:historical-sec",
+      category: "fundamentals",
+      authority: "official",
+      claimStatus: "official_record",
+      title: "AAPL historical SEC inputs",
+      url: "https://data.sec.gov/aapl",
+      asOf: "2025-05-01T00:00:00.000Z",
+      observedAt: null,
+      publishedAt: "2025-05-01T00:00:00.000Z",
+      retrievedAt: "2026-07-12T12:00:00.000Z",
+      entityIds: { symbol: "AAPL" },
+      data: { annualRevenue: 1000, sharesOutstanding: 100 },
+    }),
+    canonicalEvidence({
+      id: "market:valuation-price:AAPL",
+      provider: "alpaca",
+      sourceId: "AAPL:historical-price",
+      category: "market",
+      authority: "regulated_broker",
+      claimStatus: "broker_observation",
+      title: "AAPL historical IEX close",
+      url: "https://alpaca.markets/data",
+      asOf: "2025-05-14T20:00:00.000Z",
+      observedAt: "2025-05-14T20:00:00.000Z",
+      retrievedAt: "2026-07-12T12:00:00.000Z",
+      entityIds: { symbol: "AAPL" },
+      data: { price: 10, feed: "IEX", priceType: "daily_close" },
+    }),
+  ];
   const report = {
     schemaVersion: "comparable-valuations-v3",
     priceMode: "historical_daily_close",
@@ -426,18 +460,39 @@ test("historical valuation runs persist and replay without another provider call
     },
     subject: "AAPL",
     peers: ["MSFT"],
-    rows: [],
-    sources: [],
-    warnings: ["Fixture intentionally has no provider rows."],
+    rows: [
+      {
+        symbol: "AAPL",
+        companyName: "Apple Inc.",
+        subject: true,
+        price: 10,
+        marketCap: 1000,
+        annualRevenue: 1000,
+        annualNetIncome: 100,
+        annualDilutedEps: 1,
+        stockholdersEquity: 500,
+        sharesOutstanding: 100,
+        revenueGrowthPercent: 5,
+        netMarginPercent: 10,
+        priceToSales: 1,
+        priceToEarnings: 10,
+        priceToBook: 2,
+        periods: { revenue: "2024-12-31", netIncome: "2024-12-31", dilutedEps: "2024-12-31", stockholdersEquity: "2025-03-31", sharesOutstanding: "2025-03-31", price: "2025-05-14T20:00:00.000Z" },
+        evidence: { sec: "sec:valuation-inputs:AAPL", price: "market:valuation-price:AAPL", valuation: "valuation:comparables:AAPL" },
+        warnings: [],
+      },
+    ],
+    sources: valuationSources,
+    warnings: ["MSFT fixture inputs are unavailable."],
     formulas: {},
     quality: {
       status: "partial",
       expected: { companies: 2, secFundamentals: 2, prices: 2, marketPriceObservations: 2, valuationMetrics: 12 },
-      received: { companies: 0, secFundamentals: 0, prices: 0, marketPriceObservations: 0, valuationMetrics: 0 },
-      omitted: { companies: 2, secFundamentals: 2, prices: 2, marketPriceObservations: 2, valuationMetrics: 12 },
-      freshness: { status: "retrieval_time_only", latestPublishedAt: null, effectivePeriod: null, retrievedAt: "2026-07-12T12:00:00.000Z", evaluatedAt: "2026-07-12T12:00:01.000Z", agePolicy: "historical_price_must_not_exceed_cutoff" },
-      missing: ["AAPL:valuation_inputs", "MSFT:valuation_inputs"],
-      impact: ["No historical valuation conclusion is available."],
+      received: { companies: 1, secFundamentals: 1, prices: 1, marketPriceObservations: 1, valuationMetrics: 6 },
+      omitted: { companies: 1, secFundamentals: 1, prices: 1, marketPriceObservations: 1, valuationMetrics: 6 },
+      freshness: { status: "observed", latestPublishedAt: "2025-05-01T00:00:00.000Z", effectivePeriod: null, retrievedAt: "2026-07-12T12:00:00.000Z", evaluatedAt: "2026-07-12T12:00:01.000Z", agePolicy: "historical_price_must_not_exceed_cutoff" },
+      missing: ["MSFT:valuation_inputs"],
+      impact: ["The peer table is partial."],
       source: "Injected deterministic route fixture",
       ...replayTime,
     },
@@ -495,6 +550,99 @@ test("historical valuation runs persist and replay without another provider call
     replayHash: createdBody.evidenceReplay.contentHash,
     report: { pointInTime: { asOfDate: "2025-05-15" } },
   });
+  const scenarioAssumptions = {
+    bear: { revenueGrowthPercent: -10, netMarginPercent: 8, priceToEarnings: 8 },
+    base: { revenueGrowthPercent: 0, netMarginPercent: 10, priceToEarnings: 10 },
+    bull: { revenueGrowthPercent: 10, netMarginPercent: 12, priceToEarnings: 12 },
+  };
+  const scenarioCreated = await route(
+    `/api/research/valuation-runs/${createdBody.runId}/scenarios`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scenarios: scenarioAssumptions }),
+    },
+    () => true,
+    { store },
+  );
+  expect(scenarioCreated?.status).toBe(201);
+  const scenarioBody = await scenarioCreated?.json();
+  expect(scenarioBody).toMatchObject({
+    schemaVersion: "historical-valuation-scenario-run-v1",
+    parentRunId: createdBody.runId,
+    model: "deterministic-valuation-scenarios-v3",
+    memo: {
+      schemaVersion: "valuation-scenarios-v3",
+      priceMode: "historical_daily_close",
+      pointInTime: { status: "applied", asOfDate: "2025-05-15" },
+      scenarios: [{ case: "bear" }, { case: "base" }, { case: "bull" }],
+    },
+    evidenceReplay: {
+      schemaVersion: "valuation-scenario-replay-v1",
+      parentReplay: { contentHash: createdBody.evidenceReplay.contentHash },
+    },
+  });
+  expect(store.getResearch(scenarioBody.runId)).toMatchObject({
+    status: "completed",
+    metrics: null,
+    payload: {
+      parentRunId: createdBody.runId,
+      evidenceReplay: { contentHash: scenarioBody.evidenceReplay.contentHash },
+    },
+  });
+  const scenarioReplayed = await route(
+    `/api/research/scenario-runs/${scenarioBody.runId}/replay`,
+    { method: "POST" },
+    () => true,
+    { store },
+  );
+  expect(scenarioReplayed?.status).toBe(200);
+  expect(await scenarioReplayed?.json()).toMatchObject({
+    status: "verified",
+    providerRequests: 0,
+    replayHash: scenarioBody.evidenceReplay.contentHash,
+    parentReplayHash: createdBody.evidenceReplay.contentHash,
+    memo: { pointInTime: { asOfDate: "2025-05-15" } },
+  });
+  const tamperedScenarioRunId = crypto.randomUUID();
+  const tamperedScenarioPayload = structuredClone(scenarioBody);
+  tamperedScenarioPayload.runId = tamperedScenarioRunId;
+  tamperedScenarioPayload.evidenceReplay.contentHash = `sha256:${"0".repeat(64)}`;
+  store.startResearch(
+    tamperedScenarioRunId,
+    "AAPL",
+    "deterministic-valuation-scenarios-v3",
+  );
+  store.completeResearchArtifact(
+    tamperedScenarioRunId,
+    tamperedScenarioPayload,
+  );
+  await expect(
+    route(
+      `/api/research/scenario-runs/${tamperedScenarioRunId}/replay`,
+      { method: "POST" },
+      () => true,
+      { store },
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  const invalidScenario = await route(
+    `/api/research/valuation-runs/${createdBody.runId}/scenarios`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scenarios: { ...scenarioAssumptions, bull: scenarioAssumptions.bear } }),
+    },
+    () => true,
+    { store },
+  );
+  expect(invalidScenario?.status).toBe(400);
+  const missingScenario = await route(
+    `/api/research/scenario-runs/${crypto.randomUUID()}/replay`,
+    { method: "POST" },
+    () => true,
+    { store },
+  );
+  expect(missingScenario?.status).toBe(404);
   expect(calls).toHaveLength(1);
 
   const tamperedRunId = crypto.randomUUID();

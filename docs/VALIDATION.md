@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `499afa8`: 2026-07-12.
+Last reviewed against `main` commit `4f10872`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,12 +8,19 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 414 tests, 0 failures, 1,927 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 415 tests, 0 failures, 1,939 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.17% functions, 97.30% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.17% functions, 97.31% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
+
+The bundled Node runtime passed `node --check frontend/research.js` after the
+scenario v3 renderer changed from `currentPrice` to `referencePrice` and added
+the historical-close label. A new headed browser pass was not run because the
+Playwright skill's required `npx` prerequisite is unavailable in this shell;
+the existing browser evidence below is not relabeled as validation of this
+specific rendering change.
 
 ## Repository review evidence
 
@@ -24,7 +31,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `499afa8`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `4f10872`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -137,6 +144,14 @@ Additional mechanical checks:
   creation, normalized request arguments, null model metrics, stored replay
   hash, provider-free replay, 404 lookup, 409 integrity failure, and invalid-date
   rejection before provider work.
+- Historical scenario tests prove that v3 uses `referencePrice`, preserves the
+  parent filing and market cutoff, labels a historical IEX close instead of a
+  current price, and recomputes all three ordered assumption cases from the
+  stored parent row, canonical sources, original assumptions, and original
+  calculation time. Re-hashed output tampering still fails deterministic
+  recomputation. Direct API/SQLite contracts prove 201 child creation, exact
+  parent-run and parent-hash lineage, null model metrics, provider-free replay,
+  invalid-assumption rejection, 404 lookup, and 409 integrity failure.
 - Official Treasury/BLS/FRED/BEA macro root, provider-coverage, indicator,
   canonical-evidence, research-tool, and direct API DTOs were checked for
   Treasury publication dates, FRED observation dates, BLS monthly and BEA
@@ -282,7 +297,7 @@ Additional mechanical checks:
   and per-response server timestamps. Cache hits preserve the original provider
   retrieval timestamp and extracted-content hashes; the SEC research route and
   comparable-valuation evidence preserve those adapter timestamps.
-- Comparable valuation v3 and scenario valuation v2 roots, SEC/market/derived canonical
+- Comparable and scenario valuation v3 roots, SEC/market/derived canonical
   sources, baselines, scenarios, and quality contracts were checked through
   pure and direct API tests. SEC filing publication and fundamental effective
   periods remain separate from SEC retrieval; the latest-price helper's missing

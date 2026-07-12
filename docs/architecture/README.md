@@ -216,7 +216,7 @@ Persistence is composed behind the `createStore()` API:
 The browser uses ordered, dependency-free scripts instead of a build step. `core.js` provides shared UI behavior, including the accessible expected/received/omitted/freshness/impact coverage renderer; `portfolio.js`, `strategies.js`, `market-detail.js`, and `research.js` own their workspaces; `app.js` starts initial loads and refresh timers. The Strategy Lab places the shared coverage region before selected-run metrics so missing lineage, trace, market, and conditional execution evidence is visible before performance interpretation.
 
 `research/comparable-valuation.ts` and `research/valuation-scenario.ts` own
-deterministic valuation math and normalized comparable-v3/scenario-v2 evidence
+deterministic valuation math and normalized comparable-v3/scenario-v3 evidence
 contracts. SEC filing publication and fundamental effective periods remain
 distinct from retrieval. The latest-price path exposes retrieval but no provider
 trade time, so observation stays null; the historical path requests a bounded
@@ -227,9 +227,13 @@ manifest and each canonical source hash, rejects SEC publication or market
 observation after the cutoff, and reports zero provider requests. The existing
 research-run table is reused without a migration, while deterministic valuation
 artifacts keep `metrics` null so model reliability aggregates are not polluted.
-Scenario calculation time and user assumptions remain local evidence, while
-`research.js` renders missing company, metric, freshness, and scenario-output
-impact through the shared coverage vocabulary.
+Historical scenario child runs embed the verified parent replay, original
+ordered assumptions, and v3 memo. Replay validates both manifests, replays the
+parent, recomputes the memo at its original calculation time, and compares the
+canonical result without a provider call. The v3 contract calls the selected
+market input `referencePrice`; `research.js` labels either the latest returned
+price or historical daily close explicitly and renders missing company, metric,
+freshness, and scenario-output impact through the shared coverage vocabulary.
 
 `research/copilot.ts` keeps model output behind typed read-only tools, citation
 guards, independent counter-thesis review, and exact simulation authority.

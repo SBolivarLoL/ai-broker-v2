@@ -42,6 +42,11 @@ import {
   parseComparableSymbols,
   replayComparableValuation,
 } from "./comparable-valuation";
+import {
+  buildValuationScenarioReplay,
+  replayValuationScenario,
+  ValuationScenarioInput,
+} from "./valuation-scenario";
 
 type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
@@ -533,6 +538,66 @@ export async function handleResearchRequest(
 
   if (
     url.pathname.startsWith("/api/research/valuation-runs/") &&
+    url.pathname.endsWith("/scenarios") &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:historical-scenario`, 12))
+      return json({ error: "Historical scenario rate limit exceeded" }, 429);
+    const parentRunId = url.pathname.split("/").at(-2) ?? "";
+    const parentRun = store.getResearch(parentRunId);
+    if (
+      !parentRun ||
+      parentRun.model !== "deterministic-comparable-valuations-v3"
+    )
+      return json({ error: "Historical valuation run not found" }, 404);
+    const parsed = ValuationScenarioInput.safeParse(
+      (await requestJson(request)).scenarios,
+    );
+    if (!parsed.success)
+      return json(
+        {
+          error:
+            parsed.error.issues[0]?.message ??
+            "Scenario assumptions are invalid",
+        },
+        400,
+      );
+    let evidenceReplay: ReturnType<typeof buildValuationScenarioReplay>;
+    try {
+      evidenceReplay = buildValuationScenarioReplay(
+        parentRun.payload?.evidenceReplay,
+        parsed.data,
+      );
+      replayValuationScenario(evidenceReplay);
+    } catch {
+      throw new ClientError(
+        "Stored historical valuation cannot support scenario replay",
+        409,
+      );
+    }
+    const runId = crypto.randomUUID();
+    const model = "deterministic-valuation-scenarios-v3";
+    const payload = {
+      schemaVersion: "historical-valuation-scenario-run-v1" as const,
+      runId,
+      parentRunId,
+      model,
+      memo: evidenceReplay.memo,
+      evidenceReplay,
+    };
+    store.startResearch(runId, evidenceReplay.memo.symbol, model);
+    store.completeResearchArtifact(runId, payload);
+    store.event("research.historical_scenario.completed", actor, {
+      runId,
+      parentRunId,
+      symbol: evidenceReplay.memo.symbol,
+      replayHash: evidenceReplay.contentHash,
+    });
+    return json(payload, 201);
+  }
+
+  if (
+    url.pathname.startsWith("/api/research/valuation-runs/") &&
     url.pathname.endsWith("/replay") &&
     request.method === "POST"
   ) {
@@ -546,6 +611,25 @@ export async function handleResearchRequest(
     } catch {
       throw new ClientError(
         "Stored valuation replay failed integrity verification",
+        409,
+      );
+    }
+  }
+
+  if (
+    url.pathname.startsWith("/api/research/scenario-runs/") &&
+    url.pathname.endsWith("/replay") &&
+    request.method === "POST"
+  ) {
+    const runId = url.pathname.split("/").at(-2) ?? "";
+    const stored = store.getResearch(runId);
+    if (!stored || stored.model !== "deterministic-valuation-scenarios-v3")
+      return json({ error: "Historical scenario run not found" }, 404);
+    try {
+      return json(replayValuationScenario(stored.payload?.evidenceReplay));
+    } catch {
+      throw new ClientError(
+        "Stored scenario replay failed integrity verification",
         409,
       );
     }

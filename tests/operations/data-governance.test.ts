@@ -59,7 +59,7 @@ test("builds data licensing and subscription governance report", () => {
     ]),
   });
   expect(report.storedOutputs.find(output => output.id === "research_runs")?.contents).toContain(
-    "point-in-time comparable valuation reports with canonical replay hashes",
+    "point-in-time comparable valuation and user-assumption scenario reports with canonical replay hashes",
   );
   expect(report.storedOutputs.flatMap(output => output.tables).sort()).toEqual(expectedTables);
   const outputIds = new Set(report.storedOutputs.map(output => output.id));
