@@ -68,3 +68,32 @@ test("order runtime recovers broker state into one shared tracker", async () => 
     status: "accepted",
   });
 });
+
+test("stale broker snapshots cannot reconcile durable state after a newer stream observation", () => {
+  let receiptReconciliations = 0;
+  let strategyReconciliations = 0;
+  const store = {
+    reconcileOrder: () => receiptReconciliations++,
+    reconcileStrategyOrder: () => strategyReconciliations++,
+    finishRiskReservation: () => false,
+  } as any;
+  const runtime = createOrderRuntime({} as Alpaca, store);
+  const newer = {
+    id: "order-1",
+    status: "filled",
+    updatedAt: new Date("2026-07-12T14:00:00.000Z"),
+  };
+  const stale = {
+    id: "order-1",
+    status: "accepted",
+    updatedAt: new Date("2026-07-12T13:59:00.000Z"),
+  };
+  runtime.tracker.update(newer as any);
+
+  expect(runtime.applyBrokerSnapshot(stale)).toBe(false);
+  expect(runtime.tracker.list("all", 10)[0]).toMatchObject({
+    status: "filled",
+  });
+  expect(receiptReconciliations).toBe(0);
+  expect(strategyReconciliations).toBe(0);
+});

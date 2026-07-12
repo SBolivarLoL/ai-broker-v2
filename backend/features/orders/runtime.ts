@@ -41,6 +41,12 @@ export function createOrderRuntime(
       store.finishRiskReservation(order.clientOrderId, riskStatus);
   }
 
+  function applyBrokerSnapshot(order: any, retrievedAt = now()) {
+    const accepted = tracker.recover([order], retrievedAt).has(order?.id);
+    if (accepted) reconcile(order);
+    return accepted;
+  }
+
   async function recover() {
     recoveryRequest ??= (async () => {
       const brokerOrders = await alpaca.trading.orders.getAllOrders({
@@ -49,8 +55,10 @@ export function createOrderRuntime(
         direction: "desc",
         nested: true,
       });
-      tracker.recover(brokerOrders, now());
-      for (const order of brokerOrders) reconcile(order);
+      const retrievedAt = now();
+      const accepted = tracker.recover(brokerOrders, retrievedAt);
+      for (const order of brokerOrders)
+        if (order.id && accepted.has(order.id)) reconcile(order);
     })().finally(() => {
       recoveryRequest = null;
     });
@@ -262,6 +270,7 @@ export function createOrderRuntime(
   return {
     tracker,
     reconcile,
+    applyBrokerSnapshot,
     recover,
     pendingBrokerOrders,
     placePreviewedOrder,

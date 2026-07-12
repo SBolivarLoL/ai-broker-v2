@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `4f10872`: 2026-07-12.
+Last reviewed against `main` commit `a10f8f6`: 2026-07-12.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -41,7 +41,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Explicit paper short workflow with margin, marginability, easy-to-borrow, DAY, quantity, concentration, and fresh-state checks.
 - Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable. Option-chain and option-portfolio Greek DTOs preserve provider observation, retrieval, and server-response provenance where provider timestamps are available.
 - Standalone paper crypto market, limit, and stop-limit tickets. Approved strategy automation submits only bounded paper crypto market orders.
-- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders. The shared order tracker retains each accepted REST or stream receipt time and prevents an older recovery snapshot from overwriting a newer streamed order or its retrieval provenance.
+- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders. The shared order tracker retains each accepted REST or stream receipt time and prevents an older recovery snapshot from overwriting a newer streamed order, its retrieval provenance, or the corresponding durable receipt/strategy-order reconciliation.
 - HMAC-signed two-minute previews, exact confirmation, fresh broker/market revalidation, idempotency keys, local risk reservations, broker reconciliation, and decision receipts.
 
 ### Portfolio intelligence
@@ -93,10 +93,11 @@ See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 
 - `GET /health` reports process liveness. `GET /ready` additionally requires preview signing, production security configuration when applicable, a valid SEC identity, and a reachable Alpaca paper account.
 - Startup resolves an exact 40-character Git commit and working-tree state. Packaged deployments without `.git` metadata must provide `APP_GIT_COMMIT`; `APP_GIT_DIRTY=1` keeps results auditable but non-comparable.
-- One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, and the strategy scheduler. Runtime jobs are idempotent where implemented but not durable across restarts.
+- One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, the strategy scheduler, and scheduled reconciliation. Runtime jobs are idempotent where implemented but not durable across restarts.
 - The schema has 15 ordered migrations and 23 application tables including migration history. Migration 0015 appends account-activity observation, publication, effective-period, and retrieval fields without rewriting earlier identities. Serialized backup export includes a SHA-256 digest; legacy upgrade, activity-provenance restore, versioned dataset recovery, and both audit chains are tested.
 - The source/output governance registry has 16 sources and 12 stored-output categories. It records policy decisions but does not enforce retention deletion or constitute external terms approval.
 - `GET /api/operations/data-quality` reports provider health from local success, failure, stale-data, and throttling events, plus actor-scoped strategy dataset quality from immutable dataset stats: freshness, completeness, gaps, schema failures, duplicate rate, revisions, and last-success timestamps. It is operational evidence, not live provider probing or external entitlement approval.
+- Scheduled read-only reconciliation runs every 15 minutes by default and coalesces overlapping scheduler/manual requests. It compares paper-account equity against separately queried cash and positions; compares up to 25 open orders from the bulk listing with per-order detail reads and synchronizes local receipts/projection only from an unambiguously newer observation; and compares up to 20 current-position/open-order symbols through IEX latest-bar and historical minute-bar endpoints. Malformed values, unavailable queries, equal-time order conflicts, bar revisions, and lag remain explicit. Completed runs, discrepancies, sanitized unexpected failures, and per-discrepancy recovery outcomes are stored in `events`. `GET /api/operations/reconciliation` exposes bounded recent evidence; admin-only `POST /api/operations/reconciliation` starts a manual run. `RECONCILIATION_DISABLED=1` disables the recurring timer and `RECONCILIATION_POLL_MS` controls it with a 60-second minimum. The market comparison is independent by endpoint, not by provider, and never rewrites provider bars or submits, replaces, or cancels an order.
 
 ## Safety and authorization
 

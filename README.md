@@ -4,7 +4,7 @@ AI Broker is a paper-only personal investing workstation built with Bun, TypeScr
 
 Live trading is intentionally unavailable. Every broker client is constructed with `paper: true`.
 
-Code baseline reviewed: `main` at `4f10872` on 2026-07-12.
+Code baseline reviewed: `main` at `a10f8f6` on 2026-07-12.
 
 ## Quick start
 
@@ -50,10 +50,10 @@ Optional provider keys are `FRED_API_KEY`, `BEA_USER_ID`, `FINNHUB_API_KEY`, and
 - SEC filings and company facts, official US macro context, Alpaca/Benzinga news, GDELT signals, optional Finnhub enrichment, and OpenFIGI identity checks with canonical source/time provenance. SEC classification, recent-filing, filing-evidence/section, company-facts result, and material-alert DTOs preserve applicable filing-date publication, report-date effective-period, provider-retrieval, and server-response time. `GET /api/research/sec?symbol=AAPL&asOf=2025-06-30` applies an end-of-day SEC filing-date cutoff before selecting facts or trends and removes later filings, amendments, and sections while reporting exact exclusion counts. Dates must be real, non-future `YYYY-MM-DD` values. Historical SIC remains unavailable because current submissions expose no classification history. Treasury/BLS/FRED/BEA macro root, provider-coverage, indicator, and canonical-evidence DTOs distinguish Treasury publication dates, FRED observation dates, BLS monthly and BEA quarterly effective periods, provider retrieval, and server-response time; unqueried or failed macro providers expose null retrieval. GDELT, Finnhub, and OpenFIGI provider DTOs preserve their applicable taxonomy. Cached SEC/macro/GDELT/Finnhub/OpenFIGI data retains its provider retrieval time while refreshing per-response server time, and unqueried optional-provider states expose retrieval as unavailable.
 - Evidence-bound portfolio Q&A, company research, comparable valuations, valuation scenarios, counter-thesis review, and trade journal. Portfolio-question v2 and portfolio-plan v2 responses expose phase-labeled typed-tool evidence records, normalized observation/publication/effective/retrieval/response time, grounded claim/idea/review coverage, and exact local simulation-authority coverage; retrieval-only provider records stay partial with explicit impact on time-sensitive interpretation. Saved portfolio-plan v2 payloads also retain only the exact cited, allow-listed proposal and independent-review tool snapshots in deterministic phase/evidence order, with per-snapshot and replay-manifest SHA-256 hashes; duplicate evidence IDs fail closed, and simulation snapshots include the authority state used by the guardrail. Company-research v2 responses persist the exact canonical source set plus normalized time and visible expected/received/omitted coverage for five tools, required and supplemental evidence categories, cited claims, numeric grounding, and source-time records. Comparable and scenario v3 contracts distinguish SEC filing publication/effective periods, provider retrieval, market observation, local calculation, and response time. Historical comparable runs use only the final eligible IEX daily close and SEC facts filed by the requested day. Historical scenario runs inherit that exact parent evidence, persist the original ordered assumptions and memo, and recompute with zero provider requests after parent, source, manifest, and deterministic-output verification. Historical prices are exposed as `referencePrice`, never mislabeled current; historical SIC remains explicitly unavailable.
 - Immutable crypto backtests linked to shadow and scheduled runs, versioned long-history bar datasets, train-only rolling/anchored walk-forward evaluation with untouched holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered bounded paper experiments, exact dataset/code provenance, trace reconstruction, alerts, attribution, friction calibration, promotion evidence gates, and reports. Strategy dashboard v2 roots expose visible expected/received/omitted coverage and normalized market-observation, local-retrieval, and response time for lineage, decisions, traces, per-symbol snapshots, freshness, and applicable paper execution evidence.
-- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, a source/output governance registry, and local provider/dataset quality reporting.
+- SQLite persistence with ordered transactional migrations, hash-chained decision records, serialized backups, encrypted secret envelopes, readiness exports, paper-beta evidence reporting, a source/output governance registry, local provider/dataset quality reporting, and durable scheduled reconciliation evidence. Every reconciliation run cross-checks account and position values, bulk and per-order broker reads, and bounded IEX latest versus historical minute-bar endpoints for current position/open-order symbols. It records discrepancies and recovery outcomes without creating broker authority; the two bar paths are endpoint-independent, not a second market-data provider.
 - A dark operator-workstation browser shell with a persistent desktop rail, compact tablet rail, horizontally discoverable mobile navigation, global data-health/environment/execution status, private-value masking, accessible confirmation dialogs, strategy-specific experiment controls, explicit option-chain coverage warnings, and calculation-level evidence panels for Advisor Q&A/rebalance reports, strategy runs, company research, valuations, the account-activity ledger, portfolio risk, exposure, snapshots, performance, scenarios, optimization, and constrained rebalancing.
 
-The application currently runs as one Bun process with a local SQLite database at `data/app.db`. The scheduler is in-process, so the server must remain running for scheduled strategy ticks.
+The application currently runs as one Bun process with a local SQLite database at `data/app.db`. Strategy and reconciliation schedulers are in-process, so the server must remain running for scheduled work.
 
 ## Architecture at a glance
 
@@ -72,7 +72,7 @@ Feature routes are independently owned, persistence uses ordered migrations, and
 | Automated checks      | The standard and focused safety suites pass; strict TypeScript covers `backend/`, `tests/`, and `scripts/`                                                                                                                                                     |
 | Instrumented coverage | The reviewed deterministic-module mean passes the 95% function and 96% line floors                                                                                                                                                                             |
 | API composition       | Primary orders, mutations, option actions, strategy paper execution, recovery, and runtime trade updates are directly covered; concurrent capacity is transactional                                                                                            |
-| Data quality          | Provider health, strategy dataset quality, canonical time provenance, and migrated provider DTO time provenance are reported from local events, evidence records, provider fixtures, and immutable dataset stats; external entitlement review remains separate |
+| Data quality          | Provider health, strategy dataset quality, canonical time provenance, migrated provider DTO time provenance, and scheduled market/account/order reconciliation outcomes are reported from local events, evidence records, provider fixtures, and immutable dataset stats; external entitlement review remains separate |
 | Browser               | Targeted all-workspace dark-workstation, desktop/tablet/mobile, Strategy Lab, option coverage, privacy, and modal keyboard validation exists; no maintained browser regression suite                                                                           |
 | Persistence           | Transactional migrations through 0015 and a serialized fixture restore pass, including versioned strategy datasets and account-activity time provenance                                                                                                         |
 | Production            | Paper-only; legal, entitlement, closed-beta, restore-drill, and live-deployment gates remain open                                                                                                                                                              |
@@ -96,6 +96,18 @@ bun run smoke:finnhub     # missing-key or configured Finnhub check
 bun run smoke:openfigi    # live OpenFIGI identity/fallback check
 bun run smoke:comparables # live Alpaca plus SEC valuation check
 ```
+
+Run or inspect the bounded read-only reconciliation locally with:
+
+```sh
+curl -X POST http://localhost:3000/api/operations/reconciliation
+curl http://localhost:3000/api/operations/reconciliation
+```
+
+The POST route is admin-only under production proxy authorization. The GET
+route is available to operators and admins. `RECONCILIATION_DISABLED=1`
+disables only its recurring timer; `RECONCILIATION_POLL_MS` defaults to 900000
+milliseconds and values below 60000 are ignored.
 
 `SEC_SYMBOL` overrides the default `AAPL` SEC smoke symbol.
 `RESEARCH_EVAL_SYMBOLS` overrides the default `AAPL,MSFT,NVDA` live research

@@ -15,6 +15,7 @@ import {
   handleOperationsRequest,
   secIdentityConfigured,
 } from "./features/operations/routes";
+import { createReconciliationService } from "./features/operations/reconciliation";
 import { buildPortfolioSnapshot } from "./features/portfolio/portfolio-snapshot";
 import { handlePortfolioRequest } from "./features/portfolio/routes";
 import { riskSnapshot } from "./shared/risk";
@@ -59,6 +60,12 @@ export function createApp({
   const market = createMarketService({ alpaca, store, allow, now });
   const strategies = createStrategyRuntime(alpaca, store, codeIdentity);
   const orderRuntime = createOrderRuntime(alpaca, store, now);
+  const reconciliation = createReconciliationService({
+    alpaca,
+    store,
+    orderRuntime,
+    now,
+  });
   const currentPortfolioExposure = createPortfolioExposureService(alpaca, {
     now,
   });
@@ -264,6 +271,7 @@ export function createApp({
         actor,
         allow,
         env,
+        runReconciliation: reconciliation.run,
       });
       if (operationsResponse) return operationsResponse;
       const marketResponse = await market.handleRequest(request, url, actor);
@@ -345,6 +353,22 @@ export function createApp({
       const pollMs = Number(env.STRATEGY_SCHEDULER_POLL_MS ?? 60_000);
       if (Number.isFinite(pollMs) && pollMs >= 10_000)
         setIntervalFn(() => void strategies.pollScheduler(), pollMs);
+    }
+    if (env.RECONCILIATION_DISABLED !== "1") {
+      const pollMs = Number(env.RECONCILIATION_POLL_MS ?? 15 * 60_000);
+      if (Number.isFinite(pollMs) && pollMs >= 60_000)
+        setIntervalFn(
+          () =>
+            void reconciliation
+              .run("scheduler", "reconciliation-scheduler")
+              .catch((error) =>
+                console.error(
+                  "scheduled reconciliation failed",
+                  error instanceof Error ? error.message : error,
+                ),
+              ),
+          pollMs,
+        );
     }
   }
 

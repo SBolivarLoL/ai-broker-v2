@@ -175,6 +175,7 @@ export class OrderTracker {
   private lastRecoveryAt: string | null = null;
   private lastError: string | null = null;
   recover(orders: trading.Order[], now = new Date()) {
+    const acceptedOrderIds = new Set<string>();
     for (const order of orders) {
       if (!order.id) continue;
       const streamed = this.orders.get(order.id);
@@ -187,9 +188,11 @@ export class OrderTracker {
       if (!streamed || recoveredAt >= streamedAt) {
         this.orders.set(order.id, order);
         this.retrievedAtByOrderId.set(order.id, now.toISOString());
+        acceptedOrderIds.add(order.id);
       }
     }
     this.lastRecoveryAt = now.toISOString();
+    return acceptedOrderIds;
   }
   update(
     order: trading.Order,

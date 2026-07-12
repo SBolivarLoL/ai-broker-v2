@@ -6,6 +6,7 @@ const route = async (
   store: ReturnType<typeof createStore>,
   path: string,
   init?: RequestInit,
+  runReconciliation?: any,
 ) => {
   const request = new Request(`http://localhost${path}`, init);
   return handleOperationsRequest(request, new URL(request.url), {
@@ -16,6 +17,7 @@ const route = async (
       SECRET_VAULT_KEY: "a".repeat(32),
       SEC_USER_AGENT: "AI Broker test@example.com",
     },
+    runReconciliation,
   });
 };
 
@@ -82,5 +84,48 @@ test("operations data-quality route exposes provider health evidence", async () 
       degradedProviders: expect.any(Number),
       datasetCount: 0,
     },
+  });
+});
+
+test("operations reconciliation route reports evidence and owns manual runs", async () => {
+  const store = createStore(":memory:");
+  const unavailable = await route(store, "/api/operations/reconciliation", {
+    method: "POST",
+  });
+  expect(unavailable?.status).toBe(503);
+
+  const completed = {
+    schemaVersion: "scheduled-reconciliation-v1" as const,
+    runId: "run-1",
+    trigger: "manual" as const,
+    actor: "test-admin",
+    startedAt: "2026-07-12T14:00:00.000Z",
+    completedAt: "2026-07-12T14:00:01.000Z",
+    status: "healthy" as const,
+    scope: { marketSymbols: [], omittedMarketSymbols: 0, listedOrders: 0, detailedOrders: 0, omittedDetailedOrders: 0 },
+    checks: { marketBars: "skipped" as const, account: "passed" as const, orders: "skipped" as const },
+    discrepancies: [],
+    summary: { discrepancyCount: 0, recoveredCount: 0, unresolvedCount: 0, warningCount: 0, errorCount: 0 },
+  };
+  const manual = await route(
+    store,
+    "/api/operations/reconciliation",
+    { method: "POST" },
+    async (trigger: string, actor: string) => ({ ...completed, trigger, actor }),
+  );
+  expect(manual?.status).toBe(200);
+  expect(await manual?.json()).toMatchObject({
+    runId: "run-1",
+    trigger: "manual",
+    actor: "test-admin",
+  });
+
+  store.event("operations.reconciliation.completed", "test-admin", completed);
+  const report = await route(store, "/api/operations/reconciliation");
+  expect(report?.status).toBe(200);
+  expect(await report?.json()).toMatchObject({
+    reportVersion: "reconciliation-report-v1",
+    latest: { runId: "run-1", status: "healthy" },
+    evidence: { completedRuns: 1 },
   });
 });
