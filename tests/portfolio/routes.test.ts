@@ -453,6 +453,154 @@ test("portfolio exposure route preserves the normalized service contract", async
   expect(await response?.json()).toEqual(report);
 });
 
+test("portfolio scenarios expose normalized time and calculation coverage", async () => {
+  const report = {
+    schemaVersion: "portfolio-exposure-v2",
+    positions: [
+      {
+        symbol: "AAPL",
+        marketValue: 4_000,
+        assetClass: "US equity",
+        sector: "Manufacturing",
+        sic: "3571",
+        factors: { volatility20dPercent: 20 },
+        source: {
+          currentPosition: { provider: "alpaca", api: "trading" },
+          marketHistory: {
+            provider: "alpaca",
+            api: "market-data",
+            feed: "iex",
+          },
+          classification: {
+            provider: "sec",
+            dataset: "submissions",
+            taxonomy: "SIC",
+          },
+        },
+        observedAt: "2026-01-09T20:00:00.000Z",
+        publishedAt: null,
+        effectivePeriod: {
+          start: "2025-12-01T20:00:00.000Z",
+          end: "2026-01-09T20:00:00.000Z",
+          label: "AAPL exposure evidence window",
+        },
+        retrievedAt: "2026-01-10T20:00:00.000Z",
+        serverRespondedAt: "2026-01-10T20:00:01.000Z",
+      },
+    ],
+    quality: { status: "complete", omittedPositions: 0 },
+    inputs: {
+      positions: { retrievedAt: "2026-01-10T20:00:00.000Z" },
+      positionEvidence: [
+        {
+          symbol: "AAPL",
+          currentPosition: {
+            source: { provider: "alpaca", api: "trading" },
+            observedAt: null,
+            publishedAt: null,
+            effectivePeriod: null,
+            retrievedAt: "2026-01-10T20:00:00.000Z",
+          },
+          marketHistory: {
+            queried: true,
+            available: true,
+            count: 20,
+            rejected: 0,
+            source: {
+              provider: "alpaca",
+              api: "market-data",
+              feed: "iex",
+            },
+            observedAt: "2026-01-09T20:00:00.000Z",
+            publishedAt: null,
+            effectivePeriod: {
+              start: "2025-12-01T20:00:00.000Z",
+              end: "2026-01-09T20:00:00.000Z",
+              label: "AAPL IEX exposure-factor window",
+            },
+            retrievedAt: "2026-01-10T20:00:00.000Z",
+          },
+          classification: {
+            queried: true,
+            available: true,
+            source: {
+              provider: "sec",
+              dataset: "submissions",
+              taxonomy: "SIC",
+            },
+            observedAt: null,
+            publishedAt: null,
+            effectivePeriod: null,
+            retrievedAt: "2026-01-10T20:00:00.000Z",
+          },
+        },
+      ],
+    },
+    source: {
+      account: { provider: "alpaca", api: "trading" },
+      marketHistory: {
+        provider: "alpaca",
+        api: "market-data",
+        feed: "iex",
+      },
+      classifications: {
+        provider: "sec",
+        dataset: "submissions",
+        taxonomy: "SIC",
+      },
+    },
+    observedAt: "2026-01-09T20:00:00.000Z",
+    publishedAt: null,
+    effectivePeriod: {
+      start: "2025-12-01T20:00:00.000Z",
+      end: "2026-01-09T20:00:00.000Z",
+      label: "Trailing IEX exposure-factor input window",
+    },
+    retrievedAt: "2026-01-10T20:00:00.000Z",
+    serverRespondedAt: "2026-01-10T20:00:01.000Z",
+    asOf: "2026-01-10T20:00:01.000Z",
+  } as unknown as CurrentPortfolioExposure["report"];
+  const request = new Request("http://localhost/api/portfolio/scenarios");
+  const response = await handlePortfolioRequest(request, new URL(request.url), {
+    alpaca: {} as Alpaca,
+    store: createStore(":memory:"),
+    actor: "test-operator",
+    allow: () => true,
+    syncAccountActivities: async () => ({ imported: 0, truncated: false, retrievedAt: "2026-01-01T00:00:00.000Z", cacheHit: false }),
+    currentPortfolioExposure: async () => ({ equity: 10_000, report }),
+    capturePortfolioSnapshot: async () => {
+      throw new Error("unexpected snapshot capture");
+    },
+    now: () => new Date("2026-01-10T20:00:02Z"),
+  });
+
+  expect(response?.status).toBe(200);
+  const body = await response?.json();
+  expect(body).toMatchObject({
+    schemaVersion: "portfolio-scenarios-v2",
+    observedAt: "2026-01-09T20:00:00.000Z",
+    retrievedAt: "2026-01-10T20:00:00.000Z",
+    serverRespondedAt: "2026-01-10T20:00:02.000Z",
+    quality: {
+      status: "complete",
+      expected: { currentPositions: 1, positionEvaluations: 3 },
+      received: { modeledPositionEvaluations: 3 },
+    },
+  });
+  expect(body.scenarios).toHaveLength(3);
+  expect(body.scenarios[0]).toMatchObject({
+    id: "rates_up_200bp",
+    positions: [
+      {
+        symbol: "AAPL",
+        observedAt: "2026-01-09T20:00:00.000Z",
+        retrievedAt: "2026-01-10T20:00:00.000Z",
+        serverRespondedAt: "2026-01-10T20:00:02.000Z",
+      },
+    ],
+  });
+});
+
 test("portfolio snapshots route preserves capture time and legacy gaps", async () => {
   const store = createStore(":memory:");
   store.portfolioSnapshot({ snapshotDate: "2026-01-02", equity: 9_000 });

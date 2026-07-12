@@ -12,10 +12,8 @@ import {
   buildPortfolioOptimizerReport,
   PortfolioOptimizerRequest,
 } from "./portfolio-optimizer";
-import {
-  buildPortfolioScenarioReport,
-  CustomPortfolioScenario,
-} from "./portfolio-scenarios";
+import { CustomPortfolioScenario } from "./portfolio-scenarios";
+import { portfolioScenarioDto } from "./scenario-response";
 import type { buildPortfolioSnapshot } from "./portfolio-snapshot";
 import {
   buildConstrainedRebalancePlan,
@@ -295,18 +293,11 @@ export async function handlePortfolioRequest(
     }
     const exposure = await context.currentPortfolioExposure();
     return json(
-      buildPortfolioScenarioReport({
+      portfolioScenarioDto({
         equity: exposure.equity,
-        asOf: exposure.report.asOf,
+        exposure: exposure.report,
         custom,
-        positions: exposure.report.positions.map((position) => ({
-          symbol: position.symbol,
-          marketValue: position.marketValue,
-          assetClass: position.assetClass,
-          sector: position.sector,
-          sic: position.sic,
-          volatility20dPercent: position.factors.volatility20dPercent,
-        })),
+        serverRespondedAt: now(),
       }),
     );
   }

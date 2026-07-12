@@ -136,6 +136,22 @@ test("mutations are same-origin and rate limited", () => {
       production,
     ),
   ).toBe(false);
+  expect(
+    validMutationOrigin(
+      new Request("http://localhost:3000/api/portfolio/scenarios", {
+        headers: { origin: "http://localhost:3000" },
+      }),
+      { NODE_ENV: "development", APP_ORIGIN: "" },
+    ),
+  ).toBe(true);
+  expect(
+    validMutationOrigin(
+      new Request("http://localhost:3000/api/portfolio/scenarios", {
+        headers: { origin: "https://evil.test" },
+      }),
+      { NODE_ENV: "development", APP_ORIGIN: "   " },
+    ),
+  ).toBe(false);
   const hit = rateLimiter(100);
   expect(hit("advisor", 2, 0)).toBe(true);
   expect(hit("advisor", 2, 1)).toBe(true);
