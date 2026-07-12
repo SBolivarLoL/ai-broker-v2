@@ -3,8 +3,10 @@ import { canonicalEvidence } from "../../backend/shared/evidence";
 import {
   evaluateResearch,
   validResearchOutput,
+  type CompanyResearch,
   type ResearchEvidence,
 } from "../../backend/features/research/research";
+import { buildCompanyResearchCoverage } from "../../backend/features/research/company-research-coverage";
 import { createStore } from "../../backend/persistence/store";
 
 const source = (
@@ -64,7 +66,7 @@ const claim = (text: string, evidence = ["sec:facts:AAPL"]) => ({
   text,
   evidence,
 });
-const output = (overrides: object = {}) => ({
+const output = (overrides: Partial<CompanyResearch> = {}): CompanyResearch => ({
   symbol: "AAPL",
   companyName: "Apple Inc.",
   stance: "balanced",
@@ -241,6 +243,117 @@ test("research score exposes missing source-category coverage", () => {
   const metrics = evaluateResearch(output(), sources.slice(0, 3));
   expect(metrics.toolCoverage).toBe(0.75);
   expect(metrics.overallScore).toBeLessThan(100);
+});
+
+test("company research coverage exposes complete tool, evidence, grounding, and time inputs", () => {
+  const completeSources = [
+    ...sources,
+    source("macro:AAPL", "Macro", "https://example.com/macro", "macro", {
+      rate: 4.25,
+    }),
+    source(
+      "identity:AAPL",
+      "Identity",
+      "https://example.com/identity",
+      "identity",
+      { figi: "BBG000B9XRY4" },
+    ),
+  ];
+  const metrics = evaluateResearch(output(), completeSources, { toolCalls: 5 });
+  const coverage = buildCompanyResearchCoverage(
+    output(),
+    completeSources,
+    metrics,
+    "2026-01-01T00:01:00.000Z",
+  );
+
+  expect(coverage).toMatchObject({
+    asOf: "2026-01-01T00:01:00.000Z",
+    observedAt: "2026-01-01T00:00:00.000Z",
+    retrievedAt: "2026-01-01T00:00:00.000Z",
+    quality: {
+      status: "complete",
+      expected: {
+        researchTools: 5,
+        requiredEvidenceCategories: 4,
+        supplementalEvidenceCategories: 2,
+        citedClaims: 9,
+        numericMetrics: 3,
+        sourceTimeRecords: 6,
+      },
+      received: {
+        researchTools: 5,
+        requiredEvidenceCategories: 4,
+        supplementalEvidenceCategories: 2,
+        citedClaims: 9,
+        numericMetrics: 3,
+        sourceTimeRecords: 6,
+      },
+      omitted: {
+        researchTools: 0,
+        supplementalEvidenceCategories: 0,
+        numericMetrics: 0,
+      },
+      freshness: {
+        status: "semantic_time_available",
+        latestObservedAt: "2026-01-01T00:00:00.000Z",
+        evaluatedAt: "2026-01-01T00:01:00.000Z",
+      },
+      missing: [],
+    },
+  });
+});
+
+test("company research coverage keeps missing context and accepted grounding gaps consequential", () => {
+  const partiallyGrounded = output({
+    keyMetrics: [
+      {
+        label: "Price",
+        value: 999,
+        unit: "USD",
+        period: "current",
+        evidence: "market:AAPL",
+      },
+      ...output().keyMetrics.slice(1),
+    ],
+  });
+  const metrics = evaluateResearch(partiallyGrounded, sources, {
+    toolCalls: 4,
+  });
+  const retrievalOnlySources = sources.map((item) => ({
+    ...item,
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    time: { ...item.time, observationTime: null },
+  }));
+  const coverage = buildCompanyResearchCoverage(
+    partiallyGrounded,
+    retrievalOnlySources,
+    metrics,
+    "2026-01-01T00:01:00.000Z",
+  );
+
+  expect(coverage.quality).toMatchObject({
+    status: "partial",
+    received: {
+      researchTools: 4,
+      supplementalEvidenceCategories: 0,
+      numericMetrics: 2,
+      sourceTimeRecords: 0,
+    },
+    omitted: {
+      researchTools: 1,
+      supplementalEvidenceCategories: 2,
+      numericMetrics: 1,
+      sourceTimeRecords: 4,
+    },
+    freshness: { status: "partial_provider_time" },
+  });
+  expect(coverage.quality.impact.join(" ")).toContain("grounding confidence");
+  expect(coverage.quality.impact.join(" ")).toContain(
+    "cross-provider identity confidence",
+  );
 });
 
 test("research runs and reliability metrics persist", () => {

@@ -12,6 +12,7 @@ import { SecEdgarClient, secUserAgentFromEnv, type SecFacts } from "../../integr
 import { normalizeTimeProvenance } from "../../shared/time-provenance";
 import { buildSecFinancialTrends } from "./sec-financial-trends";
 import { buildValuationScenarioMemo, ValuationScenarioInput } from "./valuation-scenario";
+import { buildCompanyResearchCoverage } from "./company-research-coverage";
 
 export const openaiModel = (env: Record<string, string | undefined> = process.env) => env.OPENAI_MODEL ?? "gpt-5.5";
 
@@ -124,6 +125,32 @@ function selectedSecFacts(facts: SecFacts) {
   return selected;
 }
 
+function aggregateSecTime(
+  records: Array<{
+    publishedAt?: string | null;
+    effectivePeriod?: { start?: string | null; end?: string | null } | null;
+  }>,
+  label: string,
+) {
+  const published = records.map(record => record.publishedAt).filter((value): value is string => Boolean(value)).toSorted();
+  const starts = records.map(record => record.effectivePeriod?.start).filter((value): value is string => Boolean(value)).toSorted();
+  const ends = records.map(record => record.effectivePeriod?.end).filter((value): value is string => Boolean(value)).toSorted();
+  return {
+    publishedAt: published.at(-1) ?? null,
+    effectivePeriod: starts.length || ends.length ? { start: starts[0] ?? null, end: ends.at(-1) ?? null, label } : null,
+  };
+}
+
+function selectedSecFactTime(selected: Record<string, unknown>) {
+  return aggregateSecTime(Object.values(selected).flatMap(value => {
+    if (!value || typeof value !== "object") return [];
+    const fact = value as { filed?: string; periodEnd?: string };
+    const publishedAt = fact.filed ? `${fact.filed}T00:00:00.000Z` : null;
+    const effectiveAt = fact.periodEnd ? `${fact.periodEnd}T00:00:00.000Z` : null;
+    return [{ publishedAt, effectivePeriod: effectiveAt ? { start: effectiveAt, end: effectiveAt } : null }];
+  }), "Selected SEC fact periods");
+}
+
 function secContent<T extends {
   retrievedAt: string;
   serverRespondedAt: string;
@@ -155,19 +182,22 @@ export async function getCompanySecEvidence(
   const company = await sec.company(symbol);
   const factsResult = await sec.companyFactsResult(company);
   const facts = factsResult.facts;
+  const selected = selectedSecFacts(facts);
+  const filingTime = aggregateSecTime(filingEvidence.filings, "Recent SEC filing report periods");
+  const factTime = selectedSecFactTime(selected);
   const serverRespondedAt = now().toISOString();
   const retrievedAt = [filingEvidence.retrievedAt, factsResult.retrievedAt].toSorted().at(-1)!;
   const asOf = serverRespondedAt;
   const sections: ResearchEvidence[] = filingEvidence.sections.map(section => {
     const { id, ...data } = section;
-    return researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: secContent(data) });
+    return researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, observedAt: null, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: secContent(data) });
   });
   const filingUrl = `https://data.sec.gov/submissions/CIK${filingEvidence.cik}.json`;
   const factsUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`;
   const sources: ResearchEvidence[] = [
-    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf: filingEvidence.asOf, retrievedAt: filingEvidence.retrievedAt, serverRespondedAt: filingEvidence.serverRespondedAt, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: filingEvidence.filings.map(secContent), sections: filingEvidence.sections.map(secContent), limitations: filingEvidence.limitations } }),
+    researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${filingEvidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${filingEvidence.companyName} recent SEC filings`, url: filingUrl, asOf: filingEvidence.asOf, observedAt: null, retrievedAt: filingEvidence.retrievedAt, serverRespondedAt: filingEvidence.serverRespondedAt, ...filingTime, entityIds: { symbol, cik: filingEvidence.cik }, category: "filings", data: { symbol, companyName: filingEvidence.companyName, filings: filingEvidence.filings.map(secContent), sections: filingEvidence.sections.map(secContent), limitations: filingEvidence.limitations } }),
     ...sections,
-    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf: factsResult.asOf, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selectedSecFacts(facts), trends: buildSecFinancialTrends(company, facts) } }),
+    researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url: factsUrl, asOf: factsResult.asOf, observedAt: null, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, ...factTime, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends: buildSecFinancialTrends(company, facts) } }),
   ];
   const deduped = dedupeEvidence(sources);
   return { symbol, companyName: facts.entityName, retrievedAt, serverRespondedAt, time: normalizeTimeProvenance({ retrievalTime: retrievedAt, serverResponseTime: serverRespondedAt }), asOf, sources: deduped.records, deduplication: { duplicates: deduped.duplicates, revisions: deduped.revisions } };
@@ -216,7 +246,7 @@ export async function getValuationScenarios(alpaca: Alpaca, rawSymbol: string, a
   return buildValuationScenarioMemo(result.row, result.sources, parsedAssumptions.data);
 }
 
-export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runId = crypto.randomUUID()) {
+export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runId: string = crypto.randomUUID()) {
   const symbol = SymbolSchema.parse(rawSymbol);
   const sec = secEdgarClient();
   const sources: ResearchEvidence[] = [];
@@ -235,16 +265,18 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       ]);
       const identity = await getOpenFigiIdentity(symbol, asset.name ?? symbol);
       const closes = bars.map(bar => bar.close).filter(Number.isFinite);
+      const barTimes = bars.map(bar => new Date(bar.timestamp).toISOString()).toSorted();
       if (typeof price !== "number" || closes.length < 2) throw new Error("Market history unavailable");
       const risk = historicalRisk(closes);
       const data = {
         symbol, companyName: asset.name ?? symbol, currentPrice: price, oneYearReturnPercent: (closes.at(-1)! / closes[0]! - 1) * 100,
         annualizedVolatilityPercent: risk.annualizedVolatility, maxDrawdownPercent: -risk.maxDrawdown, fiftyTwoWeekHigh: Math.max(...closes), fiftyTwoWeekLow: Math.min(...closes),
+        currentPriceObservedAt: null, marketHistoryObservedStart: barTimes[0] ?? null, marketHistoryObservedEnd: barTimes.at(-1) ?? null,
         identity: { status: identity.status, keyStatus: identity.keyStatus, matchQuality: identity.matchQuality, canonicalFigi: identity.canonicalFigi, selected: identity.selected, candidateCount: identity.candidateCount, warnings: identity.warnings, retrievedAt: identity.retrievedAt, serverRespondedAt: identity.serverRespondedAt, time: identity.time, asOf: identity.asOf, evidenceId: identity.sources[0]?.id ?? null },
       };
       const asOf = new Date().toISOString();
       sources.push(...identity.sources);
-      return addEvidence(researchEvidence({ id: `market:${symbol}`, provider: "alpaca", sourceId: `${symbol}:market-snapshot:${asOf}`, authority: "regulated_broker", claimStatus: "broker_observation", title: `${symbol} market snapshot`, url: `https://alpaca.markets/data`, asOf, retrievedAt: asOf, entityIds: { symbol, ...(identity.canonicalFigi ? { figi: identity.canonicalFigi } : {}) }, category: "market", data }));
+      return addEvidence(researchEvidence({ id: `market:${symbol}`, provider: "alpaca", sourceId: `${symbol}:market-snapshot:${asOf}`, authority: "regulated_broker", claimStatus: "broker_observation", title: `${symbol} market snapshot`, url: `https://alpaca.markets/data`, asOf, observedAt: null, retrievedAt: asOf, effectivePeriod: barTimes.length ? { start: barTimes[0], end: barTimes.at(-1), label: "One-year Alpaca IEX daily history" } : null, entityIds: { symbol, ...(identity.canonicalFigi ? { figi: identity.canonicalFigi } : {}) }, category: "market", data }));
     },
   });
 
@@ -253,13 +285,14 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
     async execute({ symbol: requested }) {
       if (requested !== symbol) throw new Error("Only the requested company may be researched");
       const evidence = await sec.filingEvidence(symbol);
+      const filingTime = aggregateSecTime(evidence.filings, "Recent SEC filing report periods");
       const sections = evidence.sections.map(section => {
         const { id, ...data } = section;
-        sources.push(researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: secContent(data) }));
+        sources.push(researchEvidence({ id, provider: "sec", sourceId: `${section.accession}:${section.kind}`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} ${section.form} ${section.title}`, url: section.sourceUrl, asOf: section.asOf, observedAt: null, retrievedAt: section.retrievedAt, serverRespondedAt: section.serverRespondedAt, publishedAt: section.publishedAt, effectivePeriod: section.effectivePeriod, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: secContent(data) }));
         return { evidenceId: id, ...data };
       });
       const url = `https://data.sec.gov/submissions/CIK${evidence.cik}.json`;
-      return addEvidence(researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${evidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} recent SEC filings`, url, asOf: evidence.asOf, retrievedAt: evidence.retrievedAt, serverRespondedAt: evidence.serverRespondedAt, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: { symbol, companyName: evidence.companyName, filings: evidence.filings.map(secContent), sections: sections.map(secContent), limitations: evidence.limitations } }));
+      return addEvidence(researchEvidence({ id: `sec:filings:${symbol}`, provider: "sec", sourceId: `${evidence.cik}:submissions`, authority: "official", claimStatus: "official_record", title: `${evidence.companyName} recent SEC filings`, url, asOf: evidence.asOf, observedAt: null, retrievedAt: evidence.retrievedAt, serverRespondedAt: evidence.serverRespondedAt, ...filingTime, entityIds: { symbol, cik: evidence.cik }, category: "filings", data: { symbol, companyName: evidence.companyName, filings: evidence.filings.map(secContent), sections: sections.map(secContent), limitations: evidence.limitations } }));
     },
   });
 
@@ -270,7 +303,7 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       const company = await sec.company(symbol); const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`; const factsResult = await sec.companyFactsResult(company); const facts = factsResult.facts;
       const selected = selectedSecFacts(facts);
       const trends = buildSecFinancialTrends(company, facts);
-      return addEvidence(researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url, asOf: factsResult.asOf, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }));
+      return addEvidence(researchEvidence({ id: `sec:facts:${symbol}`, provider: "sec", sourceId: `${company.cik}:companyfacts`, authority: "official", claimStatus: "official_record", title: `${facts.entityName} SEC company facts`, url, asOf: factsResult.asOf, observedAt: null, retrievedAt: factsResult.retrievedAt, serverRespondedAt: factsResult.serverRespondedAt, ...selectedSecFactTime(selected), entityIds: { symbol, cik: company.cik }, category: "fundamentals", data: { symbol, companyName: facts.entityName, facts: selected, trends } }));
     },
   });
 
@@ -287,8 +320,8 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
       ]);
       const articles = articlesResult.status === "fulfilled" ? articlesResult.value.slice(0, 8).map(article => ({ headline: article.headline, summary: article.summary, source: article.source, author: article.author, createdAt: article.createdAt, url: article.url })) : [];
       const alpacaSource = articlesResult.status === "fulfilled"
-        ? researchEvidence({ id: `news:${symbol}`, provider: "alpaca", sourceId: `${symbol}:news-window:${asOf.slice(0, 10)}`, authority: "licensed_provider", claimStatus: "media_signal", title: `${symbol} recent licensed news`, url: articles[0]?.url ?? "https://alpaca.markets/data", asOf, retrievedAt: asOf, publishedAt: articles[0]?.createdAt ? new Date(articles[0].createdAt).toISOString() : null, entityIds: { symbol }, category: "news", data: { symbol, available: true, articles, classification: "media signal, not verified fact" } })
-        : researchEvidence({ id: `news:${symbol}`, provider: "alpaca", sourceId: `${symbol}:news-availability:${asOf.slice(0, 10)}`, authority: "regulated_broker", claimStatus: "broker_observation", title: `${symbol} licensed news availability`, url: "https://alpaca.markets/data", asOf, retrievedAt: asOf, entityIds: { symbol }, category: "news", data: { symbol, available: false, articles: [], limitation: "The licensed news provider was unavailable for this run; do not infer that no material news exists." } });
+        ? researchEvidence({ id: `news:${symbol}`, provider: "alpaca", sourceId: `${symbol}:news-window:${asOf.slice(0, 10)}`, authority: "licensed_provider", claimStatus: "media_signal", title: `${symbol} recent licensed news`, url: articles[0]?.url ?? "https://alpaca.markets/data", asOf, observedAt: null, retrievedAt: asOf, publishedAt: articles[0]?.createdAt ? new Date(articles[0].createdAt).toISOString() : null, entityIds: { symbol }, category: "news", data: { symbol, available: true, articles, classification: "media signal, not verified fact" } })
+        : researchEvidence({ id: `news:${symbol}`, provider: "alpaca", sourceId: `${symbol}:news-availability:${asOf.slice(0, 10)}`, authority: "regulated_broker", claimStatus: "broker_observation", title: `${symbol} licensed news availability`, url: "https://alpaca.markets/data", asOf, observedAt: null, retrievedAt: asOf, entityIds: { symbol }, category: "news", data: { symbol, available: false, articles: [], limitation: "The licensed news provider was unavailable for this run; do not infer that no material news exists." } });
       const gdelt = assetResult.status === "fulfilled" ? await getGdeltCompanySignals(symbol, assetResult.value.name ?? symbol) : null;
       const finnhub = finnhubResult.status === "fulfilled" ? finnhubResult.value : null;
       sources.push(alpacaSource, ...(gdelt?.sources ?? []), ...(finnhub?.sources ?? []));
@@ -323,5 +356,6 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
   if (!result.finalOutput) throw new Error("Research agent returned no analysis");
   const usage = result.state.usage;
   const metrics = evaluateResearch(result.finalOutput, sources, { latencyMs: Math.round(performance.now() - started), toolCalls, requests: usage.requests, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens });
-  return { runId, model: openaiModel(), asOf: new Date().toISOString(), research: result.finalOutput, sources, metrics };
+  const serverRespondedAt = new Date().toISOString();
+  return { schemaVersion: "company-research-v2" as const, runId, model: openaiModel(), research: result.finalOutput, sources, metrics, ...buildCompanyResearchCoverage(result.finalOutput, sources, metrics, serverRespondedAt) };
 }

@@ -42,6 +42,7 @@ type RateLimit = (key: string, maximum: number) => boolean;
 type SecCompanyEvidence = Awaited<ReturnType<typeof getCompanySecEvidence>>;
 type ComparableValuations = Awaited<ReturnType<typeof getComparableValuations>>;
 type ValuationScenarios = Awaited<ReturnType<typeof getValuationScenarios>>;
+type CompanyResearchRun = Awaited<ReturnType<typeof runCompanyResearch>>;
 
 type ResearchContext = {
   alpaca: Alpaca;
@@ -66,6 +67,10 @@ type ResearchContext = {
     symbol: string,
     scenarios: unknown,
   ) => Promise<ValuationScenarios>;
+  companyResearch?: (
+    symbol: string,
+    runId: string,
+  ) => Promise<CompanyResearchRun>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -446,7 +451,11 @@ export async function handleResearchRequest(
     const model = openaiModel(env);
     store.startResearch(runId, symbol, model);
     try {
-      const result = await runCompanyResearch(alpaca, symbol, runId);
+      const result = await (
+        context.companyResearch ??
+        ((requestedSymbol, requestedRunId) =>
+          runCompanyResearch(alpaca, requestedSymbol, requestedRunId))
+      )(symbol, runId);
       store.completeResearch(runId, result, result.metrics);
       store.event("research.completed", actor, {
         runId,

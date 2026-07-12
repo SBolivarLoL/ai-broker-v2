@@ -248,7 +248,7 @@ test("SEC research projection refreshes delivery time without changing evidence 
       });
       if (url.endsWith("annual.htm")) return new Response(annualHtml);
       if (url.endsWith("quarter.htm")) return new Response(quarterHtml);
-      if (url.includes("companyfacts/CIK0000320193.json")) return Response.json({ entityName: "Apple Inc.", facts: {} });
+      if (url.includes("companyfacts/CIK0000320193.json")) return Response.json({ entityName: "Apple Inc.", facts: { "us-gaap": { Revenues: { label: "Revenue", units: { USD: [{ val: 100, start: "2024-10-01", end: "2025-09-30", filed: "2025-11-01", form: "10-K", fy: 2025, fp: "FY", accn: "0000320193-25-000001" }] } } } } });
       throw new Error(`Unexpected fixture URL: ${url}`);
     },
   });
@@ -261,6 +261,26 @@ test("SEC research projection refreshes delivery time without changing evidence 
   expect(cached.sources.map(source => source.retrievedAt)).toEqual(first.sources.map(source => source.retrievedAt));
   expect(cached.sources.map(source => source.contentHash)).toEqual(first.sources.map(source => source.contentHash));
   expect(cached.sources.every(source => source.serverRespondedAt === cached.serverRespondedAt)).toBe(true);
+  expect(cached.sources.every(source => source.observedAt === null)).toBe(true);
+  expect(cached.sources.find(source => source.id === "sec:filings:AAPL")).toMatchObject({
+    publishedAt: "2025-11-01T00:00:00.000Z",
+    effectivePeriod: {
+      start: "2025-06-30T00:00:00.000Z",
+      end: "2025-09-30T00:00:00.000Z",
+    },
+  });
+  expect(cached.sources.find(source => source.id === "sec:facts:AAPL")).toMatchObject({
+    publishedAt: "2025-11-01T00:00:00.000Z",
+    effectivePeriod: {
+      start: "2025-09-30T00:00:00.000Z",
+      end: "2025-09-30T00:00:00.000Z",
+    },
+  });
+  expect(
+    cached.sources
+      .filter(source => source.id.startsWith("sec:section:"))
+      .every(source => source.publishedAt && source.effectivePeriod),
+  ).toBe(true);
 });
 
 test("extracts material 8-K items instead of table-of-contents entries", async () => {
