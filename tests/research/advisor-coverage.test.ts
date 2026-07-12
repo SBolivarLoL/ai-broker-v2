@@ -1,9 +1,28 @@
 import { expect, test } from "bun:test";
 import {
   buildAdvisorEvidenceRecord,
+  buildAdvisorEvidenceSnapshot,
+  buildAdvisorPlanEvidenceReplay,
   buildPortfolioPlanCoverage,
   buildPortfolioQuestionCoverage,
 } from "../../backend/features/research/advisor-coverage";
+import { evidenceContentHash } from "../../backend/shared/evidence";
+
+function snapshot(
+  evidenceId: string,
+  phase: "proposal" | "review",
+  payload: unknown,
+) {
+  return buildAdvisorEvidenceSnapshot({
+    record: buildAdvisorEvidenceRecord({
+      evidenceId,
+      phase,
+      source: "Test provider",
+      retrievedAt: "2026-07-12T12:00:00.000Z",
+    }),
+    payload,
+  });
+}
 
 test("portfolio Q&A coverage distinguishes grounded citations from retrieval-only time", () => {
   const output = {
@@ -181,4 +200,83 @@ test("guided rebalance coverage binds proposals reviews and action authority", (
   expect(coverage.quality.impact).toEqual([
     "Guided rebalance claims, citations, retrieval times, and applicable provider times are complete.",
   ]);
+});
+
+test("advisor evidence snapshots canonicalize JSON before hashing", () => {
+  const first = snapshot("price:AAPL", "proposal", {
+    symbol: "AAPL",
+    nested: { quantity: 2, at: new Date("2026-07-12T10:00:00.000Z") },
+  });
+  const second = snapshot("price:AAPL", "proposal", {
+    nested: { at: "2026-07-12T10:00:00.000Z", quantity: 2 },
+    symbol: "AAPL",
+  });
+
+  expect(first.payload).toEqual(second.payload);
+  expect(first.contentHash).toBe(second.contentHash);
+  expect(first.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+});
+
+test("advisor plan replay stores only cited phase-specific snapshots", () => {
+  const output = {
+    ideas: [
+      { evidence: ["portfolio:current", "price:AAPL"], actionable: false, simulationId: null, riskReview: { evidence: ["risk:current"] } },
+      { evidence: ["portfolio:current"], actionable: false, simulationId: null, riskReview: { evidence: ["risk:current"] } },
+      { evidence: ["portfolio:current"], actionable: false, simulationId: null, riskReview: { evidence: ["risk:current"] } },
+    ],
+  };
+  const inputs = [
+    snapshot("risk:current", "review", { concentration: 0.35 }),
+    snapshot("news:AAPL", "proposal", { articles: [] }),
+    snapshot("portfolio:current", "proposal", { equity: "10000" }),
+    snapshot("price:AAPL", "proposal", { price: 200 }),
+  ];
+  const replay = buildAdvisorPlanEvidenceReplay({ output, evidenceSnapshots: inputs });
+  const reordered = buildAdvisorPlanEvidenceReplay({ output, evidenceSnapshots: inputs.toReversed() });
+
+  expect(replay).toMatchObject({
+    schemaVersion: "advisor-plan-evidence-v1",
+    payloadPolicy: "allowlisted_typed_tool_output",
+    status: "complete",
+    expectedSnapshots: 3,
+    receivedSnapshots: 3,
+    missingSnapshots: [],
+    references: [
+      { phase: "proposal", evidenceId: "portfolio:current" },
+      { phase: "proposal", evidenceId: "price:AAPL" },
+      { phase: "review", evidenceId: "risk:current" },
+    ],
+  });
+  expect(replay.snapshots.map(({ phase, evidenceId }) => `${phase}:${evidenceId}`)).toEqual([
+    "proposal:portfolio:current",
+    "proposal:price:AAPL",
+    "review:risk:current",
+  ]);
+  expect(replay.snapshots.some(({ evidenceId }) => evidenceId === "news:AAPL")).toBe(false);
+  expect(replay.contentHash).toBe(reordered.contentHash);
+  const { contentHash, ...manifest } = replay;
+  expect(contentHash).toBe(evidenceContentHash(manifest));
+});
+
+test("advisor plan replay exposes missing and ambiguous cited snapshots", () => {
+  const output = {
+    ideas: Array.from({ length: 3 }, () => ({
+      evidence: ["portfolio:current"],
+      actionable: false,
+      simulationId: null,
+      riskReview: { evidence: ["risk:current"] },
+    })),
+  };
+  const duplicate = snapshot("portfolio:current", "proposal", { equity: "10000" });
+  const replay = buildAdvisorPlanEvidenceReplay({ output, evidenceSnapshots: [duplicate, duplicate] });
+
+  expect(replay).toMatchObject({
+    status: "partial",
+    expectedSnapshots: 2,
+    receivedSnapshots: 0,
+    missingSnapshots: [
+      { phase: "proposal", evidenceId: "portfolio:current", reason: "ambiguous" },
+      { phase: "review", evidenceId: "risk:current", reason: "missing" },
+    ],
+  });
 });

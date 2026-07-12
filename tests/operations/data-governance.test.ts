@@ -54,7 +54,8 @@ test("builds data licensing and subscription governance report", () => {
       "local_derived_analytics",
     ],
     contents: expect.arrayContaining([
-      "proposal and independent-review evidence identity/time metadata",
+      "exact bounded cited proposal and independent-review typed-tool snapshots with canonical hashes",
+      "simulation-bound intent and authority evidence",
     ]),
   });
   expect(report.storedOutputs.flatMap(output => output.tables).sort()).toEqual(expectedTables);
