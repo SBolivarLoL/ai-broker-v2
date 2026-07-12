@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `8afae5a`: 2026-07-12.
+Last reviewed against `main` commit `c46aeb5`: 2026-07-12.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -220,7 +220,7 @@ The full snapshot remains in SQLite even when the browser displays a compact sum
 
 Strategy experiments persist immutable bar-dataset versions and normalized bars, backtests, configuration, crypto snapshots and order books, decisions, paper orders, metrics, notes, and hash-chained audit records across ten strategy tables. Dataset versions preserve provider, feed, UTC timezone, query bounds, observed bounds, gaps, rejected bars, duplicate and conflicting-duplicate counts, additions, corrections, removals, predecessor ID, and deterministic content hash. The governance registry classifies these records as internal, paper-only output sourced from Alpaca paper trading, Alpaca crypto data, and local derived analytics.
 
-Retention metadata does not delete data. There is no automatic pruning job, so a long-running experiment can grow the local SQLite database until an operator removes or archives records under a reviewed policy. Inspect `/api/operations/data-governance` for the current provider and stored-output decisions; external entitlement review remains required before any different user, redistribution, or live use.
+Selective automatic retention bounds high-volume experiment records. Unreferenced raw snapshots expire after 30 days, but decision-linked snapshots and the latest per-symbol snapshot for an active/paused run remain. Retained order-book depth is removed after 90 days with the original payload hash and removed byte/level counts recorded explicitly; execution replay then reports missing order-book evidence instead of inventing depth. Repeated metric samples expire after 90 days while the latest run/name sample remains, and local spans expire after 30 days. Decisions, orders, notes, audit chains, reviewed backtests, and immutable bar datasets/bars are not automatically deleted. Inspect `/api/operations/retention` for current cutoffs and eligible/protected counts and `/api/operations/data-governance` for source/output decisions; external entitlement review remains required before any different user, redistribution, or live use.
 
 ## Paper approval and execution
 

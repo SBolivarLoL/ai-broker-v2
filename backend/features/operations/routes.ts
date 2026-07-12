@@ -17,6 +17,11 @@ import {
   type ReconciliationRun,
 } from "./reconciliation";
 import {
+  retentionPolicyFromEnv,
+  retentionReport,
+  type RetentionRun,
+} from "./retention";
+import {
   decryptSecretValue,
   encryptSecretValue,
   SecretName,
@@ -35,6 +40,7 @@ type OperationsContext = {
     trigger: "manual",
     actor: string,
   ) => Promise<ReconciliationRun>;
+  runRetention?: (trigger: "manual", actor: string) => Promise<RetentionRun>;
 };
 
 export function secIdentityConfigured(env: Env = process.env) {
@@ -303,6 +309,25 @@ export async function handleOperationsRequest(
       return json({ error: "Operations reconciliation is unavailable" }, 503);
     }
     return json(await context.runReconciliation("manual", actor));
+  }
+
+  if (
+    url.pathname === "/api/operations/retention" &&
+    request.method === "GET"
+  ) {
+    return json(retentionReport(store, retentionPolicyFromEnv(env)));
+  }
+
+  if (
+    url.pathname === "/api/operations/retention" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:operations-retention`, 2)) {
+      return json({ error: "Operations retention rate limit exceeded" }, 429);
+    }
+    if (!context.runRetention)
+      return json({ error: "Operations retention is unavailable" }, 503);
+    return json(await context.runRetention("manual", actor));
   }
 
   if (

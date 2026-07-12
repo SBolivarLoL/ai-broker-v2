@@ -426,14 +426,53 @@ test("injected env, not process.env, controls runtime schedulers", async () => {
   const store = createStore(":memory:");
   stores.push(store);
 
-  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1", RECONCILIATION_DISABLED: "1" }, setIntervalFn });
+  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1", RECONCILIATION_DISABLED: "1", RETENTION_DISABLED: "1" }, setIntervalFn });
   disabled.startRuntime();
   expect(intervals).toEqual([15 * 60_000]);
 
   intervals.length = 0;
-  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000", RECONCILIATION_POLL_MS: "120000" }, setIntervalFn });
+  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000", RECONCILIATION_POLL_MS: "120000", RETENTION_POLL_MS: "3600000" }, setIntervalFn });
   enabled.startRuntime();
-  expect(intervals).toEqual([15 * 60_000, 30_000, 120_000]);
+  expect(intervals).toEqual([15 * 60_000, 30_000, 120_000, 3_600_000]);
+});
+
+test("runtime retention scheduler prunes through the composed store boundary", async () => {
+  const intervals: Array<{ callback: () => void; milliseconds: number }> = [];
+  const store = createStore(":memory:");
+  stores.push(store);
+  store.event("otel.span", "fixture", { traceId: "old-span" });
+  const app = createApp({
+    alpaca: fakeAlpaca().alpaca,
+    store,
+    codeIdentity,
+    env: {
+      STRATEGY_SCHEDULER_DISABLED: "1",
+      RECONCILIATION_DISABLED: "1",
+      RETENTION_POLL_MS: "3600000",
+    },
+    setIntervalFn: (callback, milliseconds) => {
+      intervals.push({ callback, milliseconds });
+      return 0;
+    },
+    now: () => new Date("2030-01-01T00:00:00.000Z"),
+  });
+  app.startRuntime();
+  const retention = intervals.find(
+    (entry) => entry.milliseconds === 3_600_000,
+  );
+  expect(retention).toBeDefined();
+  retention!.callback();
+  await Bun.sleep(0);
+  expect(store.events(10, "otel.span")).toEqual([]);
+  expect(store.events(10, "operations.retention.completed")).toMatchObject([
+    {
+      actor: "retention-scheduler",
+      payload: {
+        trigger: "scheduler",
+        deleted: { spans: 1 },
+      },
+    },
+  ]);
 });
 
 test("data-governance API exposes provider and stored-output decisions", async () => {

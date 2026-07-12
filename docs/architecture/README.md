@@ -120,7 +120,7 @@ The order boundary is deliberately split by responsibility:
 
 These modules share one runtime and preserve the safety pipeline above.
 
-The operations boundary owns read-only state reconciliation:
+The operations boundary owns read-only state reconciliation and selective retention:
 
 - `operations/reconciliation.ts` coalesces overlapping runs and compares
   independently requested paper-account/position, bulk/per-order, and IEX
@@ -137,6 +137,19 @@ The operations boundary owns read-only state reconciliation:
 The IEX comparison uses distinct latest-bar and historical-bar REST paths from
 the same Alpaca provider. It proves endpoint reconciliation, not independent
 vendor agreement or external entitlement approval.
+
+- `operations/retention.ts` owns startup-validated retention windows, cutoffs,
+  coalesced scheduled/manual execution, operator reporting, and sanitized run
+  evidence. It never receives broker or execution authority.
+- `persistence/retention.ts` owns the bounded transactional SQL. It deletes
+  only eligible unreferenced snapshots, repeated metrics, spans, and research
+  evidence; compacts aged order-book depth into hash-bound pruning metadata;
+  and protects active latest snapshots, decision references, latest metric
+  samples, and valuation parent/child lineage. Malformed lineage aborts the
+  entire transaction.
+- `operations/routes.ts` exposes operator GET/admin POST retention endpoints;
+  `app.ts` owns the optional daily timer. Audit chains, orders, receipts, notes,
+  backtests, and immutable bar datasets remain outside this repository.
 
 `portfolio/account-state.ts` owns the allow-listed account/position composite
 returned to the browser. It applies the shared time taxonomy to account,

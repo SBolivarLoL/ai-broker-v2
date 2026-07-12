@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `8afae5a`: 2026-07-12.
+Last reviewed against `main` commit `c46aeb5`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 442 tests, 0 failures, 2,312 assertions across 93 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 447 tests, 0 failures, 2,350 assertions across 94 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.17% functions, 97.23% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.11% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -36,6 +36,17 @@ omission reason (but never both), distinguish live redactions from official-doc
 and application contracts, and reject credential, email, and account-identity
 fields. Private Alpaca state and licensed market/news values were not committed.
 
+The retention slice adds three isolated SQLite service contracts plus direct
+operations-handler and composed-application scheduler coverage. They prove
+transactional bounded pruning, overlap coalescing, manual and scheduled durable
+events, preview inventory, decision-linked and latest-active snapshot
+protection, exact order-book compaction hashes and level counts, latest metric
+protection, span/research-event expiry, provider-evidence parent/child lineage,
+multi-run convergence, malformed-lineage rollback, sanitized failure evidence,
+startup policy validation, GET/POST response shapes, and unavailable-service
+handling. The tests use disposable databases; validation deliberately did not
+run pruning against the real local `data/app.db`.
+
 The bundled Node runtime passed `node --check frontend/research.js` after the
 scenario v3 renderer changed from `currentPrice` to `referencePrice` and added
 the historical-close label. A new headed browser pass was not run because the
@@ -48,11 +59,11 @@ specific rendering change.
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 104 backend modules, 11 operational scripts, 93 files under `tests/`, and one coverage-gate test                                   |
+| TypeScript    | 106 backend modules, 11 operational scripts, 94 files under `tests/`, and one coverage-gate test                                   |
 | Concentration | `backend/app.ts` 376 lines; `backend/persistence/store.ts` 940 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `8afae5a`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `c46aeb5`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -72,7 +83,7 @@ specific rendering change.
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                             | No production-sized restore timing or closed-beta operations drill                                                                        |
 | Provider normalization      | Good with recorded/redacted fixtures                | A versioned manifest covers all 15 external governance source IDs; 14 contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas, alongside canonical time-provenance and persisted point-in-time valuation coverage | CI fixtures cannot prove current live-provider behavior or entitlement; not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
-| Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats                                                                                                                                                                                                                                                                                     | Internal classifications are not legal approval; no automatic retention enforcement exists                                                |
+| Data governance and quality | Complete code inventory, selective enforcement, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, actor-scoped strategy dataset quality stats, and transactional retention for named high-growth records with lineage protection | Internal classifications and the local retention policy are not legal or data-entitlement approval; durable records outside the named high-growth categories remain deliberately unpruned |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, deterministic replay hashes, and SQLite/API persistence                                                                                                                                                                                                                                                                                                                                               | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
@@ -107,8 +118,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 104 backend TypeScript modules, 11 operational
-  scripts, 91 files under `tests/`, one coverage-gate test under `scripts/`, 15
+- Fresh inventory checks found 106 backend TypeScript modules, 11 operational
+  scripts, 94 files under `tests/`, one coverage-gate test under `scripts/`, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
   table is assigned exactly once.

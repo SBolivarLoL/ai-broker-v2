@@ -7,6 +7,7 @@ const route = async (
   path: string,
   init?: RequestInit,
   runReconciliation?: any,
+  runRetention?: any,
 ) => {
   const request = new Request(`http://localhost${path}`, init);
   return handleOperationsRequest(request, new URL(request.url), {
@@ -18,6 +19,7 @@ const route = async (
       SEC_USER_AGENT: "AI Broker test@example.com",
     },
     runReconciliation,
+    runRetention,
   });
 };
 
@@ -128,4 +130,50 @@ test("operations reconciliation route reports evidence and owns manual runs", as
     latest: { runId: "run-1", status: "healthy" },
     evidence: { completedRuns: 1 },
   });
+});
+
+test("operations retention route previews policy and owns manual pruning", async () => {
+  const store = createStore(":memory:");
+  const preview = await route(store, "/api/operations/retention");
+  expect(preview?.status).toBe(200);
+  expect(await preview?.json()).toMatchObject({
+    reportVersion: "retention-report-v1",
+    policy: {
+      policyVersion: "retention-policy-v1",
+      strategySnapshotDays: 30,
+      providerEvidenceDays: 365,
+    },
+    inventory: {
+      strategySnapshots: { total: 0, eligibleForDeletion: 0 },
+      providerEvidence: { totalResearchRuns: 0, eligibleResearchRuns: 0 },
+    },
+    latest: null,
+  });
+
+  const unavailable = await route(store, "/api/operations/retention", {
+    method: "POST",
+  });
+  expect(unavailable?.status).toBe(503);
+
+  const manual = await route(
+    store,
+    "/api/operations/retention",
+    { method: "POST" },
+    undefined,
+    async (trigger: string, actor: string) => ({
+      schemaVersion: "retention-run-v1",
+      runId: "retention-1",
+      trigger,
+      actor,
+      deleted: { strategySnapshots: 0 },
+    }),
+  );
+  expect(manual?.status).toBe(200);
+  expect(await manual?.json()).toMatchObject({
+    schemaVersion: "retention-run-v1",
+    runId: "retention-1",
+    trigger: "manual",
+    actor: "test-admin",
+  });
+  store.close();
 });

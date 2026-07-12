@@ -16,6 +16,10 @@ import {
   secIdentityConfigured,
 } from "./features/operations/routes";
 import { createReconciliationService } from "./features/operations/reconciliation";
+import {
+  createRetentionService,
+  retentionPolicyFromEnv,
+} from "./features/operations/retention";
 import { buildPortfolioSnapshot } from "./features/portfolio/portfolio-snapshot";
 import { handlePortfolioRequest } from "./features/portfolio/routes";
 import { riskSnapshot } from "./shared/risk";
@@ -64,6 +68,11 @@ export function createApp({
     alpaca,
     store,
     orderRuntime,
+    now,
+  });
+  const retention = createRetentionService({
+    store,
+    policy: retentionPolicyFromEnv(env),
     now,
   });
   const currentPortfolioExposure = createPortfolioExposureService(alpaca, {
@@ -272,6 +281,7 @@ export function createApp({
         allow,
         env,
         runReconciliation: reconciliation.run,
+        runRetention: retention.run,
       });
       if (operationsResponse) return operationsResponse;
       const marketResponse = await market.handleRequest(request, url, actor);
@@ -367,6 +377,21 @@ export function createApp({
                   error instanceof Error ? error.message : error,
                 ),
               ),
+          pollMs,
+        );
+    }
+    if (env.RETENTION_DISABLED !== "1") {
+      const pollMs = Number(env.RETENTION_POLL_MS ?? 24 * 60 * 60_000);
+      if (Number.isFinite(pollMs) && pollMs >= 60 * 60_000)
+        setIntervalFn(
+          () =>
+            void retention.run("scheduler", "retention-scheduler").catch(
+              (error) =>
+                console.error(
+                  "scheduled retention failed",
+                  error instanceof Error ? error.message : error,
+                ),
+            ),
           pollMs,
         );
     }
