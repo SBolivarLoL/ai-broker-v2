@@ -11,6 +11,7 @@ import { rollingTurnover } from "../../shared/risk";
 import {
   evaluateStrategyPlugin,
   strategyPluginFromId,
+  strategySupportsPaperAutomation,
 } from "./strategy-backtest";
 import {
   cryptoBarsDto,
@@ -482,6 +483,9 @@ export function createStrategyRuntime(
     const paperApproval = (
       run.config as { paperApproval?: StrategyPaperApproval }
     ).paperApproval;
+    const paperAutomationSupported = strategySupportsPaperAutomation(
+      config.strategyId,
+    );
     const paperOrders =
       run.status === "paper" ? store.strategyOrders(run.id) : [];
     const paperState =
@@ -489,7 +493,7 @@ export function createStrategyRuntime(
         ? strategyPaperState(paperOrders)
         : { netNotional: 0 };
     const paperDraft =
-      run.status === "paper" && !hasStaleData && paperApproval
+      run.status === "paper" && paperAutomationSupported && !hasStaleData && paperApproval
         ? draftStrategyPaperOrder({
             approval: paperApproval,
             symbol,
@@ -506,6 +510,7 @@ export function createStrategyRuntime(
       paperAccountError: string | null = null;
     if (
       run.status === "paper" &&
+      paperAutomationSupported &&
       paperApproval &&
       paperDraft?.allowed &&
       paperDraft.order
@@ -575,6 +580,8 @@ export function createStrategyRuntime(
     // strategy-specific paper policy, account availability, and global policy.
     const blockReasons = hasStaleData
       ? ["stale_data"]
+      : run.status === "paper" && !paperAutomationSupported
+        ? ["strategy_shadow_only"]
       : run.status === "paper" && !paperApproval
         ? ["approval_missing"]
         : paperDraft && !paperDraft.allowed

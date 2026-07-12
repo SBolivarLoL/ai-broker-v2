@@ -105,6 +105,7 @@ export const STRATEGY_IDS = [
   "buy-and-hold",
   "time-sliced-accumulation",
   "moving-average-trend",
+  "volatility-targeted-trend",
   "breakout-momentum",
   "volatility-filter",
   "mean-reversion",
@@ -112,6 +113,14 @@ export const STRATEGY_IDS = [
   "order-book-liquidity-scout",
 ] as const;
 export type StrategyId = typeof STRATEGY_IDS[number];
+
+export const SHADOW_ONLY_STRATEGY_IDS = [
+  "volatility-targeted-trend",
+] as const satisfies readonly StrategyId[];
+
+export function strategySupportsPaperAutomation(strategyId: string) {
+  return !(SHADOW_ONLY_STRATEGY_IDS as readonly string[]).includes(strategyId);
+}
 
 const boundedInteger = (minimum: number, maximum: number, defaultValue: number) => z.number().finite().int().min(minimum).max(maximum).default(defaultValue);
 const exposure = z.number().finite().min(0).max(1).default(1);
@@ -126,6 +135,14 @@ const STRATEGY_PARAMETER_SCHEMAS = {
     fast: boundedInteger(2, 10_000, 5),
     slow: boundedInteger(3, 10_000, 20),
     exposure,
+  }).strict().refine(params => params.slow > params.fast, { message: "slow must be greater than fast", path: ["slow"] }),
+  "volatility-targeted-trend": z.object({
+    fast: boundedInteger(2, 10_000, 5),
+    slow: boundedInteger(3, 10_000, 20),
+    volatilityLookback: boundedInteger(2, 10_000, 20),
+    targetVolatilityPercent: z.number().finite().min(0.01).max(1_000).default(2),
+    maxExposure: exposure,
+    maxExposureIncreasePerBar: z.number().finite().min(0.01).max(1).default(0.25),
   }).strict().refine(params => params.slow > params.fast, { message: "slow must be greater than fast", path: ["slow"] }),
   "mean-reversion": z.object({
     lookback: boundedInteger(3, 10_000, 20),
@@ -555,6 +572,10 @@ export function movingAverageTrendStrategy(params: { fast?: number; slow?: numbe
   return strategyFunctionFromPlugin(movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params)));
 }
 
+export function volatilityTargetedTrendStrategy(params: { fast?: number; slow?: number; volatilityLookback?: number; targetVolatilityPercent?: number; maxExposure?: number; maxExposureIncreasePerBar?: number } = {}): BacktestStrategy {
+  return strategyFunctionFromPlugin(volatilityTargetedTrendPlugin(parseStrategyParams("volatility-targeted-trend", params)));
+}
+
 export function meanReversionStrategy(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): BacktestStrategy {
   return strategyFunctionFromPlugin(meanReversionPlugin(parseStrategyParams("mean-reversion", params)));
 }
@@ -648,6 +669,121 @@ export function movingAverageTrendPlugin(params: { fast?: number; slow?: number;
         features,
         thresholds: { fast, slow, exposure },
         weights: { trend: riskOn ? 1 : 0 },
+      };
+    },
+    riskAdjust: ({ decision }) => defaultRiskAdjustment(decision),
+    orders: ({ risk, decision }) => targetExposureOrder(risk.targetExposure, decision.reason),
+    attribution: () => defaultAttribution(),
+  };
+}
+
+type VolatilityTargetedTrendPrepared = {
+  fastAverage: number | null;
+  slowAverage: number | null;
+  laggedRealizedVolatilityPercent: number | null;
+  volatilityReturnCount: number;
+  rawTargetExposure: number;
+  targetExposure: number;
+  turnoverLimited: number;
+};
+
+export function volatilityTargetedTrendPlugin(params: { fast?: number; slow?: number; volatilityLookback?: number; targetVolatilityPercent?: number; maxExposure?: number; maxExposureIncreasePerBar?: number } = {}): StrategyPlugin<VolatilityTargetedTrendPrepared> {
+  const fast = Math.max(2, Math.floor(params.fast ?? 5));
+  const slow = Math.max(fast + 1, Math.floor(params.slow ?? 20));
+  const volatilityLookback = Math.max(2, Math.floor(params.volatilityLookback ?? 20));
+  const targetVolatilityPercent = Math.max(0.01, Number(params.targetVolatilityPercent ?? 2));
+  const maxExposure = clamp(params.maxExposure ?? 1);
+  const maxExposureIncreasePerBar = clamp(params.maxExposureIncreasePerBar ?? 0.25, 0.01, 1);
+  const rawTargetAt = (history: BacktestBar[], index: number) => {
+    const closeWindow = (size: number) => {
+      const values = history
+        .slice(Math.max(0, index - size + 1), index + 1)
+        .map((bar) => Number(bar.close))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      return values.length === size ? values : null;
+    };
+    const fastCloses = closeWindow(fast);
+    const slowCloses = closeWindow(slow);
+    const fastAverage = fastCloses ? average(fastCloses) : null;
+    const slowAverage = slowCloses ? average(slowCloses) : null;
+    const laggedCloses = history
+      .slice(Math.max(0, index - volatilityLookback - 1), index)
+      .map((bar) => Number(bar.close))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const laggedReturns: number[] = [];
+    if (laggedCloses.length === volatilityLookback + 1)
+      for (let item = 1; item < laggedCloses.length; item++)
+        laggedReturns.push(
+          laggedCloses[item]! / laggedCloses[item - 1]! - 1,
+        );
+    const laggedRealizedVolatilityPercent = laggedReturns.length >= volatilityLookback
+      ? (stdev(laggedReturns) ?? 0) * 100
+      : null;
+    const trendConfirmed = fastAverage !== null && slowAverage !== null && fastAverage > slowAverage;
+    const rawTargetExposure = !trendConfirmed || laggedRealizedVolatilityPercent === null
+      ? 0
+      : laggedRealizedVolatilityPercent === 0
+        ? maxExposure
+        : Math.min(maxExposure, targetVolatilityPercent / laggedRealizedVolatilityPercent);
+    return {
+      fastAverage,
+      slowAverage,
+      laggedRealizedVolatilityPercent,
+      volatilityReturnCount: laggedReturns.length,
+      rawTargetExposure,
+    };
+  };
+  return {
+    id: "volatility-targeted-trend",
+    version: "strategy-plugin-v1",
+    prepare: ({ history, index }) => {
+      const raw = rawTargetAt(history, index);
+      let targetExposure = raw.rawTargetExposure;
+      const rampBars = Math.ceil(maxExposure / maxExposureIncreasePerBar);
+      for (let lag = 1; lag <= Math.min(index, rampBars); lag++) {
+        const priorRaw = rawTargetAt(history, index - lag).rawTargetExposure;
+        targetExposure = Math.min(
+          targetExposure,
+          priorRaw + lag * maxExposureIncreasePerBar,
+        );
+      }
+      targetExposure = clamp(targetExposure, 0, maxExposure);
+      return {
+        ...raw,
+        targetExposure,
+        turnoverLimited: targetExposure + 1e-12 < raw.rawTargetExposure ? 1 : 0,
+      };
+    },
+    features: ({ prepared }) => prepared,
+    decide: ({ prepared, features }) => {
+      const enoughTrendHistory = prepared.fastAverage !== null && prepared.slowAverage !== null;
+      const enoughVolatilityHistory = prepared.laggedRealizedVolatilityPercent !== null;
+      const trendConfirmed = enoughTrendHistory && prepared.fastAverage! > prepared.slowAverage!;
+      const reason = !enoughTrendHistory || !enoughVolatilityHistory
+        ? "waiting for trend and lagged volatility history"
+        : !trendConfirmed
+          ? "trend confirmation unavailable or bearish"
+          : prepared.turnoverLimited
+            ? "volatility target constrained by exposure ramp"
+            : "bullish trend scaled to lagged volatility";
+      return {
+        targetExposure: prepared.targetExposure,
+        reason,
+        features,
+        thresholds: {
+          fast,
+          slow,
+          volatilityLookback,
+          targetVolatilityPercent,
+          maxExposure,
+          maxExposureIncreasePerBar,
+          volatilityLagBars: 1,
+          leverageAllowed: false,
+        },
+        weights: {
+          trend: trendConfirmed ? 1 : 0,
+          volatilityScale: maxExposure > 0 ? prepared.rawTargetExposure / maxExposure : 0,
+        },
       };
     },
     riskAdjust: ({ decision }) => defaultRiskAdjustment(decision),
@@ -894,6 +1030,7 @@ export function strategyPluginFromId(strategyId: string, params: unknown = {}): 
   if (strategyId === "buy-and-hold") { parseStrategyParams("buy-and-hold", params); return buyAndHoldStrategyPlugin(); }
   if (strategyId === "time-sliced-accumulation") return timeSlicedAccumulationPlugin(parseStrategyParams("time-sliced-accumulation", params));
   if (strategyId === "moving-average-trend") return movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params));
+  if (strategyId === "volatility-targeted-trend") return volatilityTargetedTrendPlugin(parseStrategyParams("volatility-targeted-trend", params));
   if (strategyId === "mean-reversion") return meanReversionPlugin(parseStrategyParams("mean-reversion", params));
   if (strategyId === "breakout-momentum") return breakoutMomentumPlugin(parseStrategyParams("breakout-momentum", params));
   if (strategyId === "volatility-filter") return volatilityFilterPlugin(parseStrategyParams("volatility-filter", params));

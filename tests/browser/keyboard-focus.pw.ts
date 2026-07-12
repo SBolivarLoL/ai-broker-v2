@@ -213,6 +213,28 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   const strategies = page.getByRole("button", { name: "Strategy Lab" });
   await strategies.focus();
   await page.keyboard.press("Enter");
+  await page
+    .getByLabel("Strategy", { exact: true })
+    .selectOption("volatility-targeted-trend");
+  await expect(page.getByLabel("Lagged volatility lookback")).toHaveValue(
+    "20",
+  );
+  await expect(page.getByLabel("Target per-bar volatility (%)")).toHaveValue(
+    "2",
+  );
+  await expect(
+    page.getByLabel("Maximum exposure increase per bar"),
+  ).toHaveValue("0.25");
+  await page.getByLabel("Strategy preset").selectOption("conservative");
+  await expect(
+    page.getByLabel("Maximum exposure", { exact: true }),
+  ).toHaveValue("0.5");
+  await expect(page.getByLabel("Target per-bar volatility (%)")).toHaveValue(
+    "1",
+  );
+  await expect(
+    page.getByLabel("Maximum exposure increase per bar"),
+  ).toHaveValue("0.1");
   await page.locator("#strategy-compare-ids").fill("one-backtest-id");
   const compare = page.getByRole("button", { name: "Compare backtests" });
   await compare.focus();

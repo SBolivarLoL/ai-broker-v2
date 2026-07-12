@@ -708,6 +708,14 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(backtest.status).toBe(400);
   expect(await backtest.json()).toEqual({ error: "Invalid moving-average-trend parameters: slow must be greater than fast" });
 
+  const invalidVolatilityTarget = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbols: ["BTC/USD"], strategyId: "volatility-targeted-trend", timeframe: "1Hour", days: 30, params: { maxExposureIncreasePerBar: 0 } }),
+  }));
+  expect(invalidVolatilityTarget.status).toBe(400);
+  expect(await invalidVolatilityTarget.json()).toEqual({ error: "Invalid volatility-targeted-trend parameters: Too small: expected number to be >=0.01" });
+
   const ambiguousPeer = await app.fetch(new Request("http://local/api/strategy/backtests", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -856,7 +864,138 @@ test("strategy backtest API persists anchored walk-forward holdout and regimes",
       },
     },
   });
-  expect(app.cryptoBarRequests).toHaveLength(1);
+
+  const volatilityTargeted = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      datasetId,
+      strategyId: "volatility-targeted-trend",
+      params: {
+        fast: 2,
+        slow: 3,
+        volatilityLookback: 2,
+        targetVolatilityPercent: 2,
+        maxExposure: 0.6,
+        maxExposureIncreasePerBar: 0.2,
+      },
+    }),
+  }));
+  expect(volatilityTargeted.status).toBe(201);
+  expect(await volatilityTargeted.json()).toMatchObject({
+    datasetId,
+    result: {
+      strategyId: "volatility-targeted-trend",
+      points: expect.arrayContaining([
+        expect.objectContaining({
+          thresholds: expect.objectContaining({
+            volatilityLagBars: 1,
+            leverageAllowed: false,
+            maxExposure: 0.6,
+          }),
+        }),
+      ]),
+    },
+  });
+
+  const shadowParams = {
+    fast: 2,
+    slow: 3,
+    volatilityLookback: 2,
+    targetVolatilityPercent: 2,
+    maxExposure: 0.6,
+    maxExposureIncreasePerBar: 0.2,
+  };
+  const directBacktest = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      strategyId: "volatility-targeted-trend",
+      timeframe: "1Day",
+      days: 30,
+      params: shadowParams,
+    }),
+  }));
+  expect(directBacktest.status).toBe(201);
+  const directBacktestBody = await directBacktest.json() as any;
+  const shadowRun = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      backtestId: directBacktestBody.backtestId,
+      symbols: ["BTC/USD"],
+      strategyId: "volatility-targeted-trend",
+      timeframe: "1Day",
+      days: 30,
+      params: shadowParams,
+    }),
+  }));
+  expect(shadowRun.status).toBe(201);
+  const shadowRunId = String((await shadowRun.json() as any).runId);
+  for (const suffix of ["experiment-protocol", "paper-approval"]) {
+    const blocked = await app.fetch(new Request(
+      `http://local/api/strategy/runs/${shadowRunId}/${suffix}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    ));
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({
+      error:
+        "volatility-targeted-trend is limited to backtest and shadow evaluation",
+    });
+  }
+  const persistedShadow = app.store.getStrategyRun(shadowRunId)!;
+  const malformedPaperConfig = {
+    ...(persistedShadow.config as Record<string, unknown>),
+    mode: "paper",
+    paperApproval: {
+      approvedAt: "2026-07-13T08:00:00.000Z",
+      approvedBy: "malformed-fixture",
+      expiresAt: "2026-12-31T00:00:00.000Z",
+      budget: 100,
+      maxPositionNotional: 100,
+      maxOrderNotional: 25,
+      minOrderNotional: 5,
+      maxSpreadBps: 200,
+      timeInForce: "gtc",
+      riskPolicy: {
+        session: "crypto_24_7",
+        requireCashAndBuyingPower: true,
+        maxDailyLossPercent: 5,
+        maxDrawdownPercent: 10,
+        maxDailyTurnoverPercent: 50,
+        errorCooldownMinutes: 1,
+      },
+    },
+  };
+  expect(
+    app.store.approveStrategyRunPaper(
+      shadowRunId,
+      100,
+      malformedPaperConfig,
+      canonicalHash(malformedPaperConfig),
+    ),
+  ).toBe(true);
+  const blockedTick = await app.fetch(new Request(
+    `http://local/api/strategy/runs/${shadowRunId}/tick`,
+    { method: "POST" },
+  ));
+  expect(blockedTick.status).toBe(200);
+  expect(await blockedTick.json()).toMatchObject({
+    trace: {
+      decision: "block",
+      riskChecks: {
+        submittedOrder: false,
+        reasons: ["strategy_shadow_only"],
+      },
+    },
+  });
+  expect(app.orderAttempts).toEqual([]);
+  expect(app.cryptoBarRequests).toHaveLength(3);
 });
 
 test("strategy dataset API ingests chunked history and powers a stored-data backtest", async () => {

@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `712c438`: 2026-07-13.
+Last reviewed against `main` commit `934cf51`: 2026-07-13.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -46,6 +46,7 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 | `buy-and-hold`               | Enters full exposure and holds                                   | Full market drawdown; baseline only                   |
 | `time-sliced-accumulation`   | Ramps exposure over fixed slices                                 | Continues accumulating through adverse regimes        |
 | `moving-average-trend`       | Holds exposure when fast average exceeds slow average            | Whipsaw in range-bound markets                        |
+| `volatility-targeted-trend`  | Scales confirmed trend exposure from one-bar-lagged volatility   | Timeframe-sensitive target and volatility whipsaw     |
 | `mean-reversion`             | Enters below a rolling mean and exits near it                    | Persistent trends and clustered losses                |
 | `breakout-momentum`          | Requires prior-high breakout plus volume confirmation and a stop | False breakouts and gap/slippage risk                 |
 | `volatility-filter`          | Holds exposure only inside a realized-volatility band            | Missed upside or unstable regime boundaries           |
@@ -53,6 +54,13 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 | `order-book-liquidity-scout` | Requires bounded spread and visible bid/ask depth                | Snapshot depth may not represent executable liquidity |
 
 Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one symbol. Relative strength accepts `BTC/USD,ETH/USD` or the reverse; the first symbol is the traded primary.
+
+`volatility-targeted-trend` is deliberately backtest/shadow only. The server
+rejects paper-protocol registration and paper approval for this strategy, and
+the runtime blocks submission if malformed persisted state presents it as a
+paper run. Its volatility target is a non-annualized percentage per selected
+bar; do not reuse the same target across `15Min`, `1Hour`, and `1Day` without a
+separate experiment.
 
 ## Controls
 
@@ -82,6 +90,17 @@ The UI defaults to labeled, strategy-specific numeric controls and keeps the can
 
 ```json
 { "fast": 5, "slow": 20, "exposure": 1 }
+```
+
+```json
+{
+  "fast": 5,
+  "slow": 20,
+  "volatilityLookback": 20,
+  "targetVolatilityPercent": 2,
+  "maxExposure": 1,
+  "maxExposureIncreasePerBar": 0.25
+}
 ```
 
 ```json
@@ -130,6 +149,9 @@ Cash and buy-and-hold use `{}`.
 | Parameter                                        | Meaning                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `fast`, `slow`                                   | Moving-average windows; slow must exceed fast                                              |
+| `volatilityLookback`                             | Return window ending one complete bar before the decision                                  |
+| `targetVolatilityPercent`                        | Non-annualized per-bar volatility target used to scale confirmed trend exposure            |
+| `maxExposureIncreasePerBar`                      | Maximum upward exposure change per bar; reductions are not delayed                          |
 | `lookback`                                       | Rolling z-score, breakout, volatility, or relative-strength window                         |
 | `entryZScore`, `exitZScore`                      | Mean-reversion activation and exit boundaries                                              |
 | `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                                               |
@@ -139,7 +161,7 @@ Cash and buy-and-hold use `{}`.
 | `maxSpreadBps`                                   | Maximum order-book or paper-approval spread                                                |
 | `minVisibleAskNotional`, `minVisibleBidNotional` | Required visible depth                                                                     |
 | `maxDepthLevels`                                 | Maximum order-book levels used                                                             |
-| `slices`, `maxExposure`                          | Accumulation schedule and final exposure                                                   |
+| `slices`, `maxExposure`                          | Accumulation schedule or strategy-specific hard final exposure cap                         |
 | `exposure`                                       | Target exposure from 0 to 1 when the signal is active                                      |
 
 ### Schedule
