@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `b4372a9`: 2026-07-12.
+Last reviewed against `main` commit `61134ee`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 449 tests, 0 failures, 2,358 assertions across 94 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 453 tests, 0 failures, 2,366 assertions across 95 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.11% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.10% functions, 97.32% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -57,23 +57,37 @@ Tests also re-hash deliberately changed source data, numeric output, and symbol
 identity so the verifier—not only the outer digest comparison—rejects them. No
 live OpenAI or provider request was made.
 
-The bundled Node runtime passed `node --check frontend/research.js` after the
-scenario v3 renderer changed from `currentPrice` to `referencePrice` and added
-the historical-close label. A new headed browser pass was not run because the
-Playwright skill's required `npx` prerequisite is unavailable in this shell;
-the existing browser evidence below is not relabeled as validation of this
-specific rendering change.
+The research-provider coverage slice adds three focused builder contracts and
+one direct GDELT route contract, and extends the existing SEC, macro, Finnhub,
+and OpenFIGI route contracts. They prove complete and partial expected/received/
+omitted counts for SEC filing/fact/trend/section/hash/time sets; required and
+optional macro providers, indicators, five regime dimensions, sources, and
+time; bounded GDELT query/publication/source evidence; Finnhub configuration,
+three endpoint datasets, and time; and OpenFIGI query/mapping/candidate/source/
+time evidence. Adapter regressions prove GDELT publication, Finnhub profile/
+earnings/news, and OpenFIGI retrieval are not relabeled as provider observation.
+Both changed browser scripts pass `node --check`.
+
+The in-app browser rendered all five new labeled coverage regions through the
+production Company Research workspace at 1280×720. SEC was complete; OpenFIGI
+was partial because mapping evidence is retrieval-only; GDELT was partial and
+fail-closed after an unavailable bounded query; Finnhub was partial with its
+optional key absent; and macro was partial with required Treasury/BLS evidence
+but optional FRED/BEA and two regime dimensions absent. Each panel rendered its
+domain rows and conclusion impact before provider results, with no console
+error. The pass used configured read-only account/provider access but made no
+OpenAI request, order, policy, retention, or broker mutation.
 
 ## Repository review evidence
 
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 106 backend modules, 11 operational scripts, 94 files under `tests/`, and one coverage-gate test                                   |
-| Concentration | `backend/app.ts` 376 lines; `backend/persistence/store.ts` 940 lines; browser behavior split across nine shell/style/script assets |
+| TypeScript    | 107 backend modules, 11 operational scripts, 95 files under `tests/`, and one coverage-gate test                                   |
+| Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 948 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `b4372a9`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `61134ee`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -92,12 +106,12 @@ specific rendering change.
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation/scenario/company-research replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                                                        |
-| Provider normalization      | Good with recorded/redacted fixtures                | A versioned manifest covers all 15 external governance source IDs; 14 contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas, alongside canonical time-provenance and persisted point-in-time valuation coverage | CI fixtures cannot prove current live-provider behavior or entitlement; not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
+| Provider normalization      | Good with recorded/redacted fixtures and targeted live reads | A versioned manifest covers all 15 external governance source IDs; contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas. Canonical GDELT/Finnhub/OpenFIGI evidence explicitly preserves unavailable observation, and the five provider research reports expose calculation-level coverage | CI fixtures and one read-only browser pass cannot prove current entitlement or long-term provider stability; not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, selective enforcement, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, actor-scoped strategy dataset quality stats, and transactional retention for named high-growth records with lineage protection | Internal classifications and the local retention policy are not legal or data-entitlement approval; durable records outside the named high-growth categories remain deliberately unpruned |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
-| Browser UI                  | Targeted interaction confidence                    | Earlier interaction checks plus the 2026-07-10 Option A workstation pass rendered all seven workspaces, the populated Strategy Lab, the data-health drawer, private-value state, and confirmation dialogs. The persistent desktop rail, compact tablet rail, active-item-centered mobile navigation, sticky status strip, and evidence layouts were checked at 1440×1000, 768×1000, and 390×844 with no page-level horizontal overflow.                                                                     | No maintained automated accessibility/responsive regression suite                                                                         |
+| Browser UI                  | Targeted interaction confidence                    | Earlier responsive checks plus the 2026-07-12 Company Research pass rendered all five provider coverage panels through real read-only local routes, including complete and fail-closed partial states, without console errors. The persistent desktop rail, compact tablet rail, active-item-centered mobile navigation, sticky status strip, and prior evidence layouts were checked at 1440×1000, 768×1000, and 390×844 with no page-level horizontal overflow | No maintained automated accessibility/responsive regression suite                                                                         |
 | Production operations       | Code artifacts plus fixture restore proof          | Readiness, backup export, incident packet, policy, auth, governance, beta report modules, and serialized restore test                                                                                                                                                                                                                                                                                                                                                                                       | No production-sized or closed-beta restore drill, deployment, real participants, or external approval                                     |
 
 ## Full documentation and repository audit
@@ -128,8 +142,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 106 backend TypeScript modules, 11 operational
-  scripts, 94 files under `tests/`, one coverage-gate test under `scripts/`, 15
+- Fresh inventory checks found 107 backend TypeScript modules, 11 operational
+  scripts, 95 files under `tests/`, one coverage-gate test under `scripts/`, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
   table is assigned exactly once.
@@ -324,16 +338,24 @@ Additional mechanical checks:
 - GDELT media-signal root and article DTOs were checked for explicit
   publication, provider-retrieval, and per-response server timestamps; cached
   GDELT responses preserve provider retrieval time while refreshing server
-  response time.
+  response time. Canonical media sources explicitly keep observation null, and
+  the route quality contract exposes query, window, article-publication, source,
+  omission, freshness, and no-event-inference impact.
 - Finnhub root, endpoint, profile, earnings, news, and direct API DTOs were
   checked for explicit effective-period/publication, provider-retrieval, and
   per-response server timestamps. Cached endpoint data preserves provider
   retrieval while refreshing server response time, and missing/misconfigured
-  keys expose `retrievedAt:null` because no provider request occurred.
+  keys expose `retrievedAt:null` because no provider request occurred. Canonical
+  profile, earnings, and news sources keep observation null while retaining
+  effective or publication time; route coverage distinguishes configuration,
+  each endpoint dataset, source time, omissions, and SEC-authority impact.
 - OpenFIGI root, selected/candidate instrument, canonical evidence, research
   projection, and direct API DTOs were checked for explicit provider-retrieval
   and per-response server timestamps. Cached mappings preserve provider
   retrieval and evidence content hashes while refreshing server response time.
+  Mapping canonical evidence now explicitly keeps observation null; route
+  coverage separates successful query, selected mapping, candidates, canonical
+  sources, retrieval-only time, and cross-provider-join impact.
 - SEC EDGAR classification, recent-filing, filing-evidence/section,
   company-facts-result, and material-alert DTOs were checked for applicable
   filing-date publication, report-date effective periods, provider retrieval,
@@ -495,6 +517,16 @@ The following read-only checks were run:
   without console errors or page-level overflow at 390×844. No OpenAI run,
   broker mutation, order workflow, or live-trading authority was used, and no
   price or fundamental value was written to validation logs.
+- A 2026-07-12 in-app headed browser pass loaded the production Company
+  Research workspace through configured read-only local routes and rendered
+  labeled Security identity, GDELT media signals, Finnhub enrichment, official
+  macro context, and SEC EDGAR evidence coverage regions. The five panels
+  contained 5, 4, 6, 6, and 6 evidence rows respectively, showed complete or
+  partial status plus conclusion impact, and produced no console error. The
+  selected OpenFIGI mapping correctly remained partial because its canonical
+  source exposes retrieval rather than observation; unavailable GDELT remained
+  partial and warned that missing coverage is not evidence of no event. The pass
+  made no OpenAI request, order, policy, retention, or broker mutation.
 - A 2026-07-12 headed browser pass rendered a local company-research v2 fixture
   through the production `renderResearch` path without submitting an OpenAI
   request. The labeled `Company research data coverage` region appeared before

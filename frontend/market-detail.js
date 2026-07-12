@@ -251,7 +251,8 @@ async function loadCompanyMarket(
 let openFigiIdentitySymbol = null;
 function renderOpenFigiIdentity(data) {
   const status = String(data.status || "unavailable").replaceAll("_", " "),
-    keyStatus = String(data.keyStatus || "anonymous").replaceAll("_", " ");
+    keyStatus = String(data.keyStatus || "anonymous").replaceAll("_", " "),
+    coverage = calculationCoveragePanel("Security identity", data.quality);
   $("#openfigi-asof").textContent =
     `OpenFIGI v3 · ${status} · ${keyStatus} access · updated ${new Date(data.asOf).toLocaleTimeString()}`;
   const notices = (data.warnings || []).length
@@ -271,14 +272,13 @@ function renderOpenFigiIdentity(data) {
         String(data.matchQuality || "matched").replaceAll("_", " "),
       ],
     ];
-    return `${notices}<div class="identity-grid">${fields.map(([label, value]) => `<div class="identity-field"><span class="muted">${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`).join("")}</div><div class="eval-note">This canonical FIGI is the cross-provider security identity for the current research run. Ticker text remains display metadata.</div>`;
+    return `${coverage}${notices}<div class="identity-grid">${fields.map(([label, value]) => `<div class="identity-field"><span class="muted">${esc(label)}</span><strong>${esc(value || "—")}</strong></div>`).join("")}</div><div class="eval-note">This canonical FIGI is the cross-provider security identity for the current research run. Ticker text remains display metadata.</div>`;
   }
   if (data.candidates?.length) {
-    return `${notices}<div class="identity-candidates">${data.candidates.map((item) => `<div class="identity-candidate"><strong>${esc(item.name)} · ${esc(item.ticker)}</strong><span class="muted">${esc(item.compositeFigi || item.figi)} · ${esc(item.securityType2 || item.securityType || "type unavailable")}</span></div>`).join("")}</div><div class="eval-note">No candidate was selected. Cross-provider joins remain symbol-scoped until the ambiguity is resolved.</div>`;
+    return `${coverage}${notices}<div class="identity-candidates">${data.candidates.map((item) => `<div class="identity-candidate"><strong>${esc(item.name)} · ${esc(item.ticker)}</strong><span class="muted">${esc(item.compositeFigi || item.figi)} · ${esc(item.securityType2 || item.securityType || "type unavailable")}</span></div>`).join("")}</div><div class="eval-note">No candidate was selected. Cross-provider joins remain symbol-scoped until the ambiguity is resolved.</div>`;
   }
   return (
-    notices ||
-    '<div class="empty">No OpenFIGI identity evidence is available. Cross-provider joins remain symbol-scoped.</div>'
+    `${coverage}${notices || '<div class="empty">No OpenFIGI identity evidence is available. Cross-provider joins remain symbol-scoped.</div>'}`
   );
 }
 async function loadOpenFigiIdentity(
@@ -304,17 +304,19 @@ let gdeltSignalSymbol = null;
 function renderGdeltSignals(data) {
   $("#gdelt-asof").textContent =
     `GDELT · ${data.windowDays}-day window · ${data.available ? "updated " + new Date(data.asOf).toLocaleTimeString() : "coverage unavailable"} · media signal, not verified fact`;
-  const notices = (data.warnings || []).length
+  const coverage = calculationCoveragePanel("GDELT media signals", data.quality),
+    notices = (data.warnings || []).length
     ? `<div class="warnings">${data.warnings.map((item) => `<div>${esc(item)}</div>`).join("")}</div>`
     : "";
   if (!data.available)
     return (
-      notices ||
+      coverage + (notices ||
       '<div class="warnings"><div>GDELT is temporarily unavailable.</div></div>'
+      )
     );
   if (!data.articles?.length)
-    return `${notices}<div class="empty">No headline-relevant GDELT media signals were returned. This does not imply that no material event exists.</div>`;
-  return `${notices}${data.articles.map((article) => `<article class="news-item"><div><a href="${esc(safeUrl(article.url))}" target="_blank" rel="noopener noreferrer">${esc(article.headline)}</a><div class="muted gdelt-signal-meta">${esc(article.domain)} · ${esc(article.language)} · ${esc(article.sourceCountry)} · public-web media signal</div></div><div class="news-source"><strong>GDELT</strong><div class="muted">${esc(new Date(article.publishedAt).toLocaleString())}</div></div></article>`).join("")}`;
+    return `${coverage}${notices}<div class="empty">No headline-relevant GDELT media signals were returned. This does not imply that no material event exists.</div>`;
+  return `${coverage}${notices}${data.articles.map((article) => `<article class="news-item"><div><a href="${esc(safeUrl(article.url))}" target="_blank" rel="noopener noreferrer">${esc(article.headline)}</a><div class="muted gdelt-signal-meta">${esc(article.domain)} · ${esc(article.language)} · ${esc(article.sourceCountry)} · public-web media signal</div></div><div class="news-source"><strong>GDELT</strong><div class="muted">${esc(new Date(article.publishedAt).toLocaleString())}</div></div></article>`).join("")}`;
 }
 async function loadGdeltSignals(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
@@ -337,7 +339,8 @@ async function loadGdeltSignals(
 }
 let finnhubEnrichmentSymbol = null;
 function renderFinnhubEnrichment(data) {
-  const status = String(data.status || "unavailable").replaceAll("_", " ");
+  const status = String(data.status || "unavailable").replaceAll("_", " "),
+    coverage = calculationCoveragePanel("Finnhub enrichment", data.quality);
   $("#finnhub-asof").textContent =
     `Finnhub · ${status} · ${data.configured ? "updated " + new Date(data.asOf).toLocaleTimeString() : "optional API key not configured"} · SEC remains authoritative`;
   const notices = (data.warnings || []).length
@@ -345,8 +348,9 @@ function renderFinnhubEnrichment(data) {
     : "";
   if (!data.configured)
     return (
-      notices ||
+      coverage + (notices ||
       '<div class="empty">Optional Finnhub enrichment is not configured.</div>'
+      )
     );
   const number = (value) =>
       Number.isFinite(value)
@@ -374,7 +378,7 @@ function renderFinnhubEnrichment(data) {
     newsHtml = data.news?.length
       ? `<h4 class="finnhub-subhead">Finnhub company news</h4><div class="news-list">${data.news.map((article) => `<article class="news-item"><div><a href="${esc(safeUrl(article.url))}" target="_blank" rel="noopener noreferrer">${esc(article.headline)}</a><div class="muted">${esc(article.summary || "No summary available.")}<br>${esc(article.category)} · media signal, not verified fact</div></div><div class="news-source"><strong>${esc(article.source)}</strong><div class="muted">${esc(new Date(article.publishedAt).toLocaleString())}</div></div></article>`).join("")}</div>`
       : '<div class="empty">No usable Finnhub company-news items were returned. This does not imply that no material event exists.</div>';
-  return `${notices}${profileHtml}${earningsHtml}${newsHtml}<div class="eval-note">Finnhub profile and earnings values are licensed-provider records. Official SEC filing evidence takes precedence for reported fundamentals.</div>`;
+  return `${coverage}${notices}${profileHtml}${earningsHtml}${newsHtml}<div class="eval-note">Finnhub profile and earnings values are licensed-provider records. Official SEC filing evidence takes precedence for reported fundamentals.</div>`;
 }
 async function loadFinnhubEnrichment(
   symbol = $("#research-symbol").value.trim().toUpperCase(),

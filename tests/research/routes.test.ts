@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { handleResearchRequest } from "../../backend/features/research/routes";
 import type { FinnhubCompanyEnrichment } from "../../backend/integrations/finnhub";
+import type { GdeltCompanySignals } from "../../backend/integrations/gdelt";
 import type { OpenFigiIdentity } from "../../backend/integrations/openfigi";
 import type { MacroContext } from "../../backend/integrations/macro-context";
 import { createStore } from "../../backend/persistence/store";
@@ -29,6 +30,10 @@ type RouteOptions = {
   finnhubCompanyEnrichment?: (
     symbol: string,
   ) => Promise<FinnhubCompanyEnrichment>;
+  gdeltCompanySignals?: (
+    symbol: string,
+    companyName: string,
+  ) => Promise<GdeltCompanySignals>;
   openFigiIdentity?: (
     symbol: string,
     companyName: string,
@@ -79,6 +84,7 @@ const route = async (
     allow,
     env: options.env ?? {},
     finnhubCompanyEnrichment: options.finnhubCompanyEnrichment,
+    gdeltCompanySignals: options.gdeltCompanySignals,
     openFigiIdentity: options.openFigiIdentity,
     secCompanyEvidence: options.secCompanyEvidence,
     officialMacroContext: options.officialMacroContext,
@@ -929,7 +935,25 @@ test("SEC research route preserves provider retrieval and server response time",
   );
   expect(requests).toEqual([{ symbol: "AAPL", filedThrough: null }]);
   expect(response?.status).toBe(200);
-  expect(await response?.json()).toEqual(payload);
+  expect(await response?.json()).toMatchObject({
+    ...payload,
+    quality: {
+      status: "partial",
+      expected: {
+        filingMetadataSet: 1,
+        fundamentalFactSet: 1,
+        financialTrendSet: 1,
+        filingSectionSet: 1,
+      },
+      received: {
+        filingMetadataSet: 0,
+        fundamentalFactSet: 0,
+        financialTrendSet: 0,
+        filingSectionSet: 0,
+      },
+      freshness: { status: "partial_provider_time" },
+    },
+  });
 
   const historical = await route(
     "/api/research/sec?symbol=AAPL&asOf=2025-06-30",
@@ -1013,7 +1037,73 @@ test("macro research route preserves explicit unavailable retrieval time", async
     officialMacroContext: async () => payload,
   });
   expect(response?.status).toBe(200);
-  expect(await response?.json()).toEqual(payload);
+  expect(await response?.json()).toMatchObject({
+    ...payload,
+    quality: {
+      status: "partial",
+      received: { requiredProviders: 0, optionalProviders: 0 },
+      omitted: { requiredProviders: 2, optionalProviders: 2 },
+      freshness: { status: "unavailable", retrievedAt: null },
+    },
+  });
+});
+
+test("GDELT research route exposes bounded media-signal coverage", async () => {
+  const retrievedAt = "2026-07-10T08:29:59.000Z";
+  const serverRespondedAt = "2026-07-10T08:30:00.000Z";
+  const requests: Array<{ symbol: string; companyName: string }> = [];
+  const alpaca = {
+    trading: {
+      assets: {
+        getV2AssetsSymbolOrAssetId: async () => ({ name: "Apple Inc." }),
+      },
+    },
+  } as unknown as Alpaca;
+  const response = await route(
+    "/api/research/gdelt?symbol=aapl",
+    undefined,
+    () => true,
+    {
+      alpaca,
+      gdeltCompanySignals: async (symbol, companyName) => {
+        requests.push({ symbol, companyName });
+        return {
+          symbol,
+          companyName,
+          query: '"Apple Inc." OR "AAPL"',
+          windowDays: 7,
+          available: true,
+          rateLimited: false,
+          filteredOut: 0,
+          articles: [],
+          sources: [],
+          warnings: [],
+          retrievedAt,
+          serverRespondedAt,
+          time: {
+            observationTime: null,
+            publicationTime: null,
+            effectivePeriod: null,
+            retrievalTime: retrievedAt,
+            serverResponseTime: serverRespondedAt,
+          },
+          asOf: serverRespondedAt,
+        };
+      },
+    },
+  );
+  expect(requests).toEqual([{ symbol: "AAPL", companyName: "Apple Inc." }]);
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({
+    available: true,
+    quality: {
+      status: "complete",
+      expected: { providerQuery: 1, boundedWindow: 1 },
+      received: { providerQuery: 1, boundedWindow: 1 },
+      omitted: { providerQuery: 0, boundedWindow: 0 },
+      impact: [expect.stringContaining("does not prove")],
+    },
+  });
 });
 
 test("Finnhub research route preserves explicit missing-retrieval time provenance", async () => {
@@ -1057,7 +1147,7 @@ test("Finnhub research route preserves explicit missing-retrieval time provenanc
   );
   expect(requestedSymbol).toBe("AAPL");
   expect(response?.status).toBe(200);
-  expect(await response?.json()).toEqual({
+  expect(await response?.json()).toMatchObject({
     symbol: "AAPL",
     configured: false,
     status: "missing_key",
@@ -1082,6 +1172,12 @@ test("Finnhub research route preserves explicit missing-retrieval time provenanc
       serverResponseTime: serverRespondedAt,
     },
     asOf: serverRespondedAt,
+    quality: {
+      status: "partial",
+      received: { configuredProvider: 0, endpointResults: 0 },
+      omitted: { configuredProvider: 1, endpointResults: 3 },
+      freshness: { status: "unavailable", retrievedAt: null },
+    },
   });
 });
 
@@ -1149,6 +1245,15 @@ test("OpenFIGI research route preserves provider retrieval and response time", a
       effectivePeriod: null,
       retrievalTime: retrievedAt,
       serverResponseTime: serverRespondedAt,
+    },
+    quality: {
+      status: "partial",
+      received: {
+        providerQuery: 0,
+        canonicalMapping: 0,
+        candidateEvidence: 0,
+      },
+      freshness: { status: "partial_provider_time" },
     },
   });
 });

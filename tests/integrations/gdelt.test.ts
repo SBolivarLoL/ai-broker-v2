@@ -101,8 +101,10 @@ test("GDELT normalizes bounded company media signals into canonical evidence", a
     canonicalUrl: "https://news.example/apple-update",
     retrievedAt: "2026-06-29T00:00:00.000Z",
     serverRespondedAt: "2026-06-29T00:00:00.000Z",
+    observedAt: null,
     publishedAt: "2026-06-28T12:30:00.000Z",
     time: {
+      observationTime: null,
       publicationTime: "2026-06-28T12:30:00.000Z",
       retrievalTime: "2026-06-29T00:00:00.000Z",
       serverResponseTime: "2026-06-29T00:00:00.000Z",

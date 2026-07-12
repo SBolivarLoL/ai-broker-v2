@@ -280,6 +280,18 @@ schema, citations, numeric grounding, safe-language score, and visible coverage
 from persisted inputs. Replay reports zero provider and model requests; it does
 not regenerate prose or treat a content hash as external approval.
 
+`research/provider-coverage.ts` owns the calculation-level evidence contract
+for the remaining visible provider reports. The research route appends these
+derived `quality` objects without mutating cached adapter payloads: SEC counts
+filing/fact/trend/section/hash/time sets; macro separates required and optional
+providers, indicators, regime dimensions, sources, and semantic time; GDELT,
+Finnhub, and OpenFIGI expose their bounded query, endpoint, dataset, candidate,
+mapping, source, and time boundaries. `research.js` and `market-detail.js` render
+all five through the shared coverage component before their conclusions. The
+GDELT, Finnhub, and OpenFIGI adapters explicitly set canonical-source
+`observedAt:null`, preventing publication, effective period, or retrieval from
+being promoted into a provider observation.
+
 `research/copilot.ts` keeps model output behind typed read-only tools, citation
 guards, independent counter-thesis review, and exact simulation authority.
 `research/advisor-coverage.ts` projects safe evidence identity, phase, source,

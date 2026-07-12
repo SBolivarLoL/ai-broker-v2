@@ -581,6 +581,7 @@ export class FinnhubClient {
             title: `${profileRecord.name} Finnhub company profile`,
             url: profileUrl,
             asOf: profileResult.retrievedAt,
+            observedAt: null,
             retrievedAt: profileResult.retrievedAt,
             serverRespondedAt,
             entityIds: { symbol },
@@ -638,6 +639,7 @@ export class FinnhubClient {
             title: `${symbol} Finnhub earnings surprises`,
             url: earningsUrl,
             asOf: new Date(`${latestPeriod}T00:00:00.000Z`).toISOString(),
+            observedAt: null,
             retrievedAt: earningsResult.retrievedAt,
             serverRespondedAt,
             effectivePeriod: {
@@ -687,6 +689,7 @@ export class FinnhubClient {
             title: `Finnhub media signal: ${article.headline}`.slice(0, 500),
             url: article.url,
             asOf: article.publishedAt,
+            observedAt: null,
             retrievedAt: newsResult.retrievedAt,
             serverRespondedAt,
             publishedAt: article.publishedAt,
