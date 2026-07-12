@@ -9,11 +9,12 @@ import {
 } from "./coverage";
 
 describe("coverage gate", () => {
-  test("keeps operational scripts in the standard TypeScript project", async () => {
+  test("keeps operational and browser-test code in the TypeScript project", async () => {
     expect((await Bun.file("tsconfig.json").json()).include).toEqual([
       "backend",
       "tests",
       "scripts",
+      "playwright.config.ts",
     ]);
     expect((await Bun.file("package.json").json()).scripts.check).toStartWith(
       "bun scripts/check-time-taxonomy.ts &&",

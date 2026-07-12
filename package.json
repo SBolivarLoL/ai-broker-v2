@@ -7,6 +7,7 @@
     "start": "bun --env-file=.env backend/server.ts",
     "coverage": "bun scripts/check-coverage.ts",
     "check": "bun scripts/check-time-taxonomy.ts && bunx tsc --noEmit && bun run coverage",
+    "test:browser": "playwright test",
     "alpaca:doctor": "./scripts/alpaca.sh doctor",
     "smoke:read": "./scripts/alpaca.sh account get >/dev/null && ./scripts/alpaca.sh position list >/dev/null && ./scripts/alpaca.sh order list --status open >/dev/null",
     "smoke:order": "bun --env-file=.env scripts/smoke-order.ts",
@@ -25,6 +26,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/bun": "^1.3.14",
     "typescript": "^6.0.3"
   }
