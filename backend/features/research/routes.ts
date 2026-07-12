@@ -40,6 +40,8 @@ type Env = Record<string, string | undefined>;
 type Store = ReturnType<typeof createStore>;
 type RateLimit = (key: string, maximum: number) => boolean;
 type SecCompanyEvidence = Awaited<ReturnType<typeof getCompanySecEvidence>>;
+type ComparableValuations = Awaited<ReturnType<typeof getComparableValuations>>;
+type ValuationScenarios = Awaited<ReturnType<typeof getValuationScenarios>>;
 
 type ResearchContext = {
   alpaca: Alpaca;
@@ -56,6 +58,14 @@ type ResearchContext = {
   ) => Promise<OpenFigiIdentity>;
   secCompanyEvidence?: (symbol: string) => Promise<SecCompanyEvidence>;
   officialMacroContext?: () => Promise<MacroContext>;
+  comparableValuations?: (
+    symbol: string,
+    peers: string,
+  ) => Promise<ComparableValuations>;
+  valuationScenarios?: (
+    symbol: string,
+    scenarios: unknown,
+  ) => Promise<ValuationScenarios>;
 };
 
 const symbolFrom = (value: unknown) =>
@@ -374,7 +384,13 @@ export async function handleResearchRequest(
     const symbol = String(url.searchParams.get("symbol") ?? "");
     const peers = String(url.searchParams.get("peers") ?? "");
     try {
-      return json(await getComparableValuations(alpaca, symbol, peers));
+      return json(
+        await (
+          context.comparableValuations ??
+          ((subject, peerSet) =>
+            getComparableValuations(alpaca, subject, peerSet))
+        )(symbol, peers),
+      );
     } catch (error) {
       return json(
         {
@@ -395,11 +411,11 @@ export async function handleResearchRequest(
     const input = await requestJson(request);
     try {
       return json(
-        await getValuationScenarios(
-          alpaca,
-          String(input.symbol ?? ""),
-          input.scenarios,
-        ),
+        await (
+          context.valuationScenarios ??
+          ((symbol, scenarios) =>
+            getValuationScenarios(alpaca, symbol, scenarios))
+        )(String(input.symbol ?? ""), input.scenarios),
       );
     } catch (error) {
       return json(

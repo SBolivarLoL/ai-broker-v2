@@ -8,6 +8,7 @@ import {
   type CanonicalEvidence,
 } from "../../shared/evidence";
 import type { SecCompany, SecFacts } from "../../integrations/sec-edgar";
+import { providerTimeFields } from "../../shared/time-provenance";
 import {
   buildSecFinancialTrends,
   type SecFinancialObservation,
@@ -47,14 +48,54 @@ export type ComparableValuationEvidence = CanonicalEvidence<
   "fundamentals" | "market" | "valuation"
 >;
 export type ComparableValuationTable = {
+  schemaVersion: "comparable-valuations-v2";
   subject: string;
   peers: string[];
   rows: ComparableValuationRow[];
   sources: ComparableValuationEvidence[];
   warnings: string[];
   formulas: Record<string, string>;
+  quality: {
+    status: "complete" | "partial";
+    expected: {
+      companies: number;
+      secFundamentals: number;
+      currentPrices: number;
+      marketPriceObservations: number;
+      valuationMetrics: number;
+    };
+    received: {
+      companies: number;
+      secFundamentals: number;
+      currentPrices: number;
+      marketPriceObservations: number;
+      valuationMetrics: number;
+    };
+    omitted: {
+      companies: number;
+      secFundamentals: number;
+      currentPrices: number;
+      marketPriceObservations: number;
+      valuationMetrics: number;
+    };
+    freshness: {
+      status: "observed" | "retrieval_time_only";
+      latestPublishedAt: string | null;
+      effectivePeriod: {
+        start: string;
+        end: string;
+        label: string;
+      } | null;
+      retrievedAt: string;
+      evaluatedAt: string;
+      agePolicy: "market_price_observation_unavailable";
+    };
+    missing: string[];
+    impact: string[];
+    source: string;
+  } & ReturnType<typeof providerTimeFields>;
   asOf: string;
-};
+} & ReturnType<typeof providerTimeFields>;
 
 const symbolPattern = /^[A-Z.]{1,10}$/;
 const round = (value: number) => Number(value.toFixed(6));
@@ -104,6 +145,21 @@ function observationData(value: SecFinancialObservation | null) {
         sourceConcept: value.sourceConcept,
       }
     : null;
+}
+
+function filingTime(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function latestTime(values: (string | null | undefined)[]) {
+  return (
+    values
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null
+  );
 }
 
 export function parseComparableSymbols(
@@ -180,6 +236,29 @@ export function buildComparableValuationRow(
     sharesOutstanding: shares?.periodEnd ?? null,
     price: asOf,
   };
+  const selectedObservations = [
+    revenue,
+    previousRevenue,
+    netIncome,
+    dilutedEps,
+    equity,
+    shares,
+  ].filter((value): value is SecFinancialObservation => value !== null);
+  const secPublishedAt = latestTime(
+    selectedObservations.map((value) => filingTime(value.filed)),
+  );
+  const secEffectivePeriod = selectedObservations.length
+    ? {
+        start: selectedObservations
+          .map((value) => value.periodStart ?? value.periodEnd)
+          .sort()[0]!,
+        end: selectedObservations
+          .map((value) => value.periodEnd)
+          .sort()
+          .at(-1)!,
+        label: "SEC valuation input periods",
+      }
+    : null;
   const secEvidenceId = `sec:valuation-inputs:${company.ticker}`;
   const priceEvidenceId = `market:valuation-price:${company.ticker}`;
   const valuationEvidenceId = `valuation:comparables:${company.ticker}`;
@@ -198,6 +277,9 @@ export function buildComparableValuationRow(
       : asOf,
     retrievedAt: secTime.retrievedAt,
     serverRespondedAt: secTime.serverRespondedAt,
+    observedAt: null,
+    publishedAt: secPublishedAt,
+    effectivePeriod: secEffectivePeriod,
     entityIds: { symbol: company.ticker, cik: company.cik },
     data: {
       symbol: company.ticker,
@@ -221,6 +303,7 @@ export function buildComparableValuationRow(
     url: "https://alpaca.markets/data",
     asOf,
     retrievedAt: asOf,
+    observedAt: null,
     entityIds: { symbol: company.ticker },
     data: {
       symbol: company.ticker,
@@ -274,6 +357,7 @@ export function buildComparableValuationRow(
     url: factsUrl,
     asOf,
     retrievedAt: asOf,
+    observedAt: null,
     entityIds: { symbol: company.ticker },
     data: {
       row,
@@ -307,10 +391,113 @@ export function comparableValuationTable(
   asOf = new Date().toISOString(),
 ): ComparableValuationTable {
   const deduped = dedupeEvidence(results.flatMap((result) => result.sources));
+  const rows = results.map((result) => result.row);
+  const requestedSymbols = [subject, ...peers];
+  const requested = requestedSymbols.length;
+  const availableMetrics = rows.reduce(
+    (count, row) =>
+      count +
+      [
+        row.marketCap,
+        row.revenueGrowthPercent,
+        row.netMarginPercent,
+        row.priceToSales,
+        row.priceToEarnings,
+        row.priceToBook,
+      ].filter((value) => value !== null).length,
+    0,
+  );
+  const marketSources = deduped.records.filter(
+    (source) => source.category === "market",
+  );
+  const externalSources = deduped.records.filter(
+    (source) => source.provider !== "ai-broker",
+  );
+  const expected = {
+    companies: requested,
+    secFundamentals: requested,
+    currentPrices: requested,
+    marketPriceObservations: requested,
+    valuationMetrics: requested * 6,
+  };
+  const received = {
+    companies: rows.length,
+    secFundamentals: rows.length,
+    currentPrices: rows.length,
+    marketPriceObservations: marketSources.filter(
+      (source) => source.observedAt !== null,
+    ).length,
+    valuationMetrics: availableMetrics,
+  };
+  const omitted = {
+    companies: expected.companies - received.companies,
+    secFundamentals: expected.secFundamentals - received.secFundamentals,
+    currentPrices: expected.currentPrices - received.currentPrices,
+    marketPriceObservations:
+      expected.marketPriceObservations - received.marketPriceObservations,
+    valuationMetrics: expected.valuationMetrics - received.valuationMetrics,
+  };
+  const omittedSymbols = requestedSymbols.filter(
+    (symbol) => !rows.some((row) => row.symbol === symbol),
+  );
+  const rootPublishedAt = latestTime(
+    externalSources.map((source) => source.publishedAt),
+  );
+  const effectiveStarts = externalSources
+    .map((source) => source.effectivePeriod?.start)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const effectiveEnds = externalSources
+    .map((source) => source.effectivePeriod?.end)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const rootEffectivePeriod =
+    effectiveStarts.length && effectiveEnds.length
+      ? {
+          start: effectiveStarts[0]!,
+          end: effectiveEnds.at(-1)!,
+          label: "Comparable valuation source periods",
+        }
+      : null;
+  const rootRetrievedAt =
+    latestTime(externalSources.map((source) => source.retrievedAt)) ??
+    new Date(asOf).toISOString();
+  const rootTime = providerTimeFields({
+    observationTime: null,
+    publicationTime: rootPublishedAt,
+    effectivePeriod: rootEffectivePeriod,
+    retrievalTime: rootRetrievedAt,
+    serverResponseTime: asOf,
+  });
+  const missing = [
+    ...omittedSymbols.map((symbol) => `${symbol}:valuation_inputs`),
+    ...(omitted.marketPriceObservations
+      ? [
+          `${omitted.marketPriceObservations} market prices have retrieval time but no provider observation time.`,
+        ]
+      : []),
+    ...(omitted.valuationMetrics
+      ? [
+          `${omitted.valuationMetrics} requested valuation metrics are unavailable.`,
+        ]
+      : []),
+  ];
+  const impact = omitted.companies
+    ? [
+        "The peer table excludes unavailable companies and is not a complete comparison of the requested set.",
+      ]
+    : omitted.valuationMetrics || omitted.marketPriceObservations
+      ? [
+          "Available multiples remain visible, but missing fundamentals or unavailable market observation times limit cross-company and freshness conclusions.",
+        ]
+      : [
+          "All requested companies and valuation metrics are available with explicit source timing.",
+        ];
   return {
+    schemaVersion: "comparable-valuations-v2",
     subject,
     peers,
-    rows: results.map((result) => result.row),
+    rows,
     sources: deduped.records,
     warnings: [...new Set(warnings)],
     formulas: {
@@ -324,6 +511,27 @@ export function comparableValuationTable(
       netMargin:
         "Annual SEC net income / annual SEC revenue for the same period end",
     },
-    asOf: new Date(asOf).toISOString(),
+    quality: {
+      status: missing.length ? "partial" : "complete",
+      expected,
+      received,
+      omitted,
+      freshness: {
+        status:
+          received.marketPriceObservations === expected.marketPriceObservations
+            ? "observed"
+            : "retrieval_time_only",
+        latestPublishedAt: rootPublishedAt,
+        effectivePeriod: rootEffectivePeriod,
+        retrievedAt: rootRetrievedAt,
+        evaluatedAt: rootTime.serverRespondedAt,
+        agePolicy: "market_price_observation_unavailable",
+      },
+      missing,
+      impact,
+      source: "Calculated from the bounded SEC and Alpaca comparable set",
+      ...rootTime,
+    },
+    ...rootTime,
   };
 }

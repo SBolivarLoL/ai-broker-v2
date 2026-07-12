@@ -212,4 +212,12 @@ Persistence is composed behind the `createStore()` API:
 - `persistence/audit.ts` owns deterministic audit hashing.
 - `persistence/store.ts` composes those pieces with order, portfolio, research, and operations storage.
 
-The browser uses ordered, dependency-free scripts instead of a build step. `core.js` provides shared UI behavior; `portfolio.js`, `strategies.js`, `market-detail.js`, and `research.js` own their workspaces; `app.js` starts initial loads and refresh timers.
+The browser uses ordered, dependency-free scripts instead of a build step. `core.js` provides shared UI behavior, including the accessible expected/received/omitted/freshness/impact coverage renderer; `portfolio.js`, `strategies.js`, `market-detail.js`, and `research.js` own their workspaces; `app.js` starts initial loads and refresh timers.
+
+`research/comparable-valuation.ts` and `research/valuation-scenario.ts` own
+deterministic valuation math and normalized v2 evidence contracts. SEC filing
+publication and fundamental effective periods remain distinct from retrieval;
+the Alpaca latest-price helper exposes retrieval but no provider trade time, so
+price observation stays null. Scenario calculation time and user assumptions
+remain local evidence, while `research.js` renders missing company, metric,
+freshness, and scenario-output impact through the shared coverage vocabulary.

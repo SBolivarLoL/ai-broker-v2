@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `fff0118`: 2026-07-12.
+Last reviewed against `main` commit `78b7df2`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 395 tests, 0 failures, 1,828 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 396 tests, 0 failures, 1,836 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 41 tests, 0 failures, 189 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.06% functions, 97.34% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.10% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `fff0118`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `78b7df2`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -237,6 +237,13 @@ Additional mechanical checks:
   and per-response server timestamps. Cache hits preserve the original provider
   retrieval timestamp and extracted-content hashes; the SEC research route and
   comparable-valuation evidence preserve those adapter timestamps.
+- Comparable and scenario valuation v2 roots, SEC/market/derived canonical
+  sources, baselines, scenarios, and quality contracts were checked through
+  pure and direct API tests. SEC filing publication and fundamental effective
+  periods remain separate from SEC retrieval; the latest-price helper's missing
+  provider timestamp stays `observedAt:null` while retrieval, local calculation,
+  and response times remain explicit. Expected, received, omitted, freshness,
+  missing-company/metric/output, and conclusion-impact evidence is preserved.
 - Company-market route caching was checked to preserve cached provider
   retrieval time separately from per-response server time across the root
   snapshot, quote, bars, benchmark bars, and news entries.
@@ -277,6 +284,11 @@ This checkout has local Alpaca paper, SEC identity, and OpenAI credentials.
 FRED, BEA, Finnhub, and OpenFIGI keys remain unconfigured. The complete
 credentialed suite was not run; no availability claim is made for optional
 key-gated providers or live OpenAI orchestration in this change.
+`bun run smoke:comparables` now asserts the v2 schema, subject/peer evidence,
+retrieval-only Alpaca price provenance, and calculation coverage while logging
+only symbols, counts, statuses, and times rather than prices or fundamentals.
+The script itself was not rerun; the same configured Alpaca/SEC endpoints were
+exercised through the headed application pass recorded below.
 
 The following read-only checks were run:
 
@@ -349,6 +361,16 @@ The following read-only checks were run:
   fit a 390×844 viewport with no page-level horizontal overflow. The read-only
   pass did not expose activity details in logs or create any broker, order,
   policy, or live-trading mutation.
+- A 2026-07-12 headed browser pass loaded AAPL/MSFT comparable valuations and
+  AAPL user-assumption scenarios through the configured read-only Alpaca/SEC
+  boundary. The comparable panel showed 2/2 companies and 12/12 metrics; the
+  scenario panel showed 3/3 assumption cases and outputs. Both correctly stayed
+  partial because the latest-price helper returned retrieval time but no
+  provider trade observation (0/2 and 0/1 price observations), and each panel
+  explained the resulting freshness limitation. Both labeled regions rendered
+  without console errors or page-level overflow at 390×844. No OpenAI run,
+  broker mutation, order workflow, or live-trading authority was used, and no
+  price or fundamental value was written to validation logs.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
