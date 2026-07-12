@@ -584,6 +584,8 @@ export class FinnhubClient {
             observedAt: null,
             retrievedAt: profileResult.retrievedAt,
             serverRespondedAt,
+            publishedAt: null,
+            effectivePeriod: null,
             entityIds: { symbol },
             data: { symbol, ...profileRecord },
           }),
@@ -642,6 +644,7 @@ export class FinnhubClient {
             observedAt: null,
             retrievedAt: earningsResult.retrievedAt,
             serverRespondedAt,
+            publishedAt: null,
             effectivePeriod: {
               start: `${latestPeriod}T00:00:00.000Z`,
               end: `${latestPeriod}T00:00:00.000Z`,
@@ -693,6 +696,7 @@ export class FinnhubClient {
             retrievedAt: newsResult.retrievedAt,
             serverRespondedAt,
             publishedAt: article.publishedAt,
+            effectivePeriod: null,
             entityIds: { symbol },
             data: {
               symbol,

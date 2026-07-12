@@ -494,6 +494,8 @@ export class OpenFigiClient {
           observedAt: null,
           retrievedAt,
           serverRespondedAt,
+          publishedAt: null,
+          effectivePeriod: null,
           entityIds: {
             symbol,
             ...(canonicalFigi ? { figi: canonicalFigi } : {}),

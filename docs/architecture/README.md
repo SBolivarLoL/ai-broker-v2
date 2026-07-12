@@ -322,3 +322,12 @@ orchestration and canonical evidence collection, while `routes.ts` persists the
 completed payload and exposes an injectable direct API boundary. The browser
 uses the shared coverage renderer to show tool, evidence-category, citation,
 numeric-grounding, and semantic-time omissions before the generated claims.
+
+`shared/evidence.ts` makes canonical time semantics an explicit trust-boundary
+contract. Every constructor must supply observation, publication, effective
+period, retrieval, and server-response fields; unavailable semantic times use
+`null`. TypeScript prevents omissions in repository callers, and a runtime
+guard rejects missing fields from untyped inputs before normalization. The
+canonical builder no longer derives observation or response time from `asOf`
+or retrieval. This prevents new adapters from silently collapsing five
+different time meanings while keeping content hashing and deduplication stable.

@@ -75,10 +75,14 @@ export type CanonicalEvidenceInput<T, C extends EvidenceCategory> = Omit<
   | "effectivePeriod"
   | "time"
 > & {
-  observedAt?: string | null;
-  serverRespondedAt?: string | null;
-  publishedAt?: string | null;
-  effectivePeriod?: EffectivePeriodInput | null;
+  /** Provider observation time, or explicit null when the source exposes none. */
+  observedAt: string | null;
+  /** Time this application finished constructing the provider response. */
+  serverRespondedAt: string;
+  /** Provider publication time, or explicit null when the source exposes none. */
+  publishedAt: string | null;
+  /** Input effective period, or explicit null when the source exposes none. */
+  effectivePeriod: EffectivePeriodInput | null;
 };
 
 const authorityRank: Record<EvidenceAuthority, number> = {
@@ -166,6 +170,18 @@ function normalizedEntityIds(value: EvidenceEntityIds) {
 export function canonicalEvidence<T, C extends EvidenceCategory>(
   input: CanonicalEvidenceInput<T, C>,
 ): CanonicalEvidence<T, C> {
+  const missingTimeFields = (
+    [
+      "observedAt",
+      "publishedAt",
+      "effectivePeriod",
+      "serverRespondedAt",
+    ] as const
+  ).filter((field) => input[field] === undefined);
+  if (missingTimeFields.length)
+    throw new Error(
+      `Canonical evidence must explicitly declare ${missingTimeFields.join(", ")}`,
+    );
   const data = jsonValue(input.data) as T;
   const asOf = normalizeIsoTime(input.asOf, "Evidence as-of time");
   const retrievedAt = normalizeIsoTime(
@@ -173,12 +189,11 @@ export function canonicalEvidence<T, C extends EvidenceCategory>(
     "Evidence retrieval time",
   );
   const time = normalizeTimeProvenance({
-    observationTime:
-      input.observedAt === undefined ? asOf : input.observedAt,
-    publicationTime: input.publishedAt ?? null,
-    effectivePeriod: input.effectivePeriod ?? null,
+    observationTime: input.observedAt,
+    publicationTime: input.publishedAt,
+    effectivePeriod: input.effectivePeriod,
     retrievalTime: retrievedAt,
-    serverResponseTime: input.serverRespondedAt ?? retrievedAt,
+    serverResponseTime: input.serverRespondedAt,
   });
   return {
     id: requiredText(input.id, "Evidence ID", 240),

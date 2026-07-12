@@ -116,6 +116,8 @@ test("macro coverage distinguishes required, optional, indicator, and regime evi
     observedAt: "2026-07-11T00:00:00.000Z",
     retrievedAt,
     serverRespondedAt,
+    publishedAt: null,
+    effectivePeriod: null,
     entityIds: {},
     data: { value: 4.25 },
   });

@@ -39,7 +39,11 @@ const source = (
     title,
     url,
     asOf: "2026-01-01",
+    observedAt: "2026-01-01",
     retrievedAt: "2026-01-01",
+    serverRespondedAt: "2026-01-01",
+    publishedAt: null,
+    effectivePeriod: null,
     entityIds: { symbol: "AAPL" },
     data,
   });

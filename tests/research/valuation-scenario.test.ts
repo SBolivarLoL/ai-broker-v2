@@ -59,6 +59,7 @@ const sources = [
     url: "https://data.sec.gov/test",
     asOf,
     retrievedAt: asOf,
+    serverRespondedAt: asOf,
     observedAt: null,
     publishedAt: "2026-04-01T00:00:00.000Z",
     effectivePeriod: {
@@ -80,7 +81,10 @@ const sources = [
     url: "https://alpaca.markets/data",
     asOf,
     retrievedAt: asOf,
+    serverRespondedAt: asOf,
     observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
     entityIds: { symbol: "TEST" },
     data: { price: 10 },
   }),

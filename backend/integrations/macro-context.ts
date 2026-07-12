@@ -657,6 +657,7 @@ export class MacroContextClient {
           observedAt: null,
           retrievedAt,
           serverRespondedAt: retrievedAt,
+          publishedAt: null,
           effectivePeriod: monthPeriod(latestCpi),
           entityIds: {},
           data: {
@@ -704,6 +705,7 @@ export class MacroContextClient {
           observedAt: null,
           retrievedAt,
           serverRespondedAt: retrievedAt,
+          publishedAt: null,
           effectivePeriod: monthPeriod(latestLabor),
           entityIds: {},
           data: {
@@ -832,6 +834,7 @@ export class MacroContextClient {
           observedAt: dateTime(latest.date),
           retrievedAt,
           serverRespondedAt: retrievedAt,
+          publishedAt: null,
           effectivePeriod: datePeriod(latest.date),
           entityIds: {},
           data: {
@@ -960,6 +963,7 @@ export class MacroContextClient {
       observedAt: null,
       retrievedAt,
       serverRespondedAt: retrievedAt,
+      publishedAt: null,
       effectivePeriod: quarterPeriod(latest.TimePeriod),
       entityIds: {},
       data: {

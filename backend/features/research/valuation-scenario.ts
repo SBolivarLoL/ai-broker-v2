@@ -173,7 +173,10 @@ export function buildValuationScenarioMemo(
     url: sourceUrl,
     asOf,
     retrievedAt: asOf,
+    serverRespondedAt: asOf,
     observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
     entityIds: { symbol: row.symbol },
     data: {
       symbol: row.symbol,
