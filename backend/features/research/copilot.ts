@@ -9,6 +9,8 @@ import { historicalRisk, riskSnapshot, rollingTurnover, simulateTrade } from "..
 import { openaiModel } from "./research";
 import {
   buildAdvisorEvidenceRecord,
+  buildAdvisorEvidenceSnapshot,
+  buildAdvisorPlanEvidenceReplay,
   buildPortfolioPlanCoverage,
   buildPortfolioQuestionCoverage,
   type AdvisorEvidencePhase,
@@ -184,6 +186,7 @@ function createPortfolioReadTools(
   phase: AdvisorEvidencePhase,
 ) {
   const evidenceRecords: ReturnType<typeof buildAdvisorEvidenceRecord>[] = [];
+  const evidenceSnapshots: ReturnType<typeof buildAdvisorEvidenceSnapshot>[] = [];
   const evidence = <T extends object>(
     evidenceId: string,
     value: T,
@@ -191,10 +194,17 @@ function createPortfolioReadTools(
       Parameters<typeof buildAdvisorEvidenceRecord>[0],
       "evidenceId" | "phase"
     >,
+    snapshotPayload: unknown = value,
   ) => {
+    if (evidenceIds.has(evidenceId)) {
+      throw new Error(`Evidence ${evidenceId} was already captured for ${phase}`);
+    }
     const record = buildAdvisorEvidenceRecord({ evidenceId, phase, ...time });
     evidenceIds.add(evidenceId);
     evidenceRecords.push(record);
+    evidenceSnapshots.push(
+      buildAdvisorEvidenceSnapshot({ record, payload: snapshotPayload }),
+    );
     return { evidenceId, asOf: record.asOf, ...value };
   };
   const portfolio = tool({
@@ -312,6 +322,7 @@ function createPortfolioReadTools(
   return {
     evidence,
     evidenceRecords,
+    evidenceSnapshots,
     tools: [portfolio, risk, latestPrice, history, news, assetStatus, openOrders],
   };
 }
@@ -367,7 +378,7 @@ export async function runPortfolioQuestion(alpaca: Alpaca, rawQuestion: string) 
 export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "balanced_growth") {
   const evidenceIds = new Set<string>();
   const simulations = new Map<string, SimulationAuthority>();
-  const { evidence, tools, evidenceRecords } = createPortfolioReadTools(
+  const { evidence, tools, evidenceRecords, evidenceSnapshots } = createPortfolioReadTools(
     alpaca,
     evidenceIds,
     "proposal",
@@ -383,7 +394,7 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
       const result = simulateTrade({ snapshot: riskSnapshot(account.equity, account.cash, positions), positions, symbol, side, qty, price, dailyTurnover: rollingTurnover(orders) });
       const id = crypto.randomUUID();
       const evidenceId = `simulation:${id}`;
-      simulations.set(id, {
+      const authority: SimulationAuthority = {
         id,
         evidenceId,
         symbol,
@@ -393,11 +404,13 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
         stateSnapshotId: crypto.randomUUID(),
         policyVersion: SIMULATION_POLICY_VERSION,
         expiresAt: Date.now() + 5 * 60_000,
-      });
-      return evidence(evidenceId, { simulationId: id, symbol, side, qty, price, ...result }, {
+      };
+      simulations.set(id, authority);
+      const toolOutput = { simulationId: id, symbol, side, qty, price, ...result };
+      return evidence(evidenceId, toolOutput, {
         source: "Local deterministic paper-order simulation",
         kind: "local",
-      });
+      }, { ...toolOutput, authority });
     },
   });
 
@@ -428,7 +441,11 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
   const result = await run(agent, `Analyze my current Alpaca paper portfolio for ${intent}.`, { maxTurns: 6 });
   if (!result.finalOutput) throw new Error("Copilot returned no analysis");
   const reviewEvidenceIds = new Set<string>();
-  const { tools: reviewTools, evidenceRecords: reviewEvidenceRecords } =
+  const {
+    tools: reviewTools,
+    evidenceRecords: reviewEvidenceRecords,
+    evidenceSnapshots: reviewEvidenceSnapshots,
+  } =
     createPortfolioReadTools(alpaca, reviewEvidenceIds, "review");
   const reviewInput = `Challenge this exact portfolio proposal before it becomes actionable: ${JSON.stringify(result.finalOutput)}`;
   const reviewer = new Agent({
@@ -457,6 +474,10 @@ export async function runPortfolioCopilot(alpaca: Alpaca, intent: Intent = "bala
       evidenceRecords: [...evidenceRecords, ...reviewEvidenceRecords],
       retrievedAt,
       serverRespondedAt,
+    }),
+    evidenceReplay: buildAdvisorPlanEvidenceReplay({
+      output,
+      evidenceSnapshots: [...evidenceSnapshots, ...reviewEvidenceSnapshots],
     }),
   };
 }

@@ -225,11 +225,18 @@ freshness, and scenario-output impact through the shared coverage vocabulary.
 
 `research/copilot.ts` keeps model output behind typed read-only tools, citation
 guards, independent counter-thesis review, and exact simulation authority.
-`research/advisor-coverage.ts` projects only safe evidence identity, phase,
-source, and time metadata into portfolio-question v2 and portfolio-plan v2
-responses. Proposal and review reads remain distinct, local simulation evidence
-is not mislabeled as provider observation, and `portfolio.js` renders the shared
-coverage region before either Advisor report's conclusions.
+`research/advisor-coverage.ts` projects safe evidence identity, phase, source,
+and time metadata into portfolio-question v2 and portfolio-plan v2 responses.
+For saved plans it also canonicalizes the allow-listed typed-tool payloads,
+selects only proposal and independent-review evidence that the final plan cites,
+sorts references by phase and evidence ID, and hashes each snapshot plus the
+replay manifest. `research/copilot.ts` rejects duplicate evidence IDs within an
+agent phase and adds exact local simulation authority only to the durable
+snapshot, not to the model-visible tool result. Proposal and review reads remain
+distinct, local simulation evidence is not mislabeled as provider observation,
+SQLite plan persistence retains the bounded replay object without a schema
+change, and `portfolio.js` renders the shared coverage region before either
+Advisor report's conclusions.
 
 `research/sec-financial-trends.ts` owns SEC fact cadence, filing-date
 eligibility, amendment selection, and bounded point-in-time trend projection.

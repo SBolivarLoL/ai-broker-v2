@@ -200,6 +200,23 @@ test("advisor routes preserve versioned coverage contracts", async () => {
       },
     })),
     evidenceRecords: [],
+    evidenceReplay: {
+      schemaVersion: "advisor-plan-evidence-v1",
+      payloadPolicy: "allowlisted_typed_tool_output",
+      status: "complete",
+      expectedSnapshots: 2,
+      receivedSnapshots: 2,
+      missingSnapshots: [],
+      references: [
+        { phase: "proposal", evidenceId: "portfolio:current" },
+        { phase: "review", evidenceId: "risk:current" },
+      ],
+      snapshots: [
+        { schemaVersion: "advisor-evidence-snapshot-v1", evidenceId: "portfolio:current", phase: "proposal", contentHash: `sha256:${"a".repeat(64)}`, payload: { equity: "10000" } },
+        { schemaVersion: "advisor-evidence-snapshot-v1", evidenceId: "risk:current", phase: "review", contentHash: `sha256:${"b".repeat(64)}`, payload: { concentration: 0.4 } },
+      ],
+      contentHash: `sha256:${"c".repeat(64)}`,
+    },
     quality: {
       status: "partial",
       expected: { ideas: 3, providerTimeRecords: 2 },
@@ -281,6 +298,12 @@ test("advisor routes preserve versioned coverage contracts", async () => {
       retrievalTime: "2026-07-12T12:00:00.000Z",
       serverResponseTime: "2026-07-12T12:00:01.000Z",
     },
+    evidenceReplay: {
+      status: "complete",
+      expectedSnapshots: 2,
+      receivedSnapshots: 2,
+      contentHash: `sha256:${"c".repeat(64)}`,
+    },
   });
   expect(planBody.planId).toBeString();
   expect(calls).toEqual([
@@ -290,6 +313,14 @@ test("advisor routes preserve versioned coverage contracts", async () => {
   expect(store.getPlan(planBody.planId)).toMatchObject({
     schemaVersion: "portfolio-plan-v2",
     quality: { status: "partial" },
+    evidenceReplay: {
+      status: "complete",
+      snapshots: [
+        { phase: "proposal", payload: { equity: "10000" } },
+        { phase: "review", payload: { concentration: 0.4 } },
+      ],
+      contentHash: `sha256:${"c".repeat(64)}`,
+    },
   });
   store.close();
 });

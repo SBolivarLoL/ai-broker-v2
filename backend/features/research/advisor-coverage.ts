@@ -3,6 +3,10 @@ import {
   type EffectivePeriodInput,
   type ProviderTimeFields,
 } from "../../shared/time-provenance";
+import {
+  evidenceContentHash,
+  stableEvidenceJson,
+} from "../../shared/evidence";
 
 export type AdvisorEvidencePhase = "question" | "proposal" | "review";
 
@@ -11,6 +15,17 @@ export type AdvisorEvidenceRecord = ProviderTimeFields & {
   phase: AdvisorEvidencePhase;
   source: string;
   kind: "provider" | "local";
+};
+
+export type AdvisorEvidenceSnapshot = AdvisorEvidenceRecord & {
+  schemaVersion: "advisor-evidence-snapshot-v1";
+  contentHash: string;
+  payload: unknown;
+};
+
+export type AdvisorEvidenceReference = {
+  phase: "proposal" | "review";
+  evidenceId: string;
 };
 
 type QuestionOutput = {
@@ -76,6 +91,84 @@ export function buildAdvisorEvidenceRecord(input: {
       retrievalTime: retrievedAt,
       serverResponseTime: retrievedAt,
     }),
+  };
+}
+
+/** Canonicalizes one allow-listed typed-tool result for durable replay. */
+export function buildAdvisorEvidenceSnapshot(input: {
+  record: AdvisorEvidenceRecord;
+  payload: unknown;
+}): AdvisorEvidenceSnapshot {
+  const payload = JSON.parse(stableEvidenceJson(input.payload)) as unknown;
+  return {
+    ...input.record,
+    schemaVersion: "advisor-evidence-snapshot-v1",
+    contentHash: evidenceContentHash(payload),
+    payload,
+  };
+}
+
+function advisorReferenceKey(reference: AdvisorEvidenceReference) {
+  return `${reference.phase}\u0000${reference.evidenceId}`;
+}
+
+/**
+ * Selects only evidence cited by the saved proposal and independent review.
+ * Phase is part of the identity because the two agents may reuse tool IDs.
+ */
+export function buildAdvisorPlanEvidenceReplay(input: {
+  output: PlanOutput;
+  evidenceSnapshots: AdvisorEvidenceSnapshot[];
+}) {
+  const references = [
+    ...unique(input.output.ideas.flatMap((idea) => idea.evidence)).map(
+      (evidenceId): AdvisorEvidenceReference => ({
+        phase: "proposal",
+        evidenceId,
+      }),
+    ),
+    ...unique(
+      input.output.ideas.flatMap((idea) => idea.riskReview.evidence),
+    ).map(
+      (evidenceId): AdvisorEvidenceReference => ({
+        phase: "review",
+        evidenceId,
+      }),
+    ),
+  ].toSorted((a, b) =>
+    advisorReferenceKey(a).localeCompare(advisorReferenceKey(b)),
+  );
+  const selected: AdvisorEvidenceSnapshot[] = [];
+  const missingSnapshots: Array<
+    AdvisorEvidenceReference & { reason: "missing" | "ambiguous" }
+  > = [];
+  for (const reference of references) {
+    const matches = input.evidenceSnapshots.filter(
+      (snapshot) =>
+        snapshot.phase === reference.phase &&
+        snapshot.evidenceId === reference.evidenceId,
+    );
+    if (matches.length === 1) selected.push(matches[0]!);
+    else {
+      missingSnapshots.push({
+        ...reference,
+        reason: matches.length ? "ambiguous" : "missing",
+      });
+    }
+  }
+  const manifest = {
+    schemaVersion: "advisor-plan-evidence-v1" as const,
+    payloadPolicy: "allowlisted_typed_tool_output" as const,
+    status: missingSnapshots.length ? ("partial" as const) : ("complete" as const),
+    expectedSnapshots: references.length,
+    receivedSnapshots: selected.length,
+    missingSnapshots,
+    references,
+    snapshots: selected,
+  };
+  return {
+    ...manifest,
+    contentHash: evidenceContentHash(manifest),
   };
 }
 

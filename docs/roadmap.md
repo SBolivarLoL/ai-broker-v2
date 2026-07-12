@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `3db616d`: 2026-07-12.
+Last reviewed against `main` commit `25d3d9d`: 2026-07-12.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -99,7 +99,7 @@ Exit gate: at least three frozen strategies have comparable out-of-sample and 30
    Company-research v2 roots and persisted quality DTOs now preserve canonical source observation/publication/effective/retrieval/response time, keep SEC/news retrieval out of `observedAt`, and expose retrieval-only source records explicitly.
    Strategy-dashboard v2 roots and quality DTOs now preserve persisted market observation/effective windows separately from completed local evidence retrieval and response time; order-record updates remain local records rather than provider observations.
    Portfolio-question v2 and portfolio-plan v2 roots, quality DTOs, and phase-labeled typed-tool evidence records now preserve provider observation/publication/effective time where exposed, local evidence retrieval, final response time, and explicitly retrieval-only provider records. Proposal, independent-review, and local simulation evidence remain distinct.
-3. [ ] Persist the canonical evidence used by important research/strategy decisions so later replays do not depend on mutable provider responses.
+3. [ ] Persist the canonical evidence used by important research/strategy decisions so later replays do not depend on mutable provider responses. Immutable strategy experiments already retain normalized datasets, snapshots, lineage, and decision evidence; completed company-research reports retain their canonical source set. Saved Advisor plans now retain only the exact cited allow-listed proposal and independent-review typed-tool snapshots, including exact local simulation authority, in a deterministic phase/evidence manifest with per-snapshot and manifest hashes; duplicate phase/evidence identities fail closed, and direct API/SQLite contracts prove round-trip persistence. This remains open until historical valuations and other material research decisions can be replayed from persisted point-in-time inputs rather than mutable provider reads.
 4. [ ] Add point-in-time controls for fundamentals and classifications used in historical analysis. A filing published after a test date must not influence that date. The SEC research API now accepts a validated non-future filing-date cutoff, excludes later filings, amendments, extracted sections, selected facts, and trend observations before selection, and reports exact exclusion counts and day-level publication precision. This is not yet bound to persisted historical experiments or valuation replay, and historical SIC remains unavailable because SEC submissions expose no classification history; therefore the item remains open.
 5. [ ] Reconcile market bars and account/order state against independent queries on a schedule; store discrepancy events and recovery outcomes.
 6. [ ] Add provider contract tests using recorded, redacted fixtures for malformed payloads, partial responses, rate limits, revisions, and timestamp edge cases.

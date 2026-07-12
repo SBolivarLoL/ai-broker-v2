@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `3db616d`: 2026-07-12.
+Last reviewed against `main` commit `25d3d9d`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 407 tests, 0 failures, 1,898 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 410 tests, 0 failures, 1,907 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 98.17% functions, 97.28% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
@@ -24,7 +24,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `3db616d`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `25d3d9d`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -44,7 +44,7 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                                                                   | No production-sized restore timing or closed-beta operations drill                                                                        |
 | Provider normalization      | Good with fixtures                                 | SEC, macro, GDELT, Finnhub, OpenFIGI, market-data fallback tests, canonical time-provenance tests, broker account/position/order/account-activity/watchlist/asset-reference/portfolio-performance/portfolio-risk/portfolio-exposure/portfolio-scenario/portfolio-rebalance/portfolio-snapshot/portfolio-optimizer state, equity, options, company-market root/child, market-workspace root/child, GDELT/Finnhub/OpenFIGI/SEC EDGAR/official-macro provider DTO, and multi-asset market DTO time-provenance tests, local provider-health evidence, plus deliberate historical live Alpaca/SEC/macro reads | Live provider contracts are not run in CI, not every DTO has the explicit time taxonomy, and point-in-time fundamentals are not persisted |
 | Data governance and quality | Complete code inventory, external review open      | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, and actor-scoped strategy dataset quality stats                                                                                                                                                                                                                                                                                     | Internal classifications are not legal approval; no automatic retention enforcement exists                                                |
-| Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation                                                                                                                                                                                                                                                                                                                                                                                                                                     | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
+| Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, deterministic replay hashes, and SQLite/API persistence                                                                                                                                                                                                                                                                                                                                               | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, and selected concurrency tests                                                                                                                                                                                                                                                             | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
 | Browser UI                  | Targeted interaction confidence                    | Earlier interaction checks plus the 2026-07-10 Option A workstation pass rendered all seven workspaces, the populated Strategy Lab, the data-health drawer, private-value state, and confirmation dialogs. The persistent desktop rail, compact tablet rail, active-item-centered mobile navigation, sticky status strip, and evidence layouts were checked at 1440×1000, 768×1000, and 390×844 with no page-level horizontal overflow.                                                                     | No maintained automated accessibility/responsive regression suite                                                                         |
@@ -103,12 +103,19 @@ Additional mechanical checks:
   complete portfolio-plan v2 proposal/review/action-authority contract were
   checked through deterministic builders. Direct injected API requests prove
   both versioned route shapes without a model or provider call, and the saved
-  plan retains its quality and root time contract. Typed-tool evidence records
+  plan retains its quality, root time, and exact replay contract through a
+  SQLite round trip. Typed-tool evidence records
   preserve proposal, review, and question phases; cited provider records report
   observation/publication/effective time where exposed and keep retrieval-only
   states consequential instead of relabeling retrieval as observation. The
   governance regression also binds persisted Advisor plans reciprocally to
   Alpaca paper-account, IEX, Benzinga, OpenAI, and local-derived sources.
+  Three replay regressions prove recursive JSON canonicalization and stable
+  hashes across object and input ordering, selection of only cited
+  phase-specific proposal/review snapshots, exclusion of uncited tool output,
+  and explicit `missing` versus `ambiguous` snapshot states. Simulation replay
+  stores its exact policy authority while the model-visible tool payload remains
+  unchanged; a repeated evidence ID in one live phase fails closed.
 - SEC point-in-time trend tests prove that a later 10-K amendment cannot replace
   the record available at an earlier date and that post-cutoff annual,
   quarterly, and instant facts are excluded before metric selection. A cached
