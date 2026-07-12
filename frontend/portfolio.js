@@ -794,7 +794,7 @@ $("#portfolio-question-form").onsubmit = async (event) => {
     });
     $("#portfolio-question-asof").textContent =
       `Answered from current typed evidence · ${new Date(data.asOf).toLocaleString()}`;
-    root.innerHTML = `<div>${data.claims.map((claim) => `<div class="qa-claim"><p>${esc(claim.text)}</p><div class="qa-evidence">${claim.evidence.map((id) => `<span class="pill">${esc(id)}</span>`).join("")}</div></div>`).join("")}</div>${data.limitations.length ? `<div class="warnings qa-limitations">${data.limitations.map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}`;
+    root.innerHTML = `${calculationCoveragePanel("Portfolio Q&A", data.quality)}<div>${data.claims.map((claim) => `<div class="qa-claim"><p>${esc(claim.text)}</p><div class="qa-evidence">${claim.evidence.map((id) => `<span class="pill">${esc(id)}</span>`).join("")}</div></div>`).join("")}</div>${data.limitations.length ? `<div class="warnings qa-limitations">${data.limitations.map((item) => `<div>${esc(item)}</div>`).join("")}</div>` : ""}`;
   } catch (error) {
     root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
     notify(error.message);
@@ -859,6 +859,7 @@ function renderCopilotPlan(data) {
     })
     .join("");
   $("#copilot").innerHTML =
+    calculationCoveragePanel("Guided rebalance", data.quality) +
     "<p>" +
     esc(data.summary) +
     ' <span class="muted">Plan ' +

@@ -63,7 +63,7 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     retentionDecision: "persist_with_provenance",
     redistributionDecision: "blocked",
     liveUseDecision: "external_review_required",
-    storedOutputIds: ["order_authority", "trade_journal", "broker_account_ledger", "portfolio_snapshots", "strategy_experiments"],
+    storedOutputIds: ["order_authority", "advisor_plans", "trade_journal", "broker_account_ledger", "portfolio_snapshots", "strategy_experiments"],
   },
   {
     id: "alpaca_equity_iex",
@@ -81,7 +81,7 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     retentionDecision: "persist_with_provenance",
     redistributionDecision: "blocked",
     liveUseDecision: "external_review_required",
-    storedOutputIds: ["order_authority", "trade_journal", "research_runs", "portfolio_snapshots"],
+    storedOutputIds: ["order_authority", "advisor_plans", "trade_journal", "research_runs", "portfolio_snapshots"],
   },
   {
     id: "alpaca_stock_sip",
@@ -153,7 +153,7 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     retentionDecision: "persist_with_provenance",
     redistributionDecision: "blocked",
     liveUseDecision: "external_review_required",
-    storedOutputIds: ["research_runs"],
+    storedOutputIds: ["advisor_plans", "research_runs"],
   },
   {
     id: "gdelt_doc_2",
@@ -341,7 +341,7 @@ export const STORED_OUTPUT_CATEGORIES: StoredOutputCategory[] = [
   { id: "schema_migration_history", tables: ["schema_migrations"], contents: ["migration identity", "checksum", "application time"], sourceIds: [], retentionDecision: "application_lifetime", redistributionDecision: "internal_only", liveUseDecision: "operations_only" },
   { id: "operations_events", tables: ["events"], contents: ["operational events", "local spans", "scheduler and incident evidence"], sourceIds: ["local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "operations_only" },
   { id: "order_authority", tables: ["submissions", "receipts", "risk_reservations"], contents: ["idempotency records", "paper-order receipts", "risk capacity reservations"], sourceIds: ["alpaca_paper_trading", "alpaca_equity_iex", "alpaca_crypto_data", "local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
-  { id: "advisor_plans", tables: ["plans"], contents: ["agent-drafted plans", "simulation-bound intent"], sourceIds: ["openai_api", "local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
+  { id: "advisor_plans", tables: ["plans"], contents: ["agent-drafted plans", "proposal and independent-review evidence identity/time metadata", "simulation-bound intent"], sourceIds: ["alpaca_paper_trading", "alpaca_equity_iex", "alpaca_news_benzinga", "openai_api", "local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
   { id: "trade_journal", tables: ["trade_journal_entries"], contents: ["receipt-linked thesis", "human review history", "market and position context"], sourceIds: ["alpaca_paper_trading", "alpaca_equity_iex", "local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
   { id: "operations_policy", tables: ["operations_policy"], contents: ["global kill switch", "order and exposure limits", "operator identity"], sourceIds: ["local_derived_analytics"], retentionDecision: "until_replaced_or_deleted", redistributionDecision: "internal_only", liveUseDecision: "operations_only" },
   { id: "encrypted_secrets", tables: ["encrypted_secrets"], contents: ["AES-256-GCM provider credential envelopes", "updater identity"], sourceIds: [], retentionDecision: "until_replaced_or_deleted", redistributionDecision: "internal_only", liveUseDecision: "operations_only" },

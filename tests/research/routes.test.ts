@@ -11,6 +11,10 @@ import type {
   getValuationScenarios,
   runCompanyResearch,
 } from "../../backend/features/research/research";
+import type {
+  runPortfolioCopilot,
+  runPortfolioQuestion,
+} from "../../backend/features/research/copilot";
 
 type RouteOptions = {
   alpaca?: Alpaca;
@@ -39,6 +43,14 @@ type RouteOptions = {
     symbol: string,
     runId: string,
   ) => ReturnType<typeof runCompanyResearch>;
+  portfolioQuestion?: (
+    alpaca: Alpaca,
+    question: string,
+  ) => ReturnType<typeof runPortfolioQuestion>;
+  portfolioCopilot?: (
+    alpaca: Alpaca,
+    intent: "reduce_concentration" | "balanced_growth" | "preserve_capital",
+  ) => ReturnType<typeof runPortfolioCopilot>;
 };
 
 const route = async (
@@ -61,6 +73,8 @@ const route = async (
     comparableValuations: options.comparableValuations,
     valuationScenarios: options.valuationScenarios,
     companyResearch: options.companyResearch,
+    portfolioQuestion: options.portfolioQuestion,
+    portfolioCopilot: options.portfolioCopilot,
   });
 };
 
@@ -114,6 +128,169 @@ test("research routes preserve rate limits and local metrics", async () => {
   const metrics = await route("/api/research/metrics");
   expect(metrics?.status).toBe(200);
   expect(await metrics?.json()).toMatchObject({ totalRuns: 0 });
+});
+
+test("advisor routes preserve versioned coverage contracts", async () => {
+  const rootTime = {
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: "2026-07-12T12:00:00.000Z",
+    serverRespondedAt: "2026-07-12T12:00:01.000Z",
+    time: {
+      observationTime: null,
+      publicationTime: null,
+      effectivePeriod: null,
+      retrievalTime: "2026-07-12T12:00:00.000Z",
+      serverResponseTime: "2026-07-12T12:00:01.000Z",
+    },
+    asOf: "2026-07-12T12:00:01.000Z",
+  };
+  const questionPayload = {
+    schemaVersion: "portfolio-question-v2",
+    claims: [
+      {
+        text: "The largest position is supported by current portfolio evidence.",
+        evidence: ["portfolio:current"],
+      },
+    ],
+    limitations: [],
+    evidenceRecords: [],
+    quality: {
+      status: "partial",
+      expected: { claims: 1, providerTimeRecords: 1 },
+      received: { claims: 1, providerTimeRecords: 0 },
+      omitted: { claims: 0, providerTimeRecords: 1 },
+      freshness: {
+        status: "retrieval_only",
+        expectedObservations: 1,
+        receivedObservations: 0,
+      },
+      missing: ["Provider observation time is unavailable."],
+      impact: ["Time-sensitive interpretation is limited."],
+      ...rootTime,
+    },
+    ...rootTime,
+  } as unknown as Awaited<ReturnType<typeof runPortfolioQuestion>>;
+  const planPayload = {
+    schemaVersion: "portfolio-plan-v2",
+    summary: "Three evidence-bound ideas were independently reviewed.",
+    riskReviewSummary: "No idea bypasses the independent review.",
+    reviewedAt: "2026-07-12T12:00:00.000Z",
+    ideas: Array.from({ length: 3 }, (_, index) => ({
+      symbol: ["AAPL", "MSFT", "SPY"][index],
+      action: "watch",
+      proposedAction: "watch",
+      thesis: "Observe only.",
+      risk: "Current evidence may change.",
+      invalidation: "Re-evaluate after new evidence.",
+      confidence: 50,
+      suggestedQty: 0,
+      simulationId: null,
+      evidence: ["portfolio:current"],
+      actionable: false,
+      riskReview: {
+        symbol: ["AAPL", "MSFT", "SPY"][index],
+        proposedAction: "watch",
+        verdict: "caution",
+        counterThesis: "The available evidence is incomplete.",
+        failureCondition: "The portfolio state changes.",
+        evidence: ["risk:current"],
+      },
+    })),
+    evidenceRecords: [],
+    quality: {
+      status: "partial",
+      expected: { ideas: 3, providerTimeRecords: 2 },
+      received: { ideas: 3, providerTimeRecords: 0 },
+      omitted: { ideas: 0, providerTimeRecords: 2 },
+      freshness: {
+        status: "retrieval_only",
+        expectedObservations: 2,
+        receivedObservations: 0,
+      },
+      missing: ["Provider observation time is unavailable."],
+      impact: ["Time-sensitive interpretation is limited."],
+      ...rootTime,
+    },
+    ...rootTime,
+  } as unknown as Awaited<ReturnType<typeof runPortfolioCopilot>>;
+  const calls: string[] = [];
+  const store = createStore(":memory:");
+  const question = await route(
+    "/api/agent/questions",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "What is my largest position?" }),
+    },
+    () => true,
+    {
+      env: { OPENAI_API_KEY: "configured-for-injected-contract" },
+      store,
+      portfolioQuestion: async (_alpaca, input) => {
+        calls.push(`question:${input}`);
+        return questionPayload;
+      },
+    },
+  );
+  expect(question?.status).toBe(200);
+  expect(await question?.json()).toMatchObject({
+    question: "What is my largest position?",
+    schemaVersion: "portfolio-question-v2",
+    quality: {
+      status: "partial",
+      expected: { claims: 1, providerTimeRecords: 1 },
+      received: { claims: 1, providerTimeRecords: 0 },
+    },
+    time: {
+      retrievalTime: "2026-07-12T12:00:00.000Z",
+      serverResponseTime: "2026-07-12T12:00:01.000Z",
+    },
+  });
+
+  const plan = await route(
+    "/api/agent/plans",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent: "balanced_growth" }),
+    },
+    () => true,
+    {
+      env: { OPENAI_API_KEY: "configured-for-injected-contract" },
+      store,
+      portfolioCopilot: async (_alpaca, input) => {
+        calls.push(`plan:${input}`);
+        return planPayload;
+      },
+    },
+  );
+  expect(plan?.status).toBe(200);
+  const planBody = await plan?.json();
+  expect(planBody).toMatchObject({
+    intent: "balanced_growth",
+    schemaVersion: "portfolio-plan-v2",
+    quality: {
+      status: "partial",
+      expected: { ideas: 3, providerTimeRecords: 2 },
+      received: { ideas: 3, providerTimeRecords: 0 },
+    },
+    time: {
+      retrievalTime: "2026-07-12T12:00:00.000Z",
+      serverResponseTime: "2026-07-12T12:00:01.000Z",
+    },
+  });
+  expect(planBody.planId).toBeString();
+  expect(calls).toEqual([
+    "question:What is my largest position?",
+    "plan:balanced_growth",
+  ]);
+  expect(store.getPlan(planBody.planId)).toMatchObject({
+    schemaVersion: "portfolio-plan-v2",
+    quality: { status: "partial" },
+  });
+  store.close();
 });
 
 test("valuation routes preserve normalized coverage contracts", async () => {
@@ -320,12 +497,9 @@ test("macro research route preserves explicit unavailable retrieval time", async
     },
     disclosures: [],
   } satisfies MacroContext;
-  const response = await route(
-    "/api/research/macro",
-    undefined,
-    () => true,
-    { officialMacroContext: async () => payload },
-  );
+  const response = await route("/api/research/macro", undefined, () => true, {
+    officialMacroContext: async () => payload,
+  });
   expect(response?.status).toBe(200);
   expect(await response?.json()).toEqual(payload);
 });

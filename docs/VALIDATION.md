@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `eccd0c2`: 2026-07-12.
+Last reviewed against `main` commit `4ac24df`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 400 tests, 0 failures, 1,857 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 404 tests, 0 failures, 1,871 assertions across 91 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.14% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.17% functions, 97.28% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 102 backend modules, 11 operational scripts, 89 files under `tests/`, and one coverage-gate test                                   |
+| TypeScript    | 103 backend modules, 11 operational scripts, 90 files under `tests/`, and one coverage-gate test                                   |
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `eccd0c2`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `4ac24df`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -78,8 +78,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 102 backend TypeScript modules, 11 operational
-  scripts, 89 files under `tests/`, one coverage-gate test under `scripts/`, 15
+- Fresh inventory checks found 103 backend TypeScript modules, 11 operational
+  scripts, 90 files under `tests/`, one coverage-gate test under `scripts/`, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
   table is assigned exactly once.
@@ -99,6 +99,16 @@ Additional mechanical checks:
   decisions, traces, per-symbol snapshots, observation times, and conditional
   paper execution evidence; persisted market observation, local retrieval, and
   server response time remain distinct.
+- Portfolio-question v2 partial-time and unresolved-citation contracts plus a
+  complete portfolio-plan v2 proposal/review/action-authority contract were
+  checked through deterministic builders. Direct injected API requests prove
+  both versioned route shapes without a model or provider call, and the saved
+  plan retains its quality and root time contract. Typed-tool evidence records
+  preserve proposal, review, and question phases; cited provider records report
+  observation/publication/effective time where exposed and keep retrieval-only
+  states consequential instead of relabeling retrieval as observation. The
+  governance regression also binds persisted Advisor plans reciprocally to
+  Alpaca paper-account, IEX, Benzinga, OpenAI, and local-derived sources.
 - Official Treasury/BLS/FRED/BEA macro root, provider-coverage, indicator,
   canonical-evidence, research-tool, and direct API DTOs were checked for
   Treasury publication dates, FRED observation dates, BLS monthly and BEA
@@ -405,6 +415,17 @@ The following read-only checks were run:
   was intercepted, so the pass could not tick, approve, pause, kill, review, or
   otherwise mutate a strategy run, paper order, broker object, policy, or live-
   trading authority; the initial workspace loads were read-only.
+- A 2026-07-12 headed browser pass served the production browser assets locally
+  and rendered intercepted portfolio-question v2 and portfolio-plan v2 fixtures
+  through the real Advisor forms and `portfolio.js` render paths. The labeled
+  `Portfolio Q&A data coverage` region appeared before the answer with five
+  rows; `Guided rebalance data coverage` appeared before the plan summary and
+  three independently reviewed ideas with eight rows. Both showed partial
+  retrieval-only provider time and its conclusion impact, produced no console
+  warnings or errors at 1200 CSS pixels, and at 390×844 were each 330 CSS
+  pixels wide while the document remained exactly 390 pixels wide. Every API
+  request was intercepted and no OpenAI, provider, account, broker, order,
+  policy, journal, or live-trading mutation occurred.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,
