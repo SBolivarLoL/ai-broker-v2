@@ -268,6 +268,18 @@ market input `referencePrice`; `research.js` labels either the latest returned
 price or historical daily close explicitly and renders missing company, metric,
 freshness, and scenario-output impact through the shared coverage vocabulary.
 
+Generated company research uses the same persisted `research_runs` boundary
+without a migration. `research/research.ts` freezes the bounded model output,
+canonical evidence array, original evaluation metrics, run/symbol/model
+identity, and evaluation time in `company-research-replay-v1`. The builder
+canonicalizes and hashes the manifest, then immediately runs the same verifier
+used by `POST /api/research/runs/{runId}/replay`. Verification rejects duplicate
+source IDs, changed source payload hashes, changed output or deterministic
+metrics, invalid identity, and missing legacy manifests before recomputing the
+schema, citations, numeric grounding, safe-language score, and visible coverage
+from persisted inputs. Replay reports zero provider and model requests; it does
+not regenerate prose or treat a content hash as external approval.
+
 `research/copilot.ts` keeps model output behind typed read-only tools, citation
 guards, independent counter-thesis review, and exact simulation authority.
 `research/advisor-coverage.ts` projects safe evidence identity, phase, source,

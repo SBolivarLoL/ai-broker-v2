@@ -35,6 +35,7 @@ import {
   getPointInTimeComparableValuations,
   getValuationScenarios,
   openaiModel,
+  replayCompanyResearch,
   runCompanyResearch,
 } from "./research";
 import {
@@ -710,6 +711,22 @@ export async function handleResearchRequest(
 
   if (url.pathname === "/api/research/metrics" && request.method === "GET") {
     return json(store.researchMetrics());
+  }
+
+  const companyReplayMatch = url.pathname.match(
+    /^\/api\/research\/runs\/([^/]+)\/replay$/,
+  );
+  if (companyReplayMatch && request.method === "POST") {
+    const stored = store.getResearch(companyReplayMatch[1] ?? "");
+    if (!stored) return json({ error: "Research run not found" }, 404);
+    try {
+      return json(replayCompanyResearch(stored.payload?.evidenceReplay));
+    } catch {
+      throw new ClientError(
+        "Stored company research replay failed integrity verification",
+        409,
+      );
+    }
   }
 
   if (

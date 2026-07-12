@@ -2,7 +2,7 @@ import { Agent, Runner, tool } from "@openai/agents";
 import { TimeFrame, type Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { z } from "zod";
 import { buildComparableValuationRow, comparableValuationTable, parseComparableSymbols } from "./comparable-valuation";
-import { canonicalEvidence, dedupeEvidence, type CanonicalEvidence, type CanonicalEvidenceInput } from "../../shared/evidence";
+import { canonicalEvidence, dedupeEvidence, evidenceContentHash, stableEvidenceJson, type CanonicalEvidence, type CanonicalEvidenceInput } from "../../shared/evidence";
 import { getFinnhubCompanyEnrichment } from "../../integrations/finnhub";
 import { getGdeltCompanySignals } from "../../integrations/gdelt";
 import { getOfficialMacroContext } from "../../integrations/macro-context";
@@ -44,6 +44,23 @@ export type ResearchMetrics = {
   schemaValid: boolean; citationValidity: number; citationCoverage: number; numericGrounding: number;
   toolCoverage: number; limitationsPresent: boolean; safeLanguage: boolean; overallScore: number;
   latencyMs: number; toolCalls: number; requests: number; inputTokens: number; outputTokens: number; totalTokens: number;
+};
+
+export type CompanyResearchReplay = {
+  schemaVersion: "company-research-replay-v1";
+  payloadPolicy: "frozen_generated_report_and_canonical_sources";
+  evaluationVersion: "company-research-evaluation-v1";
+  report: {
+    schemaVersion: "company-research-v2";
+    runId: string;
+    symbol: string;
+    model: string;
+    research: CompanyResearch;
+    sources: ResearchEvidence[];
+    metrics: ResearchMetrics;
+    evaluatedAt: string;
+  };
+  contentHash: string;
 };
 
 const forbiddenClaims = /\b(guaranteed|risk[- ]free|can't lose|cannot lose|will definitely|sure thing)\b/i;
@@ -101,6 +118,146 @@ function researchValidation(output: unknown, symbol: string, evidence: ResearchE
 
 export function validResearchOutput(output: unknown, symbol: string, evidence: ResearchEvidence[]) {
   return researchValidation(output, symbol, evidence).safe;
+}
+
+const deterministicMetricKeys = [
+  "schemaValid",
+  "citationValidity",
+  "citationCoverage",
+  "numericGrounding",
+  "toolCoverage",
+  "limitationsPresent",
+  "safeLanguage",
+  "overallScore",
+] as const;
+
+function deterministicMetrics(metrics: ResearchMetrics) {
+  return Object.fromEntries(
+    deterministicMetricKeys.map((key) => [key, metrics[key]]),
+  );
+}
+
+function researchRuntimeMetrics(metrics: ResearchMetrics) {
+  const keys = [
+    "latencyMs",
+    "toolCalls",
+    "requests",
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+  ] as const;
+  const runtime = Object.fromEntries(keys.map((key) => [key, metrics[key]]));
+  if (
+    Object.values(runtime).some(
+      (value) => !Number.isFinite(value) || value < 0,
+    )
+  )
+    throw new Error("Company research replay runtime metrics are invalid");
+  return runtime;
+}
+
+export function buildCompanyResearchReplay(report: {
+  schemaVersion: "company-research-v2";
+  runId: string;
+  model: string;
+  research: CompanyResearch;
+  sources: ResearchEvidence[];
+  metrics: ResearchMetrics;
+  serverRespondedAt: string;
+}): CompanyResearchReplay {
+  const canonicalReport = JSON.parse(
+    stableEvidenceJson({
+      schemaVersion: report.schemaVersion,
+      runId: report.runId,
+      symbol: report.research.symbol,
+      model: report.model,
+      research: report.research,
+      sources: report.sources,
+      metrics: report.metrics,
+      evaluatedAt: report.serverRespondedAt,
+    }),
+  ) as CompanyResearchReplay["report"];
+  const manifest = {
+    schemaVersion: "company-research-replay-v1" as const,
+    payloadPolicy: "frozen_generated_report_and_canonical_sources" as const,
+    evaluationVersion: "company-research-evaluation-v1" as const,
+    report: canonicalReport,
+  };
+  const replay = { ...manifest, contentHash: evidenceContentHash(manifest) };
+  if (replayCompanyResearch(replay).status !== "verified")
+    throw new Error("Company research replay does not pass frozen validation");
+  return replay;
+}
+
+export function replayCompanyResearch(value: unknown) {
+  if (!value || typeof value !== "object")
+    throw new Error("Company research replay is invalid");
+  const replay = value as CompanyResearchReplay;
+  const { contentHash, ...manifest } = replay;
+  if (
+    replay.schemaVersion !== "company-research-replay-v1" ||
+    replay.payloadPolicy !== "frozen_generated_report_and_canonical_sources" ||
+    replay.evaluationVersion !== "company-research-evaluation-v1" ||
+    replay.report?.schemaVersion !== "company-research-v2" ||
+    contentHash !== evidenceContentHash(manifest)
+  )
+    throw new Error("Company research replay integrity check failed");
+  const research = CompanyResearchOutput.parse(replay.report.research);
+  if (!Array.isArray(replay.report.sources))
+    throw new Error("Company research replay sources are invalid");
+  const sourceIds = new Set<string>();
+  for (const source of replay.report.sources) {
+    if (
+      !source ||
+      typeof source !== "object" ||
+      typeof source.id !== "string" ||
+      sourceIds.has(source.id) ||
+      source.contentHash !== evidenceContentHash(source.data)
+    )
+      throw new Error("Company research replay source integrity check failed");
+    sourceIds.add(source.id);
+  }
+  if (
+    typeof replay.report.runId !== "string" ||
+    !replay.report.runId.trim() ||
+    !SymbolSchema.safeParse(replay.report.symbol).success ||
+    replay.report.symbol !== research.symbol ||
+    typeof replay.report.model !== "string" ||
+    !replay.report.model.trim()
+  )
+    throw new Error("Company research replay run identity is invalid");
+  const runtime = researchRuntimeMetrics(replay.report.metrics);
+  const metrics = evaluateResearch(research, replay.report.sources, runtime);
+  if (
+    evidenceContentHash(deterministicMetrics(metrics)) !==
+    evidenceContentHash(deterministicMetrics(replay.report.metrics))
+  )
+    throw new Error("Company research replay metrics do not match frozen evidence");
+  const coverage = buildCompanyResearchCoverage(
+    research,
+    replay.report.sources,
+    metrics,
+    replay.report.evaluatedAt,
+  );
+  return {
+    schemaVersion: "company-research-replay-result-v1" as const,
+    status: validResearchOutput(research, research.symbol, replay.report.sources)
+      ? ("verified" as const)
+      : ("failed_validation" as const),
+    providerRequests: 0 as const,
+    modelRequests: 0 as const,
+    replayHash: contentHash,
+    report: {
+      schemaVersion: replay.report.schemaVersion,
+      runId: replay.report.runId,
+      symbol: replay.report.symbol,
+      model: replay.report.model,
+      research,
+      sources: replay.report.sources,
+      metrics,
+      ...coverage,
+    },
+  };
 }
 
 let sharedSecClient: SecEdgarClient | null = null;
@@ -487,5 +644,6 @@ export async function runCompanyResearch(alpaca: Alpaca, rawSymbol: string, runI
   const usage = result.state.usage;
   const metrics = evaluateResearch(result.finalOutput, sources, { latencyMs: Math.round(performance.now() - started), toolCalls, requests: usage.requests, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens });
   const serverRespondedAt = new Date().toISOString();
-  return { schemaVersion: "company-research-v2" as const, runId, model: openaiModel(), research: result.finalOutput, sources, metrics, ...buildCompanyResearchCoverage(result.finalOutput, sources, metrics, serverRespondedAt) };
+  const report = { schemaVersion: "company-research-v2" as const, runId, model: openaiModel(), research: result.finalOutput, sources, metrics, ...buildCompanyResearchCoverage(result.finalOutput, sources, metrics, serverRespondedAt) };
+  return { ...report, evidenceReplay: buildCompanyResearchReplay(report) };
 }

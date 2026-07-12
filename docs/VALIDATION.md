@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `c46aeb5`: 2026-07-12.
+Last reviewed against `main` commit `b4372a9`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,8 +8,8 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 447 tests, 0 failures, 2,350 assertions across 94 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
-| `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
+| `bun run check`    | Pass: 449 tests, 0 failures, 2,358 assertions across 94 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run coverage` | Pass: 98.11% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
@@ -47,6 +47,16 @@ startup policy validation, GET/POST response shapes, and unavailable-service
 handling. The tests use disposable databases; validation deliberately did not
 run pruning against the real local `data/app.db`.
 
+The company-research replay slice adds one deterministic verifier contract and
+one direct API/SQLite contract. They prove canonical manifest creation, frozen
+generated output and source persistence, zero provider/model replay requests,
+schema/citation/numeric/safe-language/coverage recomputation, preserved runtime
+metrics, unique source IDs, per-source payload hashes, run/symbol identity,
+missing-run 404 behavior, and fail-closed 409 behavior for legacy artifacts.
+Tests also re-hash deliberately changed source data, numeric output, and symbol
+identity so the verifier—not only the outer digest comparison—rejects them. No
+live OpenAI or provider request was made.
+
 The bundled Node runtime passed `node --check frontend/research.js` after the
 scenario v3 renderer changed from `currentPrice` to `referencePrice` and added
 the historical-close label. A new headed browser pass was not run because the
@@ -63,7 +73,7 @@ specific rendering change.
 | Concentration | `backend/app.ts` 376 lines; `backend/persistence/store.ts` 940 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `c46aeb5`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `b4372a9`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -81,10 +91,10 @@ specific rendering change.
 | Risk and portfolio math     | High at module level                               | Unit, regression, portfolio system tests, and scheduled account/position reconciliation contracts                                                                                                                                                                                                                                                                                                                                                                                                           | No credentialed scheduled reconciliation over a long account history                                                                      |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, friction calibration, compatible cohort comparison, pre-registered paper protocols, promotion evidence gates, leakage checks, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
-| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests                                                                                                                                                                                                             | No production-sized restore timing or closed-beta operations drill                                                                        |
+| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation/scenario/company-research replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                                                        |
 | Provider normalization      | Good with recorded/redacted fixtures                | A versioned manifest covers all 15 external governance source IDs; 14 contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas, alongside canonical time-provenance and persisted point-in-time valuation coverage | CI fixtures cannot prove current live-provider behavior or entitlement; not every DTO has the explicit time taxonomy, and historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, selective enforcement, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, actor-scoped strategy dataset quality stats, and transactional retention for named high-growth records with lineage protection | Internal classifications and the local retention policy are not legal or data-entitlement approval; durable records outside the named high-growth categories remain deliberately unpruned |
-| Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, deterministic replay hashes, and SQLite/API persistence                                                                                                                                                                                                                                                                                                                                               | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
+| Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
 | Browser UI                  | Targeted interaction confidence                    | Earlier interaction checks plus the 2026-07-10 Option A workstation pass rendered all seven workspaces, the populated Strategy Lab, the data-health drawer, private-value state, and confirmation dialogs. The persistent desktop rail, compact tablet rail, active-item-centered mobile navigation, sticky status strip, and evidence layouts were checked at 1440×1000, 768×1000, and 390×844 with no page-level horizontal overflow.                                                                     | No maintained automated accessibility/responsive regression suite                                                                         |
@@ -343,7 +353,12 @@ Additional mechanical checks:
   cited claims, exactly grounded numeric metrics, and source records with
   observation/publication/effective time. Retrieval-only evidence stays
   consequential, report response time is separate, and SEC/news retrieval is
-  explicitly not relabeled as provider observation.
+  explicitly not relabeled as provider observation. A separate replay contract
+  canonicalizes the generated output, sources, metrics, identity, and evaluation
+  time; verifies the manifest and each source payload; recomputes deterministic
+  grounding and coverage with zero provider/model requests; and rejects missing,
+  re-hashed source, output-metric, or symbol evidence through direct API and
+  SQLite tests.
 - Company-market route caching was checked to preserve cached provider
   retrieval time separately from per-response server time across the root
   snapshot, quote, bars, benchmark bars, and news entries.
