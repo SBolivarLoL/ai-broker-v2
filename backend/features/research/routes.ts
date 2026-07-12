@@ -28,6 +28,7 @@ import {
   runPortfolioQuestion,
 } from "./copilot";
 import { buildFixedIncomeResearchStatus } from "./fixed-income-research";
+import { normalizeSecPointInTimeDate } from "./sec-financial-trends";
 import {
   getCompanySecEvidence,
   getComparableValuations,
@@ -59,7 +60,10 @@ type ResearchContext = {
     symbol: string,
     companyName: string,
   ) => Promise<OpenFigiIdentity>;
-  secCompanyEvidence?: (symbol: string) => Promise<SecCompanyEvidence>;
+  secCompanyEvidence?: (
+    symbol: string,
+    filedThrough: string | null,
+  ) => Promise<SecCompanyEvidence>;
   officialMacroContext?: () => Promise<MacroContext>;
   comparableValuations?: (
     symbol: string,
@@ -332,8 +336,37 @@ export async function handleResearchRequest(
     const symbol = symbolFrom(url.searchParams.get("symbol"));
     if (!validSymbol(symbol))
       return json({ error: "A valid stock symbol is required" }, 400);
+    const requestedAsOf = url.searchParams.get("asOf");
+    let filedThrough: string | null = null;
+    if (requestedAsOf) {
+      try {
+        filedThrough = normalizeSecPointInTimeDate(
+          requestedAsOf,
+          new Date().toISOString().slice(0, 10),
+        );
+      } catch (error) {
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Invalid SEC point-in-time date",
+          },
+          400,
+        );
+      }
+    }
     return json(
-      await (context.secCompanyEvidence ?? getCompanySecEvidence)(symbol),
+      await (
+        context.secCompanyEvidence ??
+        ((requestedSymbol, cutoff) =>
+          getCompanySecEvidence(
+            requestedSymbol,
+            undefined,
+            undefined,
+            cutoff,
+          ))
+      )(symbol, filedThrough),
     );
   }
 

@@ -29,6 +29,7 @@ type RouteOptions = {
   ) => Promise<OpenFigiIdentity>;
   secCompanyEvidence?: (
     symbol: string,
+    filedThrough: string | null,
   ) => ReturnType<typeof getCompanySecEvidence>;
   officialMacroContext?: () => Promise<MacroContext>;
   comparableValuations?: (
@@ -432,7 +433,7 @@ test("company research route preserves the versioned coverage contract", async (
 test("SEC research route preserves provider retrieval and server response time", async () => {
   const retrievedAt = "2026-07-10T08:29:59.000Z";
   const serverRespondedAt = "2026-07-10T08:30:00.000Z";
-  let requestedSymbol = "";
+  const requests: Array<{ symbol: string; filedThrough: string | null }> = [];
   const payload = {
     symbol: "AAPL",
     companyName: "Apple Inc.",
@@ -446,6 +447,23 @@ test("SEC research route preserves provider retrieval and server response time",
       serverResponseTime: serverRespondedAt,
     },
     asOf: serverRespondedAt,
+    pointInTime: {
+      status: "not_requested" as const,
+      asOfDate: null,
+      cutoffAt: null,
+      publicationPrecision: "sec_filed_date" as const,
+      excluded: {
+        filings: 0,
+        sections: 0,
+        selectedFactObservations: 0,
+        trendObservations: 0,
+      },
+      classification: {
+        status: "unavailable" as const,
+        reason:
+          "SEC submissions expose current classification without history.",
+      },
+    },
     sources: [],
     deduplication: { duplicates: [], revisions: [] },
   };
@@ -454,15 +472,60 @@ test("SEC research route preserves provider retrieval and server response time",
     undefined,
     () => true,
     {
-      secCompanyEvidence: async (symbol) => {
-        requestedSymbol = symbol;
+      secCompanyEvidence: async (symbol, filedThrough) => {
+        requests.push({ symbol, filedThrough });
         return payload;
       },
     },
   );
-  expect(requestedSymbol).toBe("AAPL");
+  expect(requests).toEqual([{ symbol: "AAPL", filedThrough: null }]);
   expect(response?.status).toBe(200);
   expect(await response?.json()).toEqual(payload);
+
+  const historical = await route(
+    "/api/research/sec?symbol=AAPL&asOf=2025-06-30",
+    undefined,
+    () => true,
+    {
+      secCompanyEvidence: async (symbol, filedThrough) => {
+        requests.push({ symbol, filedThrough });
+        return {
+          ...payload,
+          pointInTime: {
+            ...payload.pointInTime,
+            status: "applied" as const,
+            asOfDate: filedThrough,
+            cutoffAt: `${filedThrough}T23:59:59.999Z`,
+          },
+        };
+      },
+    },
+  );
+  expect(historical?.status).toBe(200);
+  expect(requests.at(-1)).toEqual({
+    symbol: "AAPL",
+    filedThrough: "2025-06-30",
+  });
+  expect(await historical?.json()).toMatchObject({
+    pointInTime: {
+      status: "applied",
+      asOfDate: "2025-06-30",
+      cutoffAt: "2025-06-30T23:59:59.999Z",
+    },
+  });
+
+  const invalid = await route("/api/research/sec?symbol=AAPL&asOf=2025-02-30");
+  expect(invalid?.status).toBe(400);
+  expect(await invalid?.json()).toEqual({
+    error: "SEC point-in-time date must be a real calendar date",
+  });
+
+  const future = await route("/api/research/sec?symbol=AAPL&asOf=2999-01-01");
+  expect(future?.status).toBe(400);
+  expect(await future?.json()).toEqual({
+    error: "SEC point-in-time date cannot be in the future",
+  });
+  expect(requests).toHaveLength(2);
 });
 
 test("macro research route preserves explicit unavailable retrieval time", async () => {

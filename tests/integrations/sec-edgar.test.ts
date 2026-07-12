@@ -281,6 +281,60 @@ test("SEC research projection refreshes delivery time without changing evidence 
       .filter(source => source.id.startsWith("sec:section:"))
       .every(source => source.publishedAt && source.effectivePeriod),
   ).toBe(true);
+
+  const historical = await getCompanySecEvidence(
+    "AAPL",
+    client,
+    () => new Date(now),
+    "2025-09-01",
+  );
+  expect(historical.pointInTime).toEqual({
+    status: "applied",
+    asOfDate: "2025-09-01",
+    cutoffAt: "2025-09-01T23:59:59.999Z",
+    publicationPrecision: "sec_filed_date",
+    excluded: {
+      filings: 1,
+      sections: 2,
+      selectedFactObservations: 1,
+      trendObservations: 1,
+    },
+    classification: {
+      status: "unavailable",
+      reason:
+        "SEC submissions expose the current SIC classification without a historical classification series; point-in-time classification must remain unavailable.",
+    },
+  });
+  const filingSource = historical.sources.find(
+    source => source.id === "sec:filings:AAPL",
+  )!;
+  const filingData = filingSource.data as {
+    filings: Array<{ form: string; filed: string }>;
+    sections: Array<{ form: string; filed: string }>;
+    limitations: string[];
+  };
+  expect(filingData.filings).toEqual([
+    expect.objectContaining({ form: "10-Q", filed: "2025-08-01" }),
+  ]);
+  expect(filingData.sections).toHaveLength(2);
+  expect(filingData.sections.every(section => section.filed <= "2025-09-01")).toBe(true);
+  expect(filingData.limitations.join(" ")).toContain(
+    "excludes SEC filings and sections filed after 2025-09-01",
+  );
+  expect(
+    historical.sources
+      .filter(source => source.id.startsWith("sec:section:"))
+      .every(source => source.publishedAt! <= "2025-09-01T23:59:59.999Z"),
+  ).toBe(true);
+  const factSource = historical.sources.find(
+    source => source.id === "sec:facts:AAPL",
+  )!;
+  const factData = factSource.data as {
+    facts: Record<string, unknown>;
+    trends: { metrics: unknown[] };
+  };
+  expect(factData.facts).toEqual({});
+  expect(factData.trends.metrics).toEqual([]);
 });
 
 test("extracts material 8-K items instead of table-of-contents entries", async () => {

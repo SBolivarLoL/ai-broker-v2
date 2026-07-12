@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `4ac24df`: 2026-07-12.
+Last reviewed against `main` commit `3db616d`: 2026-07-12.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -58,7 +58,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 ### Research and AI
 
-- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts. Classification, recent-filing, filing-evidence/section, company-facts result, and alert DTOs distinguish applicable filing-date publication, report-date effective period, provider retrieval, and server response time. Cache hits retain the original provider retrieval timestamp while each normalized response receives a fresh server timestamp.
+- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts. Classification, recent-filing, filing-evidence/section, company-facts result, and alert DTOs distinguish applicable filing-date publication, report-date effective period, provider retrieval, and server response time. The SEC research route accepts an optional non-future `YYYY-MM-DD` `asOf` cutoff; eligible facts are selected only after post-cutoff records are removed, later amendments cannot replace earlier observations, post-cutoff filing metadata and extracted sections are omitted, and the response reports excluded filing/section/selected-fact/trend counts plus day-level publication precision. Historical SIC fails closed as unavailable because submissions expose only the current classification. Cache hits retain the original provider retrieval timestamp while each normalized response receives a fresh server timestamp.
 - Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
 - Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
 - Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage. Root, provider-coverage, indicator, and canonical-evidence DTOs distinguish Treasury publication dates, FRED observation dates, BLS monthly and BEA quarterly effective periods, provider retrieval, and per-response server time. Raw cache hits preserve their original provider retrieval timestamps and evidence hashes; unqueried, misconfigured, or failed providers expose `retrievedAt:null` instead of inventing a successful read. Canonical evidence can retain an explicitly unavailable observation as `observedAt:null` instead of substituting an unrelated as-of time.

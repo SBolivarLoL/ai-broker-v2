@@ -231,6 +231,15 @@ responses. Proposal and review reads remain distinct, local simulation evidence
 is not mislabeled as provider observation, and `portfolio.js` renders the shared
 coverage region before either Advisor report's conclusions.
 
+`research/sec-financial-trends.ts` owns SEC fact cadence, filing-date
+eligibility, amendment selection, and bounded point-in-time trend projection.
+The research route validates an optional day-precision cutoff before provider
+work; `research.ts` filters facts, filing metadata, and sections before building
+canonical response evidence and exposes exclusion counts. Retrieval can occur
+later without making a later filing eligible. Current SEC SIC is never projected
+backward because the submissions payload does not contain classification
+history.
+
 `research/company-research-coverage.ts` owns the normalized v2 quality and root
 time contract for generated company reports. `research.ts` retains typed tool
 orchestration and canonical evidence collection, while `routes.ts` persists the
