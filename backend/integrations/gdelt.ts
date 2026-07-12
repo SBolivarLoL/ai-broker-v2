@@ -363,6 +363,7 @@ export class GdeltClient {
         retrievedAt,
         serverRespondedAt,
         publishedAt,
+        effectivePeriod: null,
         entityIds: { symbol },
         data: {
           symbol,

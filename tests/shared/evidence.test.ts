@@ -5,6 +5,20 @@ import {
   evidenceContentHash,
 } from "../../backend/shared/evidence";
 
+type IsOptional<T, K extends keyof T> = {} extends Pick<T, K> ? true : false;
+type ExpectFalse<T extends false> = T;
+type CanonicalInput = Parameters<typeof canonicalEvidence>[0];
+type TimeField =
+  | "observedAt"
+  | "publishedAt"
+  | "effectivePeriod"
+  | "serverRespondedAt";
+type OptionalTimeField = {
+  [K in TimeField]: IsOptional<CanonicalInput, K>;
+}[TimeField];
+type TimeTaxonomyMustBeExplicit = ExpectFalse<OptionalTimeField>;
+const explicitTimeContract: TimeTaxonomyMustBeExplicit = false;
+
 const record = (overrides: Record<string, unknown> = {}) =>
   canonicalEvidence({
     id: "sec:AAPL:filing",
@@ -54,10 +68,44 @@ test("builds deterministic canonical evidence with normalized identity and URL",
 });
 
 test("canonical evidence preserves an explicitly unavailable observation time", () => {
+  expect(explicitTimeContract).toBe(false);
   const evidence = record({ observedAt: null });
   expect(evidence.observedAt).toBeNull();
   expect(evidence.time.observationTime).toBeNull();
   expect(evidence.retrievedAt).toBe("2026-06-29T12:00:00.000Z");
+});
+
+test("canonical evidence rejects an omitted time taxonomy at runtime", () => {
+  const complete = {
+    id: "fixture:missing-time",
+    provider: "fixture",
+    sourceId: "fixture",
+    category: "events" as const,
+    authority: "derived" as const,
+    claimStatus: "derived_analysis" as const,
+    title: "Fixture",
+    url: "https://example.com/fixture",
+    asOf: "2026-06-29T12:00:00.000Z",
+    observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
+    retrievedAt: "2026-06-29T12:00:00.000Z",
+    serverRespondedAt: "2026-06-29T12:00:01.000Z",
+    entityIds: {},
+    data: {},
+  };
+  const { observedAt: _observedAt, ...missingObservation } = complete;
+  expect(() => canonicalEvidence(missingObservation as any)).toThrow(
+    "explicitly declare observedAt",
+  );
+  const {
+    publishedAt: _publishedAt,
+    effectivePeriod: _effectivePeriod,
+    ...missingPublicationAndPeriod
+  } = complete;
+  expect(() => canonicalEvidence(missingPublicationAndPeriod as any)).toThrow(
+    "publishedAt, effectivePeriod",
+  );
 });
 
 test("deduplicates exact evidence conservatively and records source revisions", () => {

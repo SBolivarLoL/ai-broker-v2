@@ -338,7 +338,16 @@ export function buildComparableValuationRow(
     url: "https://alpaca.markets/data",
     asOf,
     retrievedAt: asOf,
+    serverRespondedAt: asOf,
     observedAt: pointInTime.priceObservedAt ?? null,
+    publishedAt: null,
+    effectivePeriod: pointInTime.priceObservedAt
+      ? {
+          start: pointInTime.priceObservedAt,
+          end: pointInTime.priceObservedAt,
+          label: "Historical daily-close observation",
+        }
+      : null,
     entityIds: { symbol: company.ticker },
     data: {
       symbol: company.ticker,
@@ -396,7 +405,10 @@ export function buildComparableValuationRow(
     url: factsUrl,
     asOf,
     retrievedAt: asOf,
+    serverRespondedAt: asOf,
     observedAt: null,
+    publishedAt: null,
+    effectivePeriod: null,
     entityIds: { symbol: company.ticker },
     data: {
       row,
