@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `78b7df2`: 2026-07-12.
+Last reviewed against `main` commit `e749b81`: 2026-07-12.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -65,7 +65,7 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states. GDELT media-signal root/article DTOs, Finnhub root/endpoint/profile/earnings/news DTOs, and OpenFIGI root/selected/candidate instrument DTOs preserve applicable publication or effective-period, provider-retrieval, and server-response time. Cached provider data keeps its original retrieval time while refreshing per-response server time; unqueried Finnhub states report `retrievedAt:null` instead of inventing a provider fetch.
 - Comparable valuation tables from latest returned Alpaca IEX price plus directly reported SEC revenue, net income, diluted EPS, equity, and shares. The v2 root, canonical sources, and visible quality panel distinguish SEC filing publication and input effective periods, SEC/IEX retrieval, unavailable provider price observation, response time, requested/received/omitted companies and metrics, and conclusion impact. Missing or invalid inputs remain unavailable; a price retrieval is not relabeled as a trade observation.
 - User-authored bull/base/bear assumptions converted into deterministic 12-month valuation scenarios. The v2 baseline, scenario, canonical-source, and quality contract exposes SEC and price input coverage, all three assumption cases, unavailable outputs, calculation time, retrieval-only price freshness, and conclusion impact. They are scenarios, not forecasts.
-- Company research and portfolio Q&A agents with typed read-only tools, bounded outputs, evidence-ID validation, numeric grounding checks, and unsafe-certainty rejection.
+- Company research and portfolio Q&A agents with typed read-only tools, bounded outputs, evidence-ID validation, numeric grounding checks, and unsafe-certainty rejection. Completed company-research v2 payloads persist their canonical evidence and normalized root time, and expose a visible quality panel for five required tool calls, four required and two supplemental evidence categories, cited claims, exactly grounded numeric metrics, semantic source-time records, missing inputs, and conclusion impact. SEC and news retrieval is never substituted for provider observation; the derived one-year market-history period remains separate from an explicitly unavailable latest-price observation.
 - Independent counter-thesis review before actionable advisor ideas; unapproved ideas become watch-only.
 - Receipt-linked trade journal with immutable thesis text, human-classified thesis drift, fresh market/position context, and audit history.
 

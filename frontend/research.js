@@ -382,7 +382,7 @@ function renderResearch(data) {
     m = data.metrics,
     sourceMap = new Map(data.sources.map((source) => [source.id, source]));
   $("#research-result").innerHTML =
-    `<div class="research-header"><div><h2>${esc(r.companyName)} <span class="muted">${esc(r.symbol)}</span></h2><div class="muted">Generated ${esc(new Date(data.asOf).toLocaleString())} · ${esc(data.model)} · run ${esc(data.runId.slice(0, 8))}</div></div><span class="pill stance">${esc(r.stance)}</span></div><p>${esc(r.executiveSummary)}</p>${researchCitations(r.summaryEvidence, sourceMap)}<div class="metrics">${r.keyMetrics
+    `${calculationCoveragePanel("Company research", data.quality)}<div class="research-header"><div><h2>${esc(r.companyName)} <span class="muted">${esc(r.symbol)}</span></h2><div class="muted">Generated ${esc(new Date(data.asOf).toLocaleString())} · ${esc(data.model)} · run ${esc(data.runId.slice(0, 8))}</div></div><span class="pill stance">${esc(r.stance)}</span></div><p>${esc(r.executiveSummary)}</p>${researchCitations(r.summaryEvidence, sourceMap)}<div class="metrics">${r.keyMetrics
       .slice(0, 4)
       .map(
         (metric) =>

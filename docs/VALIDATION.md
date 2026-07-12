@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `78b7df2`: 2026-07-12.
+Last reviewed against `main` commit `e749b81`: 2026-07-12.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,9 +8,9 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-12                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 396 tests, 0 failures, 1,836 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
-| `bun run eval`     | Pass: 41 tests, 0 failures, 189 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run coverage` | Pass: 98.10% functions, 97.29% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run check`    | Pass: 399 tests, 0 failures, 1,850 assertions across 90 files                     | Strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run eval`     | Pass: 43 tests, 0 failures, 193 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
+| `bun run coverage` | Pass: 98.12% functions, 97.28% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, and `scripts/`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -20,11 +20,11 @@ Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
-| TypeScript    | 100 backend modules, 11 operational scripts, 89 files under `tests/`, and one coverage-gate test                                   |
+| TypeScript    | 101 backend modules, 11 operational scripts, 89 files under `tests/`, and one coverage-gate test                                   |
 | Concentration | `backend/app.ts` 352 lines; `backend/persistence/store.ts` 935 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `78b7df2`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `e749b81`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -244,6 +244,13 @@ Additional mechanical checks:
   provider timestamp stays `observedAt:null` while retrieval, local calculation,
   and response times remain explicit. Expected, received, omitted, freshness,
   missing-company/metric/output, and conclusion-impact evidence is preserved.
+- Company-research v2 roots and quality contracts were checked through pure
+  coverage tests and an injected direct API happy path. The contract counts all
+  five required tools, four required and two supplemental evidence categories,
+  cited claims, exactly grounded numeric metrics, and source records with
+  observation/publication/effective time. Retrieval-only evidence stays
+  consequential, report response time is separate, and SEC/news retrieval is
+  explicitly not relabeled as provider observation.
 - Company-market route caching was checked to preserve cached provider
   retrieval time separately from per-response server time across the root
   snapshot, quote, bars, benchmark bars, and news entries.
@@ -371,6 +378,15 @@ The following read-only checks were run:
   without console errors or page-level overflow at 390×844. No OpenAI run,
   broker mutation, order workflow, or live-trading authority was used, and no
   price or fundamental value was written to validation logs.
+- A 2026-07-12 headed browser pass rendered a local company-research v2 fixture
+  through the production `renderResearch` path without submitting an OpenAI
+  request. The labeled `Company research data coverage` region appeared before
+  generated claims with all six expected/received/omitted rows, partial
+  provider-time status, and both conclusion-impact messages. It produced no
+  console errors; at 390×844 the panel was 330 CSS pixels wide, contained six
+  rows, and the document remained exactly 390 pixels wide. Initial workspace
+  loads were read-only; the pass created no order, policy, broker, or live-
+  trading mutation.
 - A 2026-07-10 read-only account-schema check returned HTTP 200, confirmed a
   usable `buying_power`, and confirmed that `pattern_day_trader`,
   `daytrade_count`, `last_daytrade_count`, `daytrading_buying_power`,

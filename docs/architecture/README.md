@@ -221,3 +221,10 @@ the Alpaca latest-price helper exposes retrieval but no provider trade time, so
 price observation stays null. Scenario calculation time and user assumptions
 remain local evidence, while `research.js` renders missing company, metric,
 freshness, and scenario-output impact through the shared coverage vocabulary.
+
+`research/company-research-coverage.ts` owns the normalized v2 quality and root
+time contract for generated company reports. `research.ts` retains typed tool
+orchestration and canonical evidence collection, while `routes.ts` persists the
+completed payload and exposes an injectable direct API boundary. The browser
+uses the shared coverage renderer to show tool, evidence-category, citation,
+numeric-grounding, and semantic-time omissions before the generated claims.
