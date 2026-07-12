@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `c46aeb5`: 2026-07-12.
+Last reviewed against `main` commit `777b003`: 2026-07-12.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -174,9 +174,9 @@ It does not yet:
 
 Treat a backtest as a screening tool. A stored hash proves which input was used, not that the input was complete or representative. A useful result earns prospective shadow observation, not a larger budget.
 
-Compare cohorts with `POST /api/strategy/backtests/compare` and 2-20 immutable `backtestIds`. The comparison report is compatible only when every selected artifact has the same period, symbols, timeframe, dataset hash, friction model, baseline set, code/provider identity, and feed. Mixed evidence still returns rows and warnings, but `compatible:false` prevents treating the metrics as an apples-to-apples ranking.
+Compare cohorts with `POST /api/strategy/backtests/compare` and 2-20 unique immutable `backtestIds`. Comparison v2 is compatible only when every selected artifact has the same period, symbols, timeframe, dataset hash, friction model, baseline set, code/provider identity, and feed. Mixed evidence still returns rows and warnings, but `compatible:false` prevents treating the metrics as an apples-to-apples ranking.
 
-The browser retains recent backtest IDs and accepts one ID per line in its comparison control. It displays the compatibility verdict, named warnings, return/drawdown/turnover/Sortino/Calmar metrics, modeled costs, and capacity warnings. Aligned cohort charts and richer promotion-blocker visualization remain roadmap work.
+The browser retains recent backtest IDs and accepts one ID per line in its comparison control. The experiment workspace displays the compatibility verdict and named warnings; bounded, timestamp-aligned equity-return and drawdown charts; return, drawdown, turnover, Sortino, Calmar, and modeled-cost metrics; material/increase/reduction decision counts; full-sample and walk-forward out-of-sample 90% uncertainty bands; final-holdout and leakage-check evidence; capacity warnings; and explicit promotion blockers. Exact shared timestamps are required for chart alignment, and at most 160 shared points are returned while preserving both endpoints. Missing or incompatible evidence remains visible. Every uncertainty band is labeled non-rankable, and even a clean comparison remains blocked from promotion until the separate paper-evidence gate passes.
 
 In the workstation layout, experiment inputs stay in a compact left control column while return, benchmark, drawdown, exposure, equity-curve, trade/capacity, cost, and uncertainty evidence occupy the wider review column. The layout collapses to one column at tablet/mobile widths without hiding evidence.
 

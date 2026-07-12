@@ -1069,8 +1069,9 @@ test("strategy backtest compare API warns on incompatible cohort evidence", asyn
     body: JSON.stringify({ backtestIds: ["compare-1", "compare-2"] }),
   }));
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({
-    comparisonVersion: "strategy-backtest-comparison-v1",
+  const comparisonBody = await response.json() as any;
+  expect(comparisonBody).toMatchObject({
+    comparisonVersion: "strategy-backtest-comparison-v2",
     compatible: false,
     backtestIds: ["compare-1", "compare-2"],
     compatibility: {
@@ -1084,14 +1085,41 @@ test("strategy backtest compare API warns on incompatible cohort evidence", asyn
       ],
     },
     rows: [
-      { backtestId: "compare-1", metrics: { totalReturnPercent: 1 } },
-      { backtestId: "compare-2", metrics: { totalReturnPercent: 1 } },
+      {
+        backtestId: "compare-1",
+        metrics: { totalReturnPercent: 1 },
+        decisionCounts: { evaluatedBars: 0, materialTrades: 0 },
+        promotionReadiness: {
+          status: "blocked",
+        },
+      },
+      {
+        backtestId: "compare-2",
+        metrics: { totalReturnPercent: 1 },
+        decisionCounts: { evaluatedBars: 0, materialTrades: 0 },
+      },
     ],
-    warnings: [
-      expect.stringContaining("different dataset hashes"),
-      expect.stringContaining("different initial cash"),
-    ],
+    charts: {
+      aligned: false,
+      maxPointsPerSeries: 160,
+      series: [
+        { backtestId: "compare-1", points: [] },
+        { backtestId: "compare-2", points: [] },
+      ],
+    },
   });
+  expect(
+    comparisonBody.rows[0].promotionReadiness.blockers.map(
+      (blocker: any) => blocker.code,
+    ),
+  ).toEqual([
+    "cohort_incompatible",
+    "walk_forward_missing",
+    "uncertainty_insufficient",
+    "paper_evidence_required",
+  ]);
+  expect(comparisonBody.warnings[0]).toContain("different dataset hashes");
+  expect(comparisonBody.warnings[1]).toContain("different initial cash");
 
   const invalid = await app.fetch(new Request("http://local/api/strategy/backtests/compare", {
     method: "POST",

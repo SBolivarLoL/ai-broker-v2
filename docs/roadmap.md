@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `50e6277`: 2026-07-12.
+Last reviewed against `main` commit `777b003`: 2026-07-12.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -112,7 +112,7 @@ Exit gate: a decision can be replayed from stored, time-correct inputs, and prov
 ## Priority 2: product and UI experience
 
 1. [x] Replace raw strategy-parameter JSON as the default with strategy-specific inputs, numeric bounds, presets, and an advanced JSON view for inspection. The Strategy Lab now renders labeled fields from each strict strategy schema, offers balanced/conservative/aggressive presets, keeps advanced JSON synchronized, and invalidates stale backtests when inputs change.
-2. [ ] Expand the implemented backtest comparison control into an experiment workspace with aligned equity/drawdown charts, out-of-sample bands, decision counts, and promotion blockers. The current browser accepts recent immutable backtest IDs and shows compatibility, warnings, costs, capacity evidence, and core metrics.
+2. [x] Expand the implemented backtest comparison control into an experiment workspace with aligned equity/drawdown charts, out-of-sample bands, decision counts, and promotion blockers. Comparison v2 now returns at most 160 timestamp-aligned equity-return/drawdown points per artifact with shared sampling and preserved endpoints, normalized full-sample and walk-forward uncertainty evidence that remains non-rankable, final-holdout/leakage status, material/increase/reduction decision counts, and named promotion blockers. The responsive browser renders this evidence at desktop, tablet, and mobile widths; backtest evidence alone cannot clear the separate paper-evidence gate.
 3. [ ] Extend the persistent global data-health status and provider/dataset drawer with calculation-level expected/received/omitted/freshness/impact evidence in every workspace. Options reports quote/IV/Greek coverage; Advisor Q&A/rebalance reports, Strategy Lab run dashboards, every Company Research report, comparable/scenario valuations, and the account-activity ledger plus core portfolio risk, exposure, snapshot, performance, optimizer, scenario, and constrained-rebalance surfaces expose calculation evidence locally. The global drawer and remaining workspaces still need equivalent detail.
 4. [ ] Finish a shared visual vocabulary for loading, partial-data, empty, rate-limited, stale, blocked, and retry states. Live announcements, partial option coverage, protocol blockers, and lazy Research loading are implemented, but remaining workspace cards are not fully normalized.
 5. [ ] Continue improving dense mobile tables without hiding risk evidence. The selected dark workstation system now uses a persistent labeled desktop rail, compact tablet rail, active-item-centered horizontal mobile navigation, sticky evidence/status surfaces, and one-column mobile Strategy Lab layout. It adapts at 1440, 768, and 390 CSS pixels without horizontal page overflow; large result sets still need targeted table treatment and the existing option-chain render cap.
