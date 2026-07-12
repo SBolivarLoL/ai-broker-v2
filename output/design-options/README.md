@@ -12,6 +12,10 @@ Final prompt: Create a high-fidelity desktop UI concept for AI Broker as a dark 
 
 Final prompt: Create a high-fidelity desktop UI concept for AI Broker as a calm light decision cockpit. Use a persistent left rail, prominent account performance, explicit data coverage and paper-trading status, a concise needs-attention queue, readable holdings, and a six-step Configure → Backtest → Compare → Protocol → Shadow → Paper strategy-review journey. Emphasize progressive disclosure, human approval, friendly typography, generous spacing, and clear evidence/risk communication without making the interface feel like a consumer trading game.
 
-## Option C — Refined current system
+## Option C — Superseded light system
 
-This screenshot is the implemented current visual language after the independent UX fixes. It retains the existing light shell while adding structured Strategy Lab controls, presets, advanced JSON disclosure, modeled cost assumptions, trade/capacity evidence, uncertainty, global data health, responsive navigation, and safer dialogs.
+This screenshot records the earlier implemented light visual language before
+Option A replaced the production shell. Its structured Strategy Lab controls,
+presets, advanced JSON disclosure, modeled-cost and capacity evidence,
+uncertainty, global data health, responsive navigation, and safer dialogs
+informed the selected workstation, but its light shell is no longer current.

@@ -118,6 +118,24 @@ The order boundary is deliberately split by responsibility:
 
 These modules share one runtime and preserve the safety pipeline above.
 
+The operations boundary owns read-only state reconciliation:
+
+- `operations/reconciliation.ts` coalesces overlapping runs and compares
+  independently requested paper-account/position, bulk/per-order, and IEX
+  latest/historical-bar evidence within fixed symbol and order bounds.
+- It may synchronize the shared local order projection and receipt state only
+  when one broker observation is unambiguously newer. Equal-time conflicts,
+  malformed values, endpoint failures, and market-data lag remain unresolved
+  evidence rather than being guessed away.
+- `operations/routes.ts` exposes the operator report and admin manual trigger;
+  `app.ts` owns the optional in-process timer. The service stores run,
+  discrepancy, recovery, and sanitized failure events through the composed
+  store and has no broker mutation dependency.
+
+The IEX comparison uses distinct latest-bar and historical-bar REST paths from
+the same Alpaca provider. It proves endpoint reconciliation, not independent
+vendor agreement or external entitlement approval.
+
 `portfolio/account-state.ts` owns the allow-listed account/position composite
 returned to the browser. It applies the shared time taxonomy to account,
 position, and managed-order state without treating request receipt time as a

@@ -13,6 +13,10 @@ import {
   buildProductionGovernanceReport,
 } from "./production-governance";
 import {
+  reconciliationReport,
+  type ReconciliationRun,
+} from "./reconciliation";
+import {
   decryptSecretValue,
   encryptSecretValue,
   SecretName,
@@ -27,6 +31,10 @@ type OperationsContext = {
   actor: string;
   allow: RateLimit;
   env?: Env;
+  runReconciliation?: (
+    trigger: "manual",
+    actor: string,
+  ) => Promise<ReconciliationRun>;
 };
 
 export function secIdentityConfigured(env: Env = process.env) {
@@ -272,6 +280,29 @@ export async function handleOperationsRequest(
         datasets: store.strategyBarDatasets(actor, 100).filter(Boolean),
       }),
     );
+  }
+
+  if (
+    url.pathname === "/api/operations/reconciliation" &&
+    request.method === "GET"
+  ) {
+    return json(reconciliationReport(store));
+  }
+
+  if (
+    url.pathname === "/api/operations/reconciliation" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:operations-reconciliation`, 5)) {
+      return json(
+        { error: "Operations reconciliation rate limit exceeded" },
+        429,
+      );
+    }
+    if (!context.runReconciliation) {
+      return json({ error: "Operations reconciliation is unavailable" }, 503);
+    }
+    return json(await context.runReconciliation("manual", actor));
   }
 
   if (

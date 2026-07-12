@@ -417,7 +417,7 @@ test("runtime starts once and reconciles terminal trade stream updates", async (
   expect(app.store.events(10, "order.stream.update")).toMatchObject([{ payload: { event: "fill", orderId: order.id, clientOrderId: "stream-reconcile", status: "filled" } }]);
 });
 
-test("injected env, not process.env, controls the strategy scheduler", async () => {
+test("injected env, not process.env, controls runtime schedulers", async () => {
   const intervals: number[] = [];
   const setIntervalFn = (_callback: () => void, milliseconds: number) => {
     intervals.push(milliseconds);
@@ -426,14 +426,14 @@ test("injected env, not process.env, controls the strategy scheduler", async () 
   const store = createStore(":memory:");
   stores.push(store);
 
-  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1" }, setIntervalFn });
+  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1", RECONCILIATION_DISABLED: "1" }, setIntervalFn });
   disabled.startRuntime();
   expect(intervals).toEqual([15 * 60_000]);
 
   intervals.length = 0;
-  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000" }, setIntervalFn });
+  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000", RECONCILIATION_POLL_MS: "120000" }, setIntervalFn });
   enabled.startRuntime();
-  expect(intervals).toEqual([15 * 60_000, 30_000]);
+  expect(intervals).toEqual([15 * 60_000, 30_000, 120_000]);
 });
 
 test("data-governance API exposes provider and stored-output decisions", async () => {
@@ -446,6 +446,34 @@ test("data-governance API exposes provider and stored-output decisions", async (
   });
 });
 
+test("operations reconciliation API runs bounded broker checks and reports durable evidence", async () => {
+  const app = testApp();
+  const run = await app.fetch(
+    new Request("http://local/api/operations/reconciliation", {
+      method: "POST",
+    }),
+  );
+  expect(run.status).toBe(200);
+  const completed = await run.json() as any;
+  expect(completed).toMatchObject({
+    schemaVersion: "scheduled-reconciliation-v1",
+    trigger: "manual",
+    actor: "demo-advisor",
+    status: "healthy",
+    checks: { marketBars: "skipped", account: "passed", orders: "skipped" },
+  });
+
+  const report = await app.fetch(
+    new Request("http://local/api/operations/reconciliation"),
+  );
+  expect(report.status).toBe(200);
+  expect(await report.json()).toMatchObject({
+    reportVersion: "reconciliation-report-v1",
+    latest: { runId: completed.runId, status: "healthy" },
+    evidence: { completedRuns: 1 },
+  });
+});
+
 test("API authorization distinguishes authentication roles and route families", async () => {
   const app = testApp(productionEnv);
   expect((await app.fetch(new Request("https://broker.example.com/api/operations/policy"))).status).toBe(401);
@@ -454,6 +482,21 @@ test("API authorization distinguishes authentication roles and route families", 
   const operations = await app.fetch(new Request("https://broker.example.com/api/operations/policy", { headers: productionHeaders("operator") }));
   expect(operations.status).toBe(200);
   expect(await operations.json()).toMatchObject({ policy: { schemaVersion: "operations-policy-v1" } });
+
+  const operatorReconciliation = await app.fetch(
+    new Request("https://broker.example.com/api/operations/reconciliation", {
+      method: "POST",
+      headers: productionHeaders("operator", true),
+    }),
+  );
+  expect(operatorReconciliation.status).toBe(403);
+  const adminReconciliation = await app.fetch(
+    new Request("https://broker.example.com/api/operations/reconciliation", {
+      method: "POST",
+      headers: productionHeaders("admin", true),
+    }),
+  );
+  expect(adminReconciliation.status).toBe(200);
 
   for (const path of ["/api/orders/preview", "/api/strategy/runs", "/api/research/runs"]) {
     const response = await app.fetch(new Request(`https://broker.example.com${path}`, { method: "POST", headers: productionHeaders("viewer", true), body: "{}" }));
