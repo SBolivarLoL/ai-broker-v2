@@ -10,6 +10,13 @@ import { localResponseTimeFields } from "../../shared/time-provenance";
 import { buildDataGovernanceReport, DATA_GOVERNANCE_SOURCES } from "./data-governance";
 import { buildDataQualityReport } from "./data-quality";
 import {
+  buildClosedBetaReviewPacket,
+  closedBetaRecordEvent,
+  CLOSED_BETA_RECORD_EVENT_TYPES,
+  parseClosedBetaRecordInput,
+  parseClosedBetaResolutionInput,
+} from "./closed-beta-workflow";
+import {
   buildClosedBetaEvidenceReport,
   buildProductionGovernanceReport,
 } from "./production-governance";
@@ -65,6 +72,105 @@ function secretNameInput(value: unknown) {
     return SecretName.parse(value);
   } catch {
     throw new ClientError("Valid secret name is required", 400);
+  }
+}
+
+function closedBetaWorkflowEvents(store: Store) {
+  return CLOSED_BETA_RECORD_EVENT_TYPES.flatMap((type) =>
+    store.events(1_000, type),
+  )
+    .toSorted((left, right) => right.id - left.id)
+    .slice(0, 1_000);
+}
+
+function closedBetaEvidence(
+  store: Store,
+  workflowEvents = closedBetaWorkflowEvents(store),
+) {
+  const runs = store.strategyRuns(100);
+  const strategyRuns = runs.map((run) => {
+    const config =
+      run.config &&
+      typeof run.config === "object" &&
+      !Array.isArray(run.config)
+        ? (run.config as Record<string, unknown>)
+        : {};
+    return {
+      id: run.id,
+      status: run.status,
+      config,
+      reviewCount: Array.isArray(config.reviewHistory)
+        ? config.reviewHistory.length
+        : 0,
+      reviewTimes: Array.isArray(config.reviewHistory)
+        ? config.reviewHistory.flatMap((review) => {
+            if (!review || typeof review !== "object" || Array.isArray(review))
+              return [];
+            const reviewedAt = String(
+              (review as Record<string, unknown>).reviewedAt ?? "",
+            );
+            return Number.isFinite(new Date(reviewedAt).getTime())
+              ? [reviewedAt]
+              : [];
+          })
+        : [],
+    };
+  });
+  const strategyDecisions = runs.flatMap((run) =>
+    store.strategyDecisions(run.id, 500).map((decision) => ({
+      runId: decision.runId,
+      decision: decision.decision,
+      riskChecks:
+        decision.riskChecks &&
+        typeof decision.riskChecks === "object" &&
+        !Array.isArray(decision.riskChecks)
+          ? (decision.riskChecks as Record<string, unknown>)
+          : {},
+      paperOrderId: decision.paperOrderId,
+      orderOutcome: decision.orderOutcome,
+      createdAt: decision.createdAt,
+    })),
+  );
+  const backup = store.databaseBackup().metadata;
+  const recentEvents = store.events(1_000);
+  const eventsById = new Map(
+    [...recentEvents, ...workflowEvents].map((event) => [event.id, event]),
+  );
+  return buildClosedBetaEvidenceReport({
+    paperClient: true,
+    decisionAuditVerification: store.verifyDecisionAuditTrail(),
+    decisionAuditEntryHashes: store
+      .closedBetaAuditEntries(1_000)
+      .map((entry) => entry.entryHash),
+    receipts: store.receipts(1_000),
+    events: [...eventsById.values()],
+    strategyRuns,
+    strategyDecisions,
+    backupMetadata: {
+      sha256: backup.sha256,
+      sizeBytes: backup.sizeBytes,
+      createdAt: backup.createdAt,
+    },
+  });
+}
+
+function closedBetaReview(store: Store) {
+  const events = closedBetaWorkflowEvents(store);
+  return buildClosedBetaReviewPacket({
+    evidence: closedBetaEvidence(store, events),
+    events,
+    auditEntries: store.closedBetaAuditEntries(1_000),
+  });
+}
+
+function betaInput<T>(operation: () => T) {
+  try {
+    return operation();
+  } catch (error) {
+    throw new ClientError(
+      error instanceof Error ? error.message : "Invalid closed-beta input",
+      400,
+    );
   }
 }
 
@@ -342,53 +448,127 @@ export async function handleOperationsRequest(
     url.pathname === "/api/operations/closed-beta-evidence" &&
     request.method === "GET"
   ) {
-    const runs = store.strategyRuns(100);
-    const strategyRuns = runs.map((run) => {
-      const config =
-        run.config &&
-        typeof run.config === "object" &&
-        !Array.isArray(run.config)
-          ? (run.config as Record<string, unknown>)
-          : {};
-      return {
-        id: run.id,
-        status: run.status,
-        config,
-        reviewCount: Array.isArray(config.reviewHistory)
-          ? config.reviewHistory.length
-          : 0,
-      };
+    return json(closedBetaEvidence(store));
+  }
+
+  if (
+    url.pathname === "/api/operations/closed-beta-review" &&
+    request.method === "GET"
+  ) {
+    const packet = closedBetaReview(store);
+    return json({
+      ...packet,
+      ...localResponseTimeFields(new Date(packet.generatedAt)),
     });
-    const strategyDecisions = runs.flatMap((run) =>
-      store.strategyDecisions(run.id, 500).map((decision) => ({
-        runId: decision.runId,
-        decision: decision.decision,
-        riskChecks:
-          decision.riskChecks &&
-          typeof decision.riskChecks === "object" &&
-          !Array.isArray(decision.riskChecks)
-            ? (decision.riskChecks as Record<string, unknown>)
-            : {},
-        paperOrderId: decision.paperOrderId,
-        orderOutcome: decision.orderOutcome,
-      })),
+  }
+
+  if (
+    url.pathname === "/api/operations/closed-beta-review/packet" &&
+    request.method === "GET"
+  ) {
+    const packet = closedBetaReview(store);
+    return new Response(JSON.stringify(packet, null, 2), {
+      headers: {
+        ...securityHeaders,
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "content-disposition": `attachment; filename="closed-beta-review-${packet.generatedAt.replace(/[:.]/g, "-")}.json"`,
+      },
+    });
+  }
+
+  if (
+    url.pathname === "/api/operations/closed-beta-review/records" &&
+    request.method === "POST"
+  ) {
+    if (!allow(`${actor}:closed-beta-record`, 30))
+      return json({ error: "Closed-beta record rate limit exceeded" }, 429);
+    const evidence = closedBetaEvidence(store);
+    const recordBody = await requestJson(request);
+    const input = betaInput(() =>
+      parseClosedBetaRecordInput(
+        recordBody,
+        evidence.targets.map((target) => target.id),
+      ),
     );
-    const backup = store.databaseBackup().metadata;
+    const recordId = crypto.randomUUID();
+    const recordedAt = new Date().toISOString();
+    const event = closedBetaRecordEvent(input);
+    const payload = {
+      schemaVersion: "closed-beta-workflow-record-v1",
+      recordId,
+      ...input,
+      recordedAt,
+      recordedBy: actor,
+    };
+    const persisted = store.closedBetaWorkflowRecord({
+      eventType: event.type,
+      recordId,
+      auditKind: event.auditKind,
+      actor,
+      payload,
+      recordedAt,
+    });
     return json(
-      buildClosedBetaEvidenceReport({
-        paperClient: true,
-        decisionAuditVerification: store.verifyDecisionAuditTrail(),
-        receipts: store.receipts(1_000),
-        events: store.events(1_000),
-        strategyRuns,
-        strategyDecisions,
-        backupMetadata: {
-          sha256: backup.sha256,
-          sizeBytes: backup.sizeBytes,
-          createdAt: backup.createdAt,
-        },
-      }),
+      {
+        record: { ...persisted.payload, eventId: persisted.eventId },
+        workflowSummary: closedBetaReview(store).summary,
+        ...localResponseTimeFields(new Date()),
+      },
+      201,
     );
+  }
+
+  const incidentResolutionMatch = url.pathname.match(
+    /^\/api\/operations\/closed-beta-review\/incidents\/([^/]+)\/resolve$/,
+  );
+  if (incidentResolutionMatch && request.method === "POST") {
+    if (!allow(`${actor}:closed-beta-incident-resolution`, 30))
+      return json(
+        { error: "Closed-beta incident resolution rate limit exceeded" },
+        429,
+      );
+    const incidentRecordId = decodeURIComponent(incidentResolutionMatch[1]!);
+    const review = closedBetaReview(store);
+    const incident = review.incidents.records.find(
+      (record) => record.recordId === incidentRecordId,
+    );
+    if (!incident) return json({ error: "Closed-beta incident not found" }, 404);
+    if (incident.status === "resolved")
+      return json({ error: "Closed-beta incident is already resolved" }, 409);
+    const resolutionBody = await requestJson(request);
+    const input = betaInput(() =>
+      parseClosedBetaResolutionInput(resolutionBody),
+    );
+    if (
+      new Date(input.resolvedAt).getTime() <
+      new Date(incident.occurredAt).getTime()
+    )
+      return json(
+        { error: "resolvedAt cannot precede the incident" },
+        400,
+      );
+    const recordedAt = new Date().toISOString();
+    const payload = {
+      schemaVersion: "closed-beta-workflow-resolution-v1",
+      incidentRecordId,
+      ...input,
+      resolvedBy: actor,
+      recordedAt,
+    };
+    const persisted = store.closedBetaWorkflowRecord({
+      eventType: "operations.closed_beta.incident_resolved",
+      recordId: incidentRecordId,
+      auditKind: "closed_beta_incident_resolved",
+      actor,
+      payload,
+      recordedAt,
+    });
+    return json({
+      resolution: { ...persisted.payload, eventId: persisted.eventId },
+      workflowSummary: closedBetaReview(store).summary,
+      ...localResponseTimeFields(new Date()),
+    });
   }
 
   return null;

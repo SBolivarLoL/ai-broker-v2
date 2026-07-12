@@ -301,25 +301,259 @@ function operationsLimit(selector) {
     throw Error("Policy limits must be positive numbers.");
   return value;
 }
-function renderClosedBetaEvidence(data) {
+function betaRecordLine(record, detail = "") {
+  return `<div class="closed-beta-record"><strong>${esc(record.title)}</strong><span>${esc(record.reference)}</span><span class="muted">${esc(detail || new Date(record.occurredAt).toLocaleString())}</span>${record.note ? `<span class="muted">${esc(record.note)}</span>` : ""}</div>`;
+}
+function renderClosedBetaReview(data) {
   const summary = data.summary,
-    status = $("#closed-beta-evidence-status");
-  status.textContent = summary.readyForExitReview
-    ? "Exit review ready"
-    : `${summary.pass}/${summary.totalTargets} passing`;
-  status.className = `pill ${summary.readyForExitReview ? "gain" : summary.fail ? "loss" : ""}`;
+    evidence = data.measuredEvidence,
+    status = $("#closed-beta-evidence-status"),
+    supportAttached = data.targetDetails.filter(
+      (target) => target.supportingRecordCount > 0,
+    ).length,
+    drillsPassed = data.drills.details.filter(
+      (drill) => drill.status === "pass",
+    ).length;
+  status.textContent = summary.readyForExternalReview
+    ? "Packet ready for external review"
+    : "Review packet incomplete";
+  status.className = `pill ${summary.readyForExternalReview ? "gain" : evidence.summary.fail ? "loss" : ""}`;
   $("#closed-beta-evidence-asof").textContent =
-    `${data.targetWindowDays}-day paper target · measured ${new Date(data.generatedAt).toLocaleString()} · ${summary.needsEvidence} need evidence`;
-  $("#closed-beta-evidence").innerHTML = data.targets
+    `${evidence.targetWindowDays}-day minimum · measured ${new Date(data.generatedAt).toLocaleString()} · external approval: no`;
+  $("#closed-beta-review-summary").innerHTML =
+    `<div class="metric"><strong>${esc(`${summary.measuredTargetsPassing}/${summary.totalTargets}`)}</strong><span class="muted">Measured targets passing</span></div><div class="metric"><strong>${esc(`${supportAttached}/${summary.totalTargets}`)}</strong><span class="muted">Targets supported inside beta window</span></div><div class="metric"><strong>${esc(`${drillsPassed}/${data.drills.required.length}`)}</strong><span class="muted">In-window drills passed</span></div><div class="metric"><strong>${esc(summary.unresolvedCriticalHighCount)}</strong><span class="muted">Open critical/high incidents</span></div>`;
+  const selectedTarget = $("#closed-beta-support-target").value;
+  $("#closed-beta-support-target").innerHTML = data.targetDetails
     .map(
       (target) =>
-        `<div class="source"><div><strong>${esc(target.metric)}</strong><div class="muted">${esc(target.actual)}</div></div><span class="pill ${target.status === "pass" ? "gain" : target.status === "fail" ? "loss" : ""}">${esc(target.status.replaceAll("_", " "))}</span></div>`,
+        `<option value="${esc(target.id)}">${esc(target.metric)}</option>`,
     )
     .join("");
+  if (
+    data.targetDetails.some((target) => target.id === selectedTarget)
+  )
+    $("#closed-beta-support-target").value = selectedTarget;
+  $("#closed-beta-evidence").innerHTML = data.targetDetails
+    .map(
+      (target) =>
+        `<details class="closed-beta-target"><summary><span>${esc(target.metric)}</span><span class="pill ${target.status === "pass" ? "gain" : target.status === "fail" ? "loss" : ""}">${esc(target.status.replaceAll("_", " "))}</span></summary><div class="closed-beta-target-body"><div>${esc(target.actual)}</div><div class="muted">Target: ${esc(target.target)}</div><div class="muted">Expected evidence: ${esc(target.evidence)}</div><strong>${esc(target.supportingRecordCount)} in-window operator record${target.supportingRecordCount === 1 ? "" : "s"}</strong>${target.supportingRecords.length ? target.supportingRecords.map((record) => betaRecordLine(record)).join("") : '<div class="empty">No in-window supporting artifact reference attached.</div>'}${target.outOfWindowSupportingRecords?.length ? `<div class="muted">${esc(target.outOfWindowSupportingRecords.length)} additional record(s) fall outside the selected beta window.</div>` : ""}</div></details>`,
+    )
+    .join("");
+  $("#closed-beta-drills").innerHTML = data.drills.details
+    .map(
+      (drill) =>
+        `<div class="closed-beta-record"><strong>${esc(drill.drillType.replaceAll("_", " "))}</strong><span class="pill ${drill.status === "pass" ? "gain" : ""}">${esc(drill.status.replaceAll("_", " "))}</span><span class="muted">${drill.latestPassedAt ? `Latest pass ${esc(new Date(drill.latestPassedAt).toLocaleString())}` : "No explicit passing drill recorded"}</span></div>`,
+    )
+    .join("");
+  const window = data.betaWindow.selected;
+  $("#closed-beta-window").innerHTML = window
+    ? betaRecordLine(
+        window,
+        `${window.durationDays} days · ${window.participantCount} participant${window.participantCount === 1 ? "" : "s"} · ended ${new Date(window.endedAt).toLocaleString()}`,
+      )
+    : '<div class="empty">No completed 30+ day, 1–5 participant paper-beta window recorded.</div>';
+  const incidents = data.incidents.records;
+  $("#closed-beta-incidents").innerHTML = incidents.length
+    ? incidents
+        .map(
+          (incident) =>
+            `<div class="closed-beta-record"><strong>${esc(incident.title)}</strong><span class="pill ${["critical", "high"].includes(incident.severity) && incident.status === "open" ? "loss" : incident.status === "resolved" ? "gain" : ""}">${esc(`${incident.severity} · ${incident.status}`)}</span><span>${esc(incident.reference)}</span><span class="muted">Opened ${esc(new Date(incident.occurredAt).toLocaleString())}${incident.resolvedAt ? ` · resolved ${esc(new Date(incident.resolvedAt).toLocaleString())}` : ""}</span>${incident.status === "open" ? `<button class="ghost closed-beta-resolve" type="button" data-record-id="${esc(incident.recordId)}" data-title="${esc(incident.title)}">Resolve incident</button>` : ""}</div>`,
+        )
+        .join("")
+    : '<div class="empty">No closed-beta incidents recorded.</div>';
+  const warnings = [
+    ...data.invalidRecords.map(
+      (record) => `Invalid ${record.type}: ${record.reason}`,
+    ),
+    ...(summary.recordLimitReached
+      ? ["The 1,000-record workflow limit was reached; readiness fails closed."]
+      : []),
+  ];
+  $("#closed-beta-workflow-warnings").innerHTML = warnings.length
+    ? `<div class="warnings">${warnings.map((warning) => `<div>${esc(warning)}</div>`).join("")}</div>`
+    : "";
 }
-async function loadClosedBetaEvidence() {
-  renderClosedBetaEvidence(await api("/api/operations/closed-beta-evidence"));
+async function loadClosedBetaReview() {
+  renderClosedBetaReview(
+    await api("/api/operations/closed-beta-review"),
+  );
 }
+function betaLocalDateTime(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function betaTimestamp(selector, label) {
+  const date = new Date($(selector).value);
+  if (!Number.isFinite(date.getTime())) throw Error(`${label} is required.`);
+  return date.toISOString();
+}
+function resetClosedBetaTimes() {
+  const now = new Date();
+  [
+    "#closed-beta-support-time",
+    "#closed-beta-drill-time",
+    "#closed-beta-incident-time",
+    "#closed-beta-window-end",
+  ].forEach((selector) => {
+    $(selector).value = betaLocalDateTime(now);
+  });
+  $("#closed-beta-window-start").value = betaLocalDateTime(
+    new Date(now.getTime() - 31 * 86_400_000),
+  );
+}
+async function submitClosedBetaRecord(form, input, message) {
+  if (
+    !(await reviewDialog(
+      `${message}? This creates append-only event and audit evidence; it cannot be edited in place.`,
+    ))
+  )
+    return;
+  const button = form.querySelector("button[type=submit]");
+  try {
+    button.disabled = true;
+    await api("/api/operations/closed-beta-review/records", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    form.reset();
+    resetClosedBetaTimes();
+    await loadClosedBetaReview();
+    notify(`${message} recorded.`);
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+$("#closed-beta-support-form").onsubmit = (event) => {
+  event.preventDefault();
+  return submitClosedBetaRecord(
+    event.currentTarget,
+    {
+      kind: "supporting_record",
+      targetId: $("#closed-beta-support-target").value,
+      title: $("#closed-beta-support-title").value,
+      reference: $("#closed-beta-support-reference").value,
+      occurredAt: betaTimestamp(
+        "#closed-beta-support-time",
+        "Evidence time",
+      ),
+      note: $("#closed-beta-support-note").value,
+    },
+    "Target evidence",
+  );
+};
+$("#closed-beta-drill-form").onsubmit = (event) => {
+  event.preventDefault();
+  return submitClosedBetaRecord(
+    event.currentTarget,
+    {
+      kind: "drill",
+      drillType: $("#closed-beta-drill-type").value,
+      outcome: $("#closed-beta-drill-outcome").value,
+      title: $("#closed-beta-drill-title").value,
+      reference: $("#closed-beta-drill-reference").value,
+      occurredAt: betaTimestamp("#closed-beta-drill-time", "Drill time"),
+      note: $("#closed-beta-drill-note").value,
+    },
+    "Operations drill",
+  );
+};
+$("#closed-beta-window-form").onsubmit = (event) => {
+  event.preventDefault();
+  return submitClosedBetaRecord(
+    event.currentTarget,
+    {
+      kind: "beta_window",
+      title: $("#closed-beta-window-title").value,
+      reference: $("#closed-beta-window-reference").value,
+      startedAt: betaTimestamp("#closed-beta-window-start", "Beta start"),
+      endedAt: betaTimestamp("#closed-beta-window-end", "Beta end"),
+      participantCount: Number($("#closed-beta-window-participants").value),
+      note: $("#closed-beta-window-note").value,
+    },
+    "Paper-beta window",
+  );
+};
+$("#closed-beta-incident-form").onsubmit = (event) => {
+  event.preventDefault();
+  return submitClosedBetaRecord(
+    event.currentTarget,
+    {
+      kind: "incident",
+      severity: $("#closed-beta-incident-severity").value,
+      title: $("#closed-beta-incident-title").value,
+      reference: $("#closed-beta-incident-reference").value,
+      occurredAt: betaTimestamp(
+        "#closed-beta-incident-time",
+        "Incident time",
+      ),
+      note: $("#closed-beta-incident-note").value,
+    },
+    "Incident",
+  );
+};
+$("#closed-beta-incidents").onclick = async (event) => {
+  const button = event.target.closest(".closed-beta-resolve");
+  if (!button) return;
+  const resolution = await promptDialog("Incident resolution", "");
+  if (!resolution?.trim()) return;
+  if (
+    !(await reviewDialog(
+      `Resolve “${button.dataset.title}”? The resolution is append-only and the original incident remains visible.`,
+    ))
+  )
+    return;
+  try {
+    button.disabled = true;
+    await api(
+      `/api/operations/closed-beta-review/incidents/${encodeURIComponent(button.dataset.recordId)}/resolve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolution: resolution.trim(),
+          resolvedAt: new Date().toISOString(),
+        }),
+      },
+    );
+    await loadClosedBetaReview();
+    notify("Incident resolution recorded.");
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    button.disabled = false;
+  }
+};
+$("#closed-beta-export").onclick = async () => {
+  const button = $("#closed-beta-export");
+  try {
+    button.disabled = true;
+    const response = await fetch(
+      "/api/operations/closed-beta-review/packet",
+    );
+    if (!response.ok) {
+      const body = await response.json();
+      throw Error(body.error || "Review packet export failed");
+    }
+    const disposition = response.headers.get("content-disposition") || "";
+    const filename =
+      disposition.match(/filename="([^"]+)"/)?.[1] ||
+      "closed-beta-review.json";
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    notify("Closed-beta review packet exported.");
+  } catch (error) {
+    notify(error.message);
+  } finally {
+    button.disabled = false;
+  }
+};
+resetClosedBetaTimes();
 const views = [
   "home",
   "markets",
@@ -566,7 +800,7 @@ function setPrivacy(enabled) {
 privacyToggle.onclick = () => setPrivacy(!privacyEnabled);
 setPrivacy(privacyEnabled);
 $("#operations-refresh").onclick = () =>
-  Promise.all([loadOperationsPolicy(), loadClosedBetaEvidence()]).catch(
+  Promise.all([loadOperationsPolicy(), loadClosedBetaReview()]).catch(
     (error) => notify(error.message),
   );
 $("#operations-policy-form").onsubmit = async (event) => {
@@ -616,7 +850,7 @@ $("#operations-kill-toggle").onclick = async () => {
       body: JSON.stringify({ active: !active, reason }),
     });
     renderOperationsPolicy(result);
-    await loadClosedBetaEvidence();
+    await loadClosedBetaReview();
     notify(
       !active ? "Global kill switch activated." : "Global kill switch cleared.",
     );

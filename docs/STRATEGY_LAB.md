@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `a433e1c`: 2026-07-13.
+Last reviewed against `main` commit `712c438`: 2026-07-13.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -194,7 +194,7 @@ Pre-register a paper experiment with `POST /api/strategy/runs/{runId}/experiment
 
 The selected-run browser workflow exposes these protocol fields before the paper-approval controls and reports `Required`, `Ready`, or `Blocked` status. Approval stays disabled until a current protocol exists; the server remains authoritative and rejects attempts that bypass the browser.
 
-Promotion review is evidence-gated. A `promote` review returns `promotionEvidence.status:"needs_evidence"` and leaves the run in paper mode until the run has paper status, at least 30 paper days, enough recorded decisions, and at least 20 filled paper orders. Only `promotionEvidence.status:"pass"` can move a paper run to `completed`, and that evidence is stored in the review history.
+Promotion review is evidence-gated. A `promote` review returns `promotionEvidence.status:"needs_evidence"` and leaves the run in paper mode until the run has paper status, at least 30 paper days, enough recorded decisions, and at least 20 filled paper orders. Only `promotionEvidence.status:"pass"` can move a paper run to `completed`, and that evidence is stored in the review history. The separate operations closed-beta review counts only timestamped decisions and reviews inside its newest recorded beta window; Strategy Lab promotion evidence does not by itself satisfy the participant-beta, supporting-record, drill, incident-resolution, or external-review requirements.
 
 Each tick:
 

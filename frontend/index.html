@@ -386,15 +386,246 @@
             "
           >
             <div>
-              <h3>Paper beta evidence</h3>
+              <h3>Paper beta review</h3>
               <div class="muted" id="closed-beta-evidence-asof">
                 Measuring persisted safety evidence…
               </div>
             </div>
-            <span class="pill" id="closed-beta-evidence-status">Loading</span>
+            <div class="watchlist-actions">
+              <span class="pill" id="closed-beta-evidence-status">Loading</span
+              ><button class="ghost" id="closed-beta-export" type="button">
+                Export review packet
+              </button>
+            </div>
+          </div>
+          <div class="metrics" id="closed-beta-review-summary">
+            <div class="empty">Loading review readiness…</div>
           </div>
           <div id="closed-beta-evidence">
             <div class="empty">Loading beta evidence…</div>
+          </div>
+          <div class="closed-beta-workflow-grid">
+            <section>
+              <h4>Required drills</h4>
+              <div id="closed-beta-drills" class="closed-beta-records"></div>
+            </section>
+            <section>
+              <h4>Beta window</h4>
+              <div id="closed-beta-window" class="closed-beta-records"></div>
+            </section>
+            <section>
+              <h4>Incidents</h4>
+              <div id="closed-beta-incidents" class="closed-beta-records"></div>
+            </section>
+          </div>
+          <div id="closed-beta-workflow-warnings"></div>
+          <details class="closed-beta-entry">
+            <summary>Attach target evidence</summary>
+            <form class="ticket beta-record-form" id="closed-beta-support-form">
+              <label
+                ><span class="muted">Safety target</span
+                ><select class="field" id="closed-beta-support-target" required
+                ></select
+              ></label>
+              <label
+                ><span class="muted">Evidence title</span
+                ><input
+                  class="field"
+                  id="closed-beta-support-title"
+                  maxlength="160"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Artifact reference</span
+                ><input
+                  class="field"
+                  id="closed-beta-support-reference"
+                  maxlength="500"
+                  placeholder="local://report-or-ticket-id"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Evidence time</span
+                ><input
+                  class="field"
+                  id="closed-beta-support-time"
+                  type="datetime-local"
+                  required
+              /></label>
+              <label class="wide-field"
+                ><span class="muted">Note</span
+                ><textarea
+                  class="field"
+                  id="closed-beta-support-note"
+                  maxlength="2000"
+                ></textarea
+              ></label>
+              <button class="primary" type="submit">Attach evidence</button>
+            </form>
+          </details>
+          <details class="closed-beta-entry">
+            <summary>Record an operations drill</summary>
+            <form class="ticket beta-record-form" id="closed-beta-drill-form">
+              <label
+                ><span class="muted">Drill type</span
+                ><select class="field" id="closed-beta-drill-type" required>
+                  <option value="backup_export">Backup export</option>
+                  <option value="restore">Restore verification</option>
+                  <option value="kill_switch">Kill-switch cycle</option>
+                  <option value="incident_response">Incident response</option>
+                </select></label
+              ><label
+                ><span class="muted">Outcome</span
+                ><select class="field" id="closed-beta-drill-outcome" required>
+                  <option value="pass">Pass</option>
+                  <option value="fail">Fail</option>
+                </select></label
+              ><label
+                ><span class="muted">Drill title</span
+                ><input
+                  class="field"
+                  id="closed-beta-drill-title"
+                  maxlength="160"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Artifact reference</span
+                ><input
+                  class="field"
+                  id="closed-beta-drill-reference"
+                  maxlength="500"
+                  placeholder="local://drill-report-id"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Drill time</span
+                ><input
+                  class="field"
+                  id="closed-beta-drill-time"
+                  type="datetime-local"
+                  required
+              /></label>
+              <label class="wide-field"
+                ><span class="muted">Note</span
+                ><textarea
+                  class="field"
+                  id="closed-beta-drill-note"
+                  maxlength="2000"
+                ></textarea
+              ></label>
+              <button class="primary" type="submit">Record drill</button>
+            </form>
+          </details>
+          <details class="closed-beta-entry">
+            <summary>Record the paper-beta window</summary>
+            <form class="ticket beta-record-form" id="closed-beta-window-form">
+              <label
+                ><span class="muted">Window title</span
+                ><input
+                  class="field"
+                  id="closed-beta-window-title"
+                  maxlength="160"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Artifact reference</span
+                ><input
+                  class="field"
+                  id="closed-beta-window-reference"
+                  maxlength="500"
+                  placeholder="local://beta-review-id"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Started</span
+                ><input
+                  class="field"
+                  id="closed-beta-window-start"
+                  type="datetime-local"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Ended</span
+                ><input
+                  class="field"
+                  id="closed-beta-window-end"
+                  type="datetime-local"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Participants</span
+                ><input
+                  class="field"
+                  id="closed-beta-window-participants"
+                  type="number"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value="1"
+                  required
+              /></label>
+              <label class="wide-field"
+                ><span class="muted">Note</span
+                ><textarea
+                  class="field"
+                  id="closed-beta-window-note"
+                  maxlength="2000"
+                ></textarea
+              ></label>
+              <button class="primary" type="submit">Record beta window</button>
+            </form>
+          </details>
+          <details class="closed-beta-entry">
+            <summary>Open an incident</summary>
+            <form class="ticket beta-record-form" id="closed-beta-incident-form">
+              <label
+                ><span class="muted">Severity</span
+                ><select class="field" id="closed-beta-incident-severity" required>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select></label
+              ><label
+                ><span class="muted">Incident title</span
+                ><input
+                  class="field"
+                  id="closed-beta-incident-title"
+                  maxlength="160"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Artifact reference</span
+                ><input
+                  class="field"
+                  id="closed-beta-incident-reference"
+                  maxlength="500"
+                  placeholder="local://incident-id"
+                  required
+              /></label>
+              <label
+                ><span class="muted">Incident time</span
+                ><input
+                  class="field"
+                  id="closed-beta-incident-time"
+                  type="datetime-local"
+                  required
+              /></label>
+              <label class="wide-field"
+                ><span class="muted">Note</span
+                ><textarea
+                  class="field"
+                  id="closed-beta-incident-note"
+                  maxlength="2000"
+                ></textarea
+              ></label>
+              <button class="danger" type="submit">Open incident</button>
+            </form>
+          </details>
+          <div class="muted closed-beta-limit">
+            Operator references are internal labels, not verified artifacts.
+            A complete packet is ready for external review only; it is never
+            legal, entitlement, deployment, or live-trading approval.
           </div>
         </section>
       </div>

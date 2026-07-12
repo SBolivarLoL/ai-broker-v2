@@ -1220,7 +1220,7 @@ $("#order-form").onsubmit = async (e) => {
       loadRisk(),
       loadOrders(),
       loadOperationsPolicy(),
-      loadClosedBetaEvidence(),
+      loadClosedBetaReview(),
     ]);
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => setTimeout(r, 2000));

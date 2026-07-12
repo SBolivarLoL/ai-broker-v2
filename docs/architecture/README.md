@@ -120,7 +120,8 @@ The order boundary is deliberately split by responsibility:
 
 These modules share one runtime and preserve the safety pipeline above.
 
-The operations boundary owns read-only state reconciliation and selective retention:
+The operations boundary owns read-only state reconciliation, selective
+retention, and append-only paper-beta review:
 
 - `operations/reconciliation.ts` coalesces overlapping runs and compares
   independently requested paper-account/position, bulk/per-order, and IEX
@@ -137,6 +138,25 @@ The operations boundary owns read-only state reconciliation and selective retent
 The IEX comparison uses distinct latest-bar and historical-bar REST paths from
 the same Alpaca provider. It proves endpoint reconciliation, not independent
 vendor agreement or external entitlement approval.
+
+- `operations/closed-beta-workflow.ts` owns bounded supporting-record, drill,
+  beta-window, incident, and resolution parsing plus deterministic
+  `closed-beta-review-packet-v1` assembly. It selects the newest recorded beta
+  window, requires exact event/audit-hash membership, counts target and drill
+  records only inside that window, and keeps malformed, duplicate, orphaned,
+  unresolved, or truncated evidence visible. Its strongest state is readiness
+  for external review, never approval.
+- `operations/production-governance.ts` owns the eight measured targets. It
+  time-scopes receipts, strategy decisions/reviews, authentication evidence,
+  and explicit drill records to the selected beta window while retaining
+  global fail-closed safety observations such as suspicious authentication,
+  invalid audit chains, and stale submissions.
+- `persistence/store.ts` appends each workflow event and its hash-chained
+  decision-audit entry in one SQLite transaction. The workflow reuses existing
+  `events` and `decision_audit_log` storage, so no schema migration is needed.
+- `operations/routes.ts` exposes operator/admin review and packet reads plus
+  admin-only record and incident-resolution writes. The browser collects the
+  bounded input but cannot create review or execution authority.
 
 - `operations/retention.ts` owns startup-validated retention windows, cutoffs,
   coalesced scheduled/manual execution, operator reporting, and sanitized run

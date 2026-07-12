@@ -553,6 +553,131 @@ test("API authorization distinguishes authentication roles and route families", 
   expect(portfolio.status).toBe(502);
 });
 
+test("closed-beta workflow API enforces roles parsing and stable packet contracts", async () => {
+  const app = testApp(productionEnv);
+  const report = await app.fetch(
+    new Request("https://broker.example.com/api/operations/closed-beta-review", {
+      headers: productionHeaders("operator"),
+    }),
+  );
+  expect(report.status).toBe(200);
+  expect(await report.json()).toMatchObject({
+    packetVersion: "closed-beta-review-packet-v1",
+    status: "needs_evidence",
+    scope: { externallyApproved: false },
+    targetDetails: expect.any(Array),
+    drills: { required: expect.any(Array) },
+    incidents: { unresolved: [] },
+  });
+
+  const forbidden = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/records",
+      {
+        method: "POST",
+        headers: productionHeaders("operator", true),
+        body: "{}",
+      },
+    ),
+  );
+  expect(forbidden.status).toBe(403);
+
+  const malformed = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/records",
+      {
+        method: "POST",
+        headers: productionHeaders("admin", true),
+        body: "{",
+      },
+    ),
+  );
+  expect(malformed.status).toBe(400);
+
+  const invalidTarget = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/records",
+      {
+        method: "POST",
+        headers: productionHeaders("admin", true),
+        body: JSON.stringify({
+          kind: "supporting_record",
+          targetId: "unknown",
+          title: "Unknown target",
+          reference: "local://unknown",
+          occurredAt: "2026-07-12T09:00:00.000Z",
+        }),
+      },
+    ),
+  );
+  expect(invalidTarget.status).toBe(400);
+  expect(await invalidTarget.json()).toMatchObject({
+    error: expect.stringContaining("targetId must be one of"),
+  });
+
+  const created = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/records",
+      {
+        method: "POST",
+        headers: productionHeaders("admin", true),
+        body: JSON.stringify({
+          kind: "supporting_record",
+          targetId: "paper_only_execution",
+          title: "Paper-only client contract",
+          reference: "local://paper-client/api-contract",
+          occurredAt: "2026-07-12T09:00:00.000Z",
+        }),
+      },
+    ),
+  );
+  expect(created.status).toBe(201);
+  expect(await created.json()).toMatchObject({
+    record: {
+      kind: "supporting_record",
+      targetId: "paper_only_execution",
+      auditEntryHash: expect.stringMatching(/^sha256:/),
+    },
+  });
+
+  const packet = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/packet",
+      { headers: productionHeaders("operator") },
+    ),
+  );
+  expect(packet.status).toBe(200);
+  expect(packet.headers.get("content-type")).toContain("application/json");
+  expect(packet.headers.get("content-disposition")).toContain(
+    "closed-beta-review-",
+  );
+  expect(await packet.json()).toMatchObject({
+    targetDetails: expect.arrayContaining([
+      expect.objectContaining({
+        id: "paper_only_execution",
+        supportingRecordCount: 0,
+        totalSupportingRecordCount: 1,
+        supportStatus: "missing",
+      }),
+    ]),
+  });
+
+  const missingIncident = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/operations/closed-beta-review/incidents/missing-incident/resolve",
+      {
+        method: "POST",
+        headers: productionHeaders("admin", true),
+        body: JSON.stringify({
+          resolution: "Missing",
+          resolvedAt: "2026-07-12T10:00:00.000Z",
+        }),
+      },
+    ),
+  );
+  expect(missingIncident.status).toBe(404);
+});
+
 test("mutation origin and request body limits fail before route work", async () => {
   const production = testApp(productionEnv);
   const wrongOrigin = await production.fetch(new Request("https://broker.example.com/api/strategy/runs", {

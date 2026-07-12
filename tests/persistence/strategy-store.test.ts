@@ -409,6 +409,72 @@ test("exports operational readiness evidence for migrations backups observabilit
   store.close();
 });
 
+test("persists closed-beta workflow records with matching event and audit evidence", () => {
+  const store = createStore(":memory:");
+  const recordId = "record-beta-0001";
+  const recordedAt = "2026-07-13T09:00:00.000Z";
+  const persisted = store.closedBetaWorkflowRecord({
+    eventType: "operations.closed_beta.supporting_recorded",
+    recordId,
+    auditKind: "closed_beta_supporting_record_recorded",
+    actor: "operator@example.com",
+    recordedAt,
+    payload: {
+      schemaVersion: "closed-beta-workflow-record-v1",
+      recordId,
+      kind: "supporting_record",
+      targetId: "paper_only_execution",
+      title: "Paper client evidence",
+      reference: "local://paper-client/1",
+      occurredAt: "2026-07-12T09:00:00.000Z",
+      note: null,
+      recordedAt,
+      recordedBy: "operator@example.com",
+    },
+  });
+
+  expect(persisted).toMatchObject({
+    eventId: expect.any(Number),
+    auditEntryHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    payload: {
+      recordId,
+      auditEntryHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    },
+  });
+  expect(
+    store.events(10, "operations.closed_beta.supporting_recorded"),
+  ).toMatchObject([
+    {
+      actor: "operator@example.com",
+      payload: {
+        recordId,
+        auditEntryHash: persisted.auditEntryHash,
+      },
+    },
+  ]);
+  expect(store.decisionAuditTrail(`closed-beta:${recordId}`)).toMatchObject([
+    {
+      kind: "closed_beta_supporting_record_recorded",
+      entryHash: persisted.auditEntryHash,
+    },
+  ]);
+  expect(store.closedBetaAuditEntries()).toMatchObject([
+    { subjectId: `closed-beta:${recordId}`, entryHash: persisted.auditEntryHash },
+  ]);
+  expect(store.verifyDecisionAuditTrail()).toMatchObject({ valid: true });
+  expect(() =>
+    store.closedBetaWorkflowRecord({
+      eventType: "unrelated.event",
+      recordId,
+      auditKind: "closed_beta_invalid",
+      actor: "operator@example.com",
+      recordedAt,
+      payload: {},
+    }),
+  ).toThrow("Invalid closed-beta workflow persistence input");
+  store.close();
+});
+
 test("filters strategy decisions and exposes linked order outcomes", () => {
   const store = createStore(":memory:");
   store.createStrategyRun({

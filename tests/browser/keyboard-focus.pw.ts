@@ -31,6 +31,95 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 
 async function installApiFixtures(page: Page) {
   const mutations: { method: string; path: string; body: unknown }[] = [];
+  let betaSupportAttached = false;
+  const betaReview = () => ({
+    packetVersion: "closed-beta-review-packet-v1",
+    generatedAt,
+    status: "needs_evidence",
+    summary: {
+      readyForExternalReview: false,
+      measuredTargetsPassing: 1,
+      totalTargets: 8,
+      targetsMissingSupportingRecords: betaSupportAttached
+        ? []
+        : ["paper_only_execution"],
+      missingDrills: [
+        "backup_export",
+        "restore",
+        "kill_switch",
+        "incident_response",
+      ],
+      unresolvedIncidentCount: 0,
+      unresolvedCriticalHighCount: 0,
+      invalidRecordCount: 0,
+      recordLimitReached: false,
+    },
+    targetDetails: [
+      {
+        id: "paper_only_execution",
+        metric: "Live order submissions",
+        target: "0 live orders",
+        evidence: "Paper client configuration",
+        status: "pass",
+        actual: "Broker client reports paper-only execution mode.",
+        observedEvidence: { paperClient: true },
+        supportingRecords: betaSupportAttached
+          ? [
+              {
+                title: "Paper client contract",
+                reference: "local://paper-client/browser-test",
+                occurredAt: generatedAt,
+                note: null,
+              },
+            ]
+          : [],
+        supportingRecordCount: betaSupportAttached ? 1 : 0,
+        totalSupportingRecordCount: betaSupportAttached ? 1 : 0,
+        outOfWindowSupportingRecords: [],
+        supportStatus: betaSupportAttached ? "attached" : "missing",
+      },
+    ],
+    drills: {
+      required: [
+        "backup_export",
+        "restore",
+        "kill_switch",
+        "incident_response",
+      ],
+      details: [
+        "backup_export",
+        "restore",
+        "kill_switch",
+        "incident_response",
+      ].map((drillType) => ({
+        drillType,
+        status: "needs_evidence",
+        latestPassedAt: null,
+        records: [],
+      })),
+    },
+    betaWindow: {
+      status: "complete",
+      selected: {
+        title: "Fixture beta window",
+        reference: "local://beta/browser-test",
+        occurredAt: generatedAt,
+        startedAt: "2026-06-01T08:00:00.000Z",
+        endedAt: generatedAt,
+        participantCount: 1,
+        durationDays: 42,
+        note: null,
+      },
+      records: [],
+    },
+    incidents: { records: [], unresolved: [], unresolvedCriticalHigh: [] },
+    invalidRecords: [],
+    measuredEvidence: {
+      targetWindowDays: 30,
+      summary: { pass: 1, fail: 0, needsEvidence: 7, totalTargets: 8 },
+    },
+    limitations: [],
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -51,20 +140,33 @@ async function installApiFixtures(page: Page) {
     )
       return fulfillJson(route, policy(true));
     if (
-      url.pathname === "/api/operations/closed-beta-evidence" &&
+      url.pathname === "/api/operations/closed-beta-review" &&
       request.method() === "GET"
     )
-      return fulfillJson(route, {
-        generatedAt,
-        targetWindowDays: 30,
-        summary: {
-          readyForExitReview: false,
-          pass: 0,
-          fail: 0,
-          needsEvidence: 8,
-          totalTargets: 8,
+      return fulfillJson(route, betaReview());
+    if (
+      url.pathname === "/api/operations/closed-beta-review/records" &&
+      request.method() === "POST"
+    ) {
+      betaSupportAttached = true;
+      return fulfillJson(
+        route,
+        { record: request.postDataJSON(), workflowSummary: betaReview().summary },
+        201,
+      );
+    }
+    if (
+      url.pathname === "/api/operations/closed-beta-review/packet" &&
+      request.method() === "GET"
+    )
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: {
+          "content-disposition":
+            'attachment; filename="closed-beta-review.json"',
         },
-        targets: [],
+        body: JSON.stringify(betaReview()),
       });
     if (url.pathname === "/api/orders" && request.method() === "GET")
       return fulfillJson(route, {
@@ -168,4 +270,51 @@ test("destructive confirmation traps focus, cancels safely, and restores focus",
       body: { active: true, reason: "Browser regression" },
     },
   ]);
+});
+
+test("closed-beta workflow attaches evidence and exports the review packet", async ({
+  page,
+}) => {
+  const mutations = await installApiFixtures(page);
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("heading", { name: "Paper beta review" }),
+  ).toBeVisible();
+  await expect(page.locator("#closed-beta-evidence")).toContainText(
+    "No in-window supporting artifact reference attached",
+  );
+  await page.getByText("Attach target evidence", { exact: true }).click();
+  await page.getByLabel("Evidence title").fill("Paper client contract");
+  await page
+    .getByLabel("Artifact reference")
+    .first()
+    .fill("local://paper-client/browser-test");
+  await page.getByRole("button", { name: "Attach evidence" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Target evidence recorded",
+  );
+  await expect(page.locator("#closed-beta-evidence")).toContainText(
+    "Paper client contract",
+  );
+  expect(mutations).toMatchObject([
+    {
+      method: "POST",
+      path: "/api/operations/closed-beta-review/records",
+      body: {
+        kind: "supporting_record",
+        targetId: "paper_only_execution",
+        title: "Paper client contract",
+        reference: "local://paper-client/browser-test",
+      },
+    },
+  ]);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export review packet" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("closed-beta-review.json");
 });

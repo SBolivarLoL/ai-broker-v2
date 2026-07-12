@@ -81,10 +81,10 @@ Promise.allSettled([
     "Global order guardrails could not be loaded.",
   ),
   safeLoad(
-    "Closed beta evidence",
-    loadClosedBetaEvidence,
+    "Closed beta review",
+    loadClosedBetaReview,
     "#closed-beta-evidence",
-    "Paper beta evidence could not be measured.",
+    "Paper beta evidence and workflow records could not be measured.",
   ),
   safeLoad(
     "Orders",
