@@ -259,6 +259,7 @@ The strategy boundary is split by responsibility the same way:
   their paper protocol/approval while the runtime
   repeats that gate before drafting or submitting any paper order.
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
+- Lifecycle backtests pass synchronized historical bar maps to plugins and do not pass historical order-book snapshots. The prospective runtime constructs a fresh plugin for each tick, then passes the latest 1-90 day bars plus current snapshot/order-book evidence. Strategies with hidden mutable plugin state must reconstruct it from supplied history or remain shadow-only; time-sliced accumulation, legacy mean reversion, legacy breakout momentum, and the order-book scout do not yet satisfy that complete backtest-to-prospective equivalence.
 - `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.
 - `strategies/strategy-execution-routes.ts` owns crypto market-data ingest and the signed-preview paper-execution pipeline.
 - `strategies/strategy-dataset-routes.ts` owns bounded long-history crypto-bar ingestion and actor-scoped immutable dataset retrieval.

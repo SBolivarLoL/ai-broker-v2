@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `4809b9d`: 2026-07-13.
+Last reviewed against `main` commit `edac011`: 2026-07-13.
 
 This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
 
@@ -89,6 +89,8 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 - Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls. Paper approval requires a pre-registered experiment protocol with hypothesis, frozen parameters, start/stop dates, minimum observations, maximum budget, invalidation criteria, and review cadence. New protocol registrations append versioned history instead of overwriting prior versions, and paper orders are blocked outside the approved protocol window.
 - Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, paper-friction calibration, deterministic alerts, experiment review history, and promotion evidence gates. Promotion requires `pass` evidence for paper status, a 30-day paper window, enough decisions, and at least 20 fills; otherwise review returns `needs_evidence` and leaves the run in paper mode.
 - SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, JSON experiment reports, and ordered transactional schema migrations.
+- Operator-created direct backtests and every prospective tick use Alpaca crypto market data. Backtests query historical bars or reuse an immutable dataset previously ingested from Alpaca; shadow and paper ticks query current bars, snapshots, and optional order-book depth. Paper mode changes order routing, not the market-data source: accepted orders go only to Alpaca's simulated paper endpoint.
+- The server currently exposes paper approval for `cash`, `buy-and-hold`, `time-sliced-accumulation`, `moving-average-trend`, `mean-reversion`, `breakout-momentum`, `volatility-filter`, `btc-eth-relative-strength`, and `order-book-liquidity-scout`. This is a code capability list, not a paper-readiness claim. Cash is only a no-entry comparator. Time-sliced accumulation uses historical-bar index instead of observations since run start. Legacy mean reversion and breakout momentum retain position state only in one plugin instance while each prospective tick constructs a new instance. The order-book scout's historical backtest receives bars but no depth snapshot, so its standard backtest stays flat. Those four signal strategies must be treated as research-only until their roadmap items are resolved.
 
 See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
 
@@ -153,6 +155,8 @@ The browser is never an execution authority. A hidden or bypassed client confirm
 ## Current limitations
 
 - Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
+- The paper-order implementation is not equivalent to paper evidence. No credentialed strategy paper order was submitted during the 2026-07-13 review; the mutating broker smoke remains explicit and opt-in.
+- Time-sliced accumulation, legacy mean reversion, legacy breakout momentum, and the order-book scout have the prospective/backtest mismatches described above. The first three need run-relative or history-reconstructed state; the scout needs historical order-book replay or a fail-closed shadow-only classification before it can support an honest paper experiment.
 - Volatility-targeted trend uses per-bar, non-annualized volatility. A target calibrated for `1Day` is not interchangeable with `1Hour` or `15Min`; comparison compatibility already requires an identical timeframe, but parameter selection and validation remain the operator's experiment responsibility.
 - Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
 - Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
