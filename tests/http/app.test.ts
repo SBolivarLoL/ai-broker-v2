@@ -716,6 +716,14 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(invalidVolatilityTarget.status).toBe(400);
   expect(await invalidVolatilityTarget.json()).toEqual({ error: "Invalid volatility-targeted-trend parameters: Too small: expected number to be >=0.01" });
 
+  const invalidDonchian = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbols: ["BTC/USD"], strategyId: "donchian-atr-breakout", timeframe: "1Hour", days: 30, params: { atrMultiple: 0 } }),
+  }));
+  expect(invalidDonchian.status).toBe(400);
+  expect(await invalidDonchian.json()).toEqual({ error: "Invalid donchian-atr-breakout parameters: Too small: expected number to be >=0.1" });
+
   const ambiguousPeer = await app.fetch(new Request("http://local/api/strategy/backtests", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -996,6 +1004,141 @@ test("strategy backtest API persists anchored walk-forward holdout and regimes",
   });
   expect(app.orderAttempts).toEqual([]);
   expect(app.cryptoBarRequests).toHaveLength(3);
+});
+
+test("Donchian ATR API executes reviewed shadow evidence and rejects paper authority", async () => {
+  const app = testApp({}, {
+    cryptoBars: (request) => {
+      const end = new Date(request.end).getTime();
+      const timestamp = (daysBefore: number) =>
+        new Date(end - daysBefore * 86_400_000).toISOString();
+      return {
+        "BTC/USD": [
+          { t: timestamp(5), o: 100, h: 101, l: 99, c: 100, v: 10 },
+          { t: timestamp(4), o: 100, h: 102, l: 99, c: 101, v: 10 },
+          { t: timestamp(3), o: 101, h: 103, l: 100, c: 102, v: 10 },
+          { t: timestamp(2), o: 103, h: 108, l: 102, c: 107, v: 10 },
+          { t: timestamp(1), o: 107, h: 109, l: 105, c: 108, v: 10 },
+        ],
+      };
+    },
+  });
+  const params = {
+    channelLookback: 2,
+    atrLookback: 2,
+    atrMultiple: 2,
+    maxExposure: 0.7,
+  };
+  const backtest = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      strategyId: "donchian-atr-breakout",
+      timeframe: "1Day",
+      days: 30,
+      params,
+    }),
+  }));
+  expect(backtest.status).toBe(201);
+  const backtestBody = await backtest.json() as any;
+  expect(backtestBody).toMatchObject({
+    result: {
+      strategyId: "donchian-atr-breakout",
+      points: expect.arrayContaining([
+        expect.objectContaining({
+          targetExposure: 0.7,
+          reason: "close broke above the prior Donchian channel",
+          features: expect.objectContaining({
+            upperChannel: 103,
+            laggedAtr: 3,
+            ohlcValid: 1,
+          }),
+          thresholds: expect.objectContaining({
+            channelLagBars: 1,
+            atrLagBars: 1,
+            ohlcRequired: true,
+            execution: "close",
+          }),
+        }),
+      ]),
+    },
+  });
+
+  const run = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      backtestId: backtestBody.backtestId,
+      symbols: ["BTC/USD"],
+      strategyId: "donchian-atr-breakout",
+      timeframe: "1Day",
+      days: 30,
+      params,
+    }),
+  }));
+  expect(run.status).toBe(201);
+  const runId = String((await run.json() as any).runId);
+  for (const suffix of ["experiment-protocol", "paper-approval"]) {
+    const blocked = await app.fetch(new Request(
+      `http://local/api/strategy/runs/${runId}/${suffix}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    ));
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({
+      error: "donchian-atr-breakout is limited to backtest and shadow evaluation",
+    });
+  }
+  const persistedShadow = app.store.getStrategyRun(runId)!;
+  const malformedPaperConfig = {
+    ...(persistedShadow.config as Record<string, unknown>),
+    mode: "paper",
+    paperApproval: {
+      approvedAt: new Date().toISOString(),
+      approvedBy: "malformed-fixture",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      budget: 100,
+      maxPositionNotional: 100,
+      maxOrderNotional: 25,
+      minOrderNotional: 5,
+      maxSpreadBps: 200,
+      timeInForce: "gtc",
+      riskPolicy: {
+        session: "crypto_24_7",
+        requireCashAndBuyingPower: true,
+        maxDailyLossPercent: 5,
+        maxDrawdownPercent: 10,
+        maxDailyTurnoverPercent: 50,
+        errorCooldownMinutes: 1,
+      },
+    },
+  };
+  expect(app.store.approveStrategyRunPaper(
+    runId,
+    100,
+    malformedPaperConfig,
+    canonicalHash(malformedPaperConfig),
+  )).toBe(true);
+  const blockedTick = await app.fetch(new Request(
+    `http://local/api/strategy/runs/${runId}/tick`,
+    { method: "POST" },
+  ));
+  expect(blockedTick.status).toBe(200);
+  expect(await blockedTick.json()).toMatchObject({
+    trace: {
+      decision: "block",
+      riskChecks: {
+        submittedOrder: false,
+        reasons: ["strategy_shadow_only"],
+      },
+    },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(2);
+  expect(app.orderAttempts).toEqual([]);
 });
 
 test("strategy dataset API ingests chunked history and powers a stored-data backtest", async () => {

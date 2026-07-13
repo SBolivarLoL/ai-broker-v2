@@ -106,6 +106,7 @@ export const STRATEGY_IDS = [
   "time-sliced-accumulation",
   "moving-average-trend",
   "volatility-targeted-trend",
+  "donchian-atr-breakout",
   "breakout-momentum",
   "volatility-filter",
   "mean-reversion",
@@ -116,6 +117,7 @@ export type StrategyId = typeof STRATEGY_IDS[number];
 
 export const SHADOW_ONLY_STRATEGY_IDS = [
   "volatility-targeted-trend",
+  "donchian-atr-breakout",
 ] as const satisfies readonly StrategyId[];
 
 export function strategySupportsPaperAutomation(strategyId: string) {
@@ -144,6 +146,12 @@ const STRATEGY_PARAMETER_SCHEMAS = {
     maxExposure: exposure,
     maxExposureIncreasePerBar: z.number().finite().min(0.01).max(1).default(0.25),
   }).strict().refine(params => params.slow > params.fast, { message: "slow must be greater than fast", path: ["slow"] }),
+  "donchian-atr-breakout": z.object({
+    channelLookback: boundedInteger(2, 10_000, 20),
+    atrLookback: boundedInteger(2, 10_000, 14),
+    atrMultiple: z.number().finite().min(0.1).max(100).default(3),
+    maxExposure: exposure,
+  }).strict(),
   "mean-reversion": z.object({
     lookback: boundedInteger(3, 10_000, 20),
     entryZScore: z.number().finite().min(-20).max(20).default(-2),
@@ -576,6 +584,10 @@ export function volatilityTargetedTrendStrategy(params: { fast?: number; slow?: 
   return strategyFunctionFromPlugin(volatilityTargetedTrendPlugin(parseStrategyParams("volatility-targeted-trend", params)));
 }
 
+export function donchianAtrBreakoutStrategy(params: { channelLookback?: number; atrLookback?: number; atrMultiple?: number; maxExposure?: number } = {}): BacktestStrategy {
+  return strategyFunctionFromPlugin(donchianAtrBreakoutPlugin(parseStrategyParams("donchian-atr-breakout", params)));
+}
+
 export function meanReversionStrategy(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): BacktestStrategy {
   return strategyFunctionFromPlugin(meanReversionPlugin(parseStrategyParams("mean-reversion", params)));
 }
@@ -784,6 +796,227 @@ export function volatilityTargetedTrendPlugin(params: { fast?: number; slow?: nu
           trend: trendConfirmed ? 1 : 0,
           volatilityScale: maxExposure > 0 ? prepared.rawTargetExposure / maxExposure : 0,
         },
+      };
+    },
+    riskAdjust: ({ decision }) => defaultRiskAdjustment(decision),
+    orders: ({ risk, decision }) => targetExposureOrder(risk.targetExposure, decision.reason),
+    attribution: () => defaultAttribution(),
+  };
+}
+
+type DonchianAtrPrepared = {
+  ohlcValid: number;
+  ready: number;
+  activeBefore: number;
+  activeAfter: number;
+  upperChannel: number | null;
+  laggedAtr: number | null;
+  atrObservationCount: number;
+  currentOpen: number | null;
+  currentHigh: number | null;
+  currentLow: number | null;
+  currentClose: number | null;
+  entryPrice: number | null;
+  trailingHigh: number | null;
+  stopLevel: number | null;
+  breakout: number;
+  gapThroughStop: number;
+  stopTouched: number;
+  targetExposure: number;
+};
+
+type StrictOhlcBar = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+function strictOhlcBar(bar: BacktestBar | undefined): StrictOhlcBar | null {
+  if (!bar) return null;
+  const open = Number(bar.open);
+  const high = Number(bar.high);
+  const low = Number(bar.low);
+  const close = Number(bar.close);
+  if (
+    ![open, high, low, close].every((value) => Number.isFinite(value) && value > 0) ||
+    low > Math.min(open, close) ||
+    high < Math.max(open, close) ||
+    high < low
+  ) return null;
+  return { open, high, low, close };
+}
+
+/**
+ * Prior-bar Donchian entry with a non-loosening ATR trailing exit.
+ *
+ * The small cache makes a sequential backtest O(n * lookback). When the
+ * runtime evaluates only the latest bar, the same state is reconstructed by
+ * replaying the supplied history, so an isolated shadow tick has identical
+ * behavior and does not depend on process-local state.
+ */
+export function donchianAtrBreakoutPlugin(params: { channelLookback?: number; atrLookback?: number; atrMultiple?: number; maxExposure?: number } = {}): StrategyPlugin<DonchianAtrPrepared> {
+  const channelLookback = Math.max(2, Math.floor(params.channelLookback ?? 20));
+  const atrLookback = Math.max(2, Math.floor(params.atrLookback ?? 14));
+  const atrMultiple = Math.max(0.1, Number(params.atrMultiple ?? 3));
+  const maxExposure = clamp(params.maxExposure ?? 1);
+  let cachedHistory: BacktestBar[] | null = null;
+  let cachedIndex = -1;
+  let cachedPrepared: DonchianAtrPrepared | null = null;
+  let active = false;
+  let entryPrice: number | null = null;
+  let trailingHigh: number | null = null;
+  let activeStop: number | null = null;
+
+  const reset = (history: BacktestBar[]) => {
+    cachedHistory = history;
+    cachedIndex = -1;
+    cachedPrepared = null;
+    active = false;
+    entryPrice = null;
+    trailingHigh = null;
+    activeStop = null;
+  };
+
+  const advance = (history: BacktestBar[], index: number): DonchianAtrPrepared => {
+    const current = strictOhlcBar(history[index]);
+    const evidenceStart = Math.min(
+      index - channelLookback,
+      index - atrLookback - 1,
+    );
+    const evidence = evidenceStart >= 0
+      ? history.slice(evidenceStart, index + 1).map(strictOhlcBar)
+      : [];
+    const ready = evidenceStart >= 0 && evidence.every(Boolean);
+    const activeBefore = active;
+    let upperChannel: number | null = null;
+    let laggedAtr: number | null = null;
+    let atrObservationCount = 0;
+    let breakout = 0;
+    let gapThroughStop = 0;
+    let stopTouched = 0;
+
+    if (ready && current) {
+      const channelBars = history
+        .slice(index - channelLookback, index)
+        .map(strictOhlcBar) as StrictOhlcBar[];
+      upperChannel = Math.max(...channelBars.map((bar) => bar.high));
+      const atrBars = history
+        .slice(index - atrLookback - 1, index)
+        .map(strictOhlcBar) as StrictOhlcBar[];
+      const trueRanges: number[] = [];
+      for (let offset = 1; offset < atrBars.length; offset++) {
+        const bar = atrBars[offset]!;
+        const previousClose = atrBars[offset - 1]!.close;
+        trueRanges.push(Math.max(
+          bar.high - bar.low,
+          Math.abs(bar.high - previousClose),
+          Math.abs(bar.low - previousClose),
+        ));
+      }
+      atrObservationCount = trueRanges.length;
+      laggedAtr = average(trueRanges);
+
+      if (active) {
+        const candidateStop = trailingHigh! - atrMultiple * laggedAtr!;
+        activeStop = activeStop === null
+          ? candidateStop
+          : Math.max(activeStop, candidateStop);
+        gapThroughStop = current.open <= activeStop ? 1 : 0;
+        stopTouched = current.low <= activeStop ? 1 : 0;
+        if (stopTouched) {
+          active = false;
+          entryPrice = null;
+          trailingHigh = null;
+        } else {
+          trailingHigh = Math.max(trailingHigh!, current.high);
+        }
+      } else if (maxExposure > 0 && current.close > upperChannel) {
+        breakout = 1;
+        active = true;
+        entryPrice = current.close;
+        trailingHigh = current.high;
+        activeStop = current.close - atrMultiple * laggedAtr!;
+      }
+    } else {
+      active = false;
+      entryPrice = null;
+      trailingHigh = null;
+      activeStop = null;
+    }
+
+    const prepared: DonchianAtrPrepared = {
+      ohlcValid: current && ready ? 1 : 0,
+      ready: ready ? 1 : 0,
+      activeBefore: activeBefore ? 1 : 0,
+      activeAfter: active ? 1 : 0,
+      upperChannel,
+      laggedAtr,
+      atrObservationCount,
+      currentOpen: current?.open ?? null,
+      currentHigh: current?.high ?? null,
+      currentLow: current?.low ?? null,
+      currentClose: current?.close ?? null,
+      entryPrice,
+      trailingHigh,
+      stopLevel: activeStop,
+      breakout,
+      gapThroughStop,
+      stopTouched,
+      targetExposure: active ? maxExposure : 0,
+    };
+    if (!active) activeStop = null;
+    cachedIndex = index;
+    cachedPrepared = prepared;
+    return prepared;
+  };
+
+  const prepare = (history: BacktestBar[], index: number) => {
+    if (history !== cachedHistory || index < cachedIndex || index > cachedIndex + 1)
+      reset(history);
+    if (index === cachedIndex && cachedPrepared) return cachedPrepared;
+    let prepared: DonchianAtrPrepared | null = null;
+    for (let replayIndex = cachedIndex + 1; replayIndex <= index; replayIndex++)
+      prepared = advance(history, replayIndex);
+    return prepared!;
+  };
+
+  return {
+    id: "donchian-atr-breakout",
+    version: "strategy-plugin-v1",
+    prepare: ({ history, index }) => prepare(history, index),
+    features: ({ prepared }) => prepared,
+    decide: ({ prepared, features }) => {
+      const reason = !prepared.ohlcValid
+        ? "waiting for coherent OHLC and lagged channel/ATR history"
+        : prepared.gapThroughStop
+          ? "gap opened through the lagged ATR stop"
+          : prepared.stopTouched
+            ? "intrabar low touched the lagged ATR stop"
+            : prepared.breakout
+              ? "close broke above the prior Donchian channel"
+              : prepared.activeAfter
+                ? "holding above the non-loosening ATR stop"
+                : maxExposure === 0 && prepared.currentClose! > prepared.upperChannel!
+                  ? "breakout confirmed but exposure cap is zero"
+                  : "waiting for a close above the prior Donchian channel";
+      return {
+        targetExposure: prepared.targetExposure,
+        reason,
+        features,
+        thresholds: {
+          channelLookback,
+          atrLookback,
+          atrMultiple,
+          maxExposure,
+          channelLagBars: 1,
+          atrLagBars: 1,
+          ohlcRequired: true,
+          stopPolicy: "non_loosening_trailing_atr",
+          gapStopAssumption: "open_at_or_below_stop_detected_close_execution",
+          execution: "close",
+        },
+        weights: { breakout: prepared.breakout, active: prepared.activeAfter },
       };
     },
     riskAdjust: ({ decision }) => defaultRiskAdjustment(decision),
@@ -1031,6 +1264,7 @@ export function strategyPluginFromId(strategyId: string, params: unknown = {}): 
   if (strategyId === "time-sliced-accumulation") return timeSlicedAccumulationPlugin(parseStrategyParams("time-sliced-accumulation", params));
   if (strategyId === "moving-average-trend") return movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params));
   if (strategyId === "volatility-targeted-trend") return volatilityTargetedTrendPlugin(parseStrategyParams("volatility-targeted-trend", params));
+  if (strategyId === "donchian-atr-breakout") return donchianAtrBreakoutPlugin(parseStrategyParams("donchian-atr-breakout", params));
   if (strategyId === "mean-reversion") return meanReversionPlugin(parseStrategyParams("mean-reversion", params));
   if (strategyId === "breakout-momentum") return breakoutMomentumPlugin(parseStrategyParams("breakout-momentum", params));
   if (strategyId === "volatility-filter") return volatilityFilterPlugin(parseStrategyParams("volatility-filter", params));

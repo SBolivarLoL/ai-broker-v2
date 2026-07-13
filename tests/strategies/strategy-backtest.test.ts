@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, donchianAtrBreakoutStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -285,6 +285,117 @@ test("volatility-targeted trend uses lagged volatility and bounds exposure incre
   );
 });
 
+test("Donchian ATR breakout uses coherent OHLC, prior-bar signals, and gap-aware exits", () => {
+  const breakoutBars = [
+    { timestamp: "2026-01-01T00:00:00Z", open: 100, high: 101, low: 99, close: 100 },
+    { timestamp: "2026-01-02T00:00:00Z", open: 100, high: 102, low: 99, close: 101 },
+    { timestamp: "2026-01-03T00:00:00Z", open: 101, high: 103, low: 100, close: 102 },
+    { timestamp: "2026-01-04T00:00:00Z", open: 103, high: 108, low: 102, close: 107 },
+    { timestamp: "2026-01-05T00:00:00Z", open: 100, high: 101, low: 95, close: 98 },
+  ];
+  const params = {
+    channelLookback: 2,
+    atrLookback: 2,
+    atrMultiple: 2,
+    maxExposure: 0.7,
+  };
+  const strategy = donchianAtrBreakoutStrategy(params);
+  const decisions = breakoutBars.map((_, index) => strategy(breakoutBars, index));
+
+  expect(decisions[2]).toMatchObject({
+    targetExposure: 0,
+    reason: "waiting for coherent OHLC and lagged channel/ATR history",
+  });
+  expect(decisions[3]).toMatchObject({
+    targetExposure: 0.7,
+    reason: "close broke above the prior Donchian channel",
+    features: {
+      ohlcValid: 1,
+      upperChannel: 103,
+      laggedAtr: 3,
+      atrObservationCount: 2,
+      breakout: 1,
+      stopLevel: 101,
+    },
+    thresholds: {
+      channelLagBars: 1,
+      atrLagBars: 1,
+      ohlcRequired: true,
+      stopPolicy: "non_loosening_trailing_atr",
+      gapStopAssumption: "open_at_or_below_stop_detected_close_execution",
+      execution: "close",
+    },
+  });
+  expect(decisions[4]).toMatchObject({
+    targetExposure: 0,
+    reason: "gap opened through the lagged ATR stop",
+    features: {
+      activeBefore: 1,
+      activeAfter: 0,
+      gapThroughStop: 1,
+      stopTouched: 1,
+      stopLevel: 101,
+    },
+  });
+
+  const isolated = donchianAtrBreakoutStrategy(params)(breakoutBars, 4);
+  expect(isolated).toMatchObject({
+    targetExposure: 0,
+    reason: "gap opened through the lagged ATR stop",
+    features: { stopLevel: 101 },
+  });
+
+  const trailingBars = breakoutBars.slice(0, 4).map((bar) => ({ ...bar }));
+  trailingBars.push({
+    timestamp: "2026-01-05T00:00:00Z",
+    open: 106,
+    high: 110,
+    low: 105,
+    close: 109,
+  });
+  trailingBars.push({
+    timestamp: "2026-01-06T00:00:00Z",
+    open: 103,
+    high: 105,
+    low: 100,
+    close: 102,
+  });
+  const trailing = donchianAtrBreakoutStrategy(params);
+  const trailingDecisions = trailingBars.map((_, index) =>
+    trailing(trailingBars, index),
+  );
+  expect(trailingDecisions[4]).toMatchObject({
+    targetExposure: 0.7,
+    reason: "holding above the non-loosening ATR stop",
+    features: { stopLevel: 101, trailingHigh: 110 },
+  });
+  expect(trailingDecisions[5]).toMatchObject({
+    targetExposure: 0,
+    reason: "intrabar low touched the lagged ATR stop",
+    features: { gapThroughStop: 0, stopTouched: 1, stopLevel: 101 },
+  });
+
+  const widerDecisionBar = breakoutBars.map((bar) => ({ ...bar }));
+  widerDecisionBar[3] = { ...widerDecisionBar[3]!, high: 150 };
+  const wider = donchianAtrBreakoutStrategy(params)(widerDecisionBar, 3);
+  expect(wider).toMatchObject({
+    targetExposure: 0.7,
+    features: { upperChannel: 103, laggedAtr: 3 },
+  });
+
+  const incoherent = breakoutBars.map((bar) => ({ ...bar }));
+  incoherent[3] = { ...incoherent[3]!, low: 109 };
+  expect(donchianAtrBreakoutStrategy(params)(incoherent, 3)).toMatchObject({
+    targetExposure: 0,
+    reason: "waiting for coherent OHLC and lagged channel/ATR history",
+    features: { ohlcValid: 0 },
+  });
+  expect(donchianAtrBreakoutStrategy({ ...params, maxExposure: 0 })(breakoutBars, 3)).toMatchObject({
+    targetExposure: 0,
+    reason: "breakout confirmed but exposure cap is zero",
+  });
+});
+
 test("mean reversion enters on oversold z-score and exits near mean", () => {
   const reversionBars = [100, 100, 100, 90, 100].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
   const strategy = meanReversionStrategy({ lookback: 3, entryZScore: -1, exitZScore: -0.1 });
@@ -370,6 +481,7 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(strategyFromId("time-sliced-accumulation", { slices: 2 })(bars, 0).targetExposure).toBe(0.5);
   expect(typeof strategyFromId("moving-average-trend", { fast: 2, slow: 3 })).toBe("function");
   expect(typeof strategyFromId("volatility-targeted-trend", { fast: 2, slow: 3, volatilityLookback: 2 })).toBe("function");
+  expect(typeof strategyFromId("donchian-atr-breakout", { channelLookback: 2, atrLookback: 2 })).toBe("function");
   expect(typeof strategyFromId("mean-reversion", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("breakout-momentum", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("volatility-filter", { lookback: 3 })).toBe("function");
@@ -377,6 +489,7 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(typeof strategyFromId("order-book-liquidity-scout", { maxSpreadBps: 100 })).toBe("function");
   expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
   expect(strategySupportsPaperAutomation("volatility-targeted-trend")).toBe(false);
+  expect(strategySupportsPaperAutomation("donchian-atr-breakout")).toBe(false);
   expect(strategySupportsPaperAutomation("moving-average-trend")).toBe(true);
 });
 
@@ -385,6 +498,7 @@ test("strategy configuration applies one canonical set of defaults", () => {
   expect(parseStrategyParams("time-sliced-accumulation")).toEqual({ slices: 10, maxExposure: 1 });
   expect(parseStrategyParams("moving-average-trend")).toEqual({ fast: 5, slow: 20, exposure: 1 });
   expect(parseStrategyParams("volatility-targeted-trend")).toEqual({ fast: 5, slow: 20, volatilityLookback: 20, targetVolatilityPercent: 2, maxExposure: 1, maxExposureIncreasePerBar: 0.25 });
+  expect(parseStrategyParams("donchian-atr-breakout")).toEqual({ channelLookback: 20, atrLookback: 14, atrMultiple: 3, maxExposure: 1 });
   expect(parseStrategyParams("mean-reversion")).toEqual({ lookback: 20, entryZScore: -2, exitZScore: -0.25, exposure: 1 });
   expect(parseStrategyParams("breakout-momentum", { lookback: 12 })).toEqual({ lookback: 12, volumeLookback: 12, volumeMultiple: 1.25, stopLossPercent: 8, exposure: 1 });
   expect(parseStrategyParams("volatility-filter")).toEqual({ lookback: 20, minVolatilityPercent: 0, maxVolatilityPercent: 6, exposure: 1 });
@@ -399,6 +513,8 @@ test("strategy configuration rejects malformed and contradictory parameters", ()
   expect(() => parseStrategyParams("moving-average-trend", { fast: 20, slow: 20 })).toThrow("slow must be greater than fast");
   expect(() => parseStrategyParams("volatility-targeted-trend", { maxExposureIncreasePerBar: 0 })).toThrow("Too small");
   expect(() => parseStrategyParams("volatility-targeted-trend", { maxExposure: 1.1 })).toThrow("Too big");
+  expect(() => parseStrategyParams("donchian-atr-breakout", { channelLookback: 1 })).toThrow("Too small");
+  expect(() => parseStrategyParams("donchian-atr-breakout", { atrMultiple: Number.POSITIVE_INFINITY })).toThrow("expected number");
   expect(() => parseStrategyParams("mean-reversion", { entryZScore: 0, exitZScore: -1 })).toThrow("entryZScore must be less than exitZScore");
   expect(() => parseStrategyParams("volatility-filter", { minVolatilityPercent: 10, maxVolatilityPercent: 5 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
   expect(() => parseStrategyParams("breakout-momentum", { volumeMultiple: Number.NaN })).toThrow("expected number");

@@ -13,13 +13,17 @@ const strategyLabels = {
   "time-sliced-accumulation": "Time-sliced accumulation",
   "moving-average-trend": "Moving average trend",
   "volatility-targeted-trend": "Volatility-targeted trend",
+  "donchian-atr-breakout": "Donchian breakout with ATR exit",
   "breakout-momentum": "Breakout momentum",
   "volatility-filter": "Volatility filter",
   "btc-eth-relative-strength": "BTC/ETH relative strength",
   "order-book-liquidity-scout": "Order-book liquidity scout",
   "mean-reversion": "Mean reversion",
 };
-const shadowOnlyStrategies = new Set(["volatility-targeted-trend"]);
+const shadowOnlyStrategies = new Set([
+  "volatility-targeted-trend",
+  "donchian-atr-breakout",
+]);
 const strategyDefaultParams = {
   cash: {},
   "buy-and-hold": {},
@@ -32,6 +36,12 @@ const strategyDefaultParams = {
     targetVolatilityPercent: 2,
     maxExposure: 1,
     maxExposureIncreasePerBar: 0.25,
+  },
+  "donchian-atr-breakout": {
+    channelLookback: 20,
+    atrLookback: 14,
+    atrMultiple: 3,
+    maxExposure: 1,
   },
   "breakout-momentum": {
     lookback: 20,
@@ -80,6 +90,9 @@ const strategyParameterLabels = {
   volatilityLookback: "Lagged volatility lookback",
   targetVolatilityPercent: "Target per-bar volatility (%)",
   maxExposureIncreasePerBar: "Maximum exposure increase per bar",
+  channelLookback: "Donchian channel lookback",
+  atrLookback: "Lagged ATR lookback",
+  atrMultiple: "ATR stop multiple",
   minRelativeStrengthPercent: "Minimum relative strength (%)",
   maxSpreadBps: "Maximum spread (bps)",
   minVisibleAskNotional: "Minimum visible asks ($)",
@@ -105,6 +118,9 @@ const strategyParameterBounds = {
   volatilityLookback: [2, 10_000],
   targetVolatilityPercent: [0.01, 1_000],
   maxExposureIncreasePerBar: [0.01, 1],
+  channelLookback: [2, 10_000],
+  atrLookback: [2, 10_000],
+  atrMultiple: [0.1, 100],
   minRelativeStrengthPercent: [-1_000, 1_000],
   maxSpreadBps: [1, 10_000],
   minVisibleAskNotional: [0, 1_000_000_000_000],
@@ -170,6 +186,9 @@ function strategyPresetParams(strategyId, preset) {
   if (Object.hasOwn(params, "maxExposureIncreasePerBar"))
     params.maxExposureIncreasePerBar =
       preset === "conservative" ? 0.1 : preset === "aggressive" ? 0.4 : 0.25;
+  if (Object.hasOwn(params, "atrMultiple"))
+    params.atrMultiple =
+      preset === "conservative" ? 2 : preset === "aggressive" ? 4 : 3;
   return params;
 }
 

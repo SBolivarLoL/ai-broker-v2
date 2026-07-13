@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `934cf51`: 2026-07-13.
+Last reviewed against `main` commit `eee45b6`: 2026-07-13.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -47,6 +47,7 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 | `time-sliced-accumulation`   | Ramps exposure over fixed slices                                 | Continues accumulating through adverse regimes        |
 | `moving-average-trend`       | Holds exposure when fast average exceeds slow average            | Whipsaw in range-bound markets                        |
 | `volatility-targeted-trend`  | Scales confirmed trend exposure from one-bar-lagged volatility   | Timeframe-sensitive target and volatility whipsaw     |
+| `donchian-atr-breakout`      | Enters above prior highs and trails a lagged ATR stop             | False breakouts, gaps, and close-execution slippage    |
 | `mean-reversion`             | Enters below a rolling mean and exits near it                    | Persistent trends and clustered losses                |
 | `breakout-momentum`          | Requires prior-high breakout plus volume confirmation and a stop | False breakouts and gap/slippage risk                 |
 | `volatility-filter`          | Holds exposure only inside a realized-volatility band            | Missed upside or unstable regime boundaries           |
@@ -55,12 +56,22 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 
 Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one symbol. Relative strength accepts `BTC/USD,ETH/USD` or the reverse; the first symbol is the traded primary.
 
-`volatility-targeted-trend` is deliberately backtest/shadow only. The server
-rejects paper-protocol registration and paper approval for this strategy, and
-the runtime blocks submission if malformed persisted state presents it as a
-paper run. Its volatility target is a non-annualized percentage per selected
-bar; do not reuse the same target across `15Min`, `1Hour`, and `1Day` without a
-separate experiment.
+`volatility-targeted-trend` and `donchian-atr-breakout` are deliberately
+backtest/shadow only. The server rejects paper-protocol registration and paper
+approval for either strategy, and the runtime blocks submission if malformed
+persisted state presents one as a paper run. The volatility target is a
+non-annualized percentage per selected bar; do not reuse the same target across
+`15Min`, `1Hour`, and `1Day` without a separate experiment.
+
+Donchian decisions require positive coherent open, high, low, and close values
+for the complete channel/ATR evidence window. The entry channel uses only the
+previous `channelLookback` highs. ATR uses `atrLookback` completed true-range
+observations and the preceding close, never the decision bar. After entry, the
+trailing stop can tighten but cannot loosen. An open at or below the prior stop
+is labeled a gap-through; any low at or below it is a stop touch. Both are
+observed only after the bar completes and target exposure changes still execute
+at the bar close, so this model does not claim a fill at the stop or opening
+price. Missing or incoherent OHLC resets exposure to zero.
 
 ## Controls
 
@@ -100,6 +111,15 @@ The UI defaults to labeled, strategy-specific numeric controls and keeps the can
   "targetVolatilityPercent": 2,
   "maxExposure": 1,
   "maxExposureIncreasePerBar": 0.25
+}
+```
+
+```json
+{
+  "channelLookback": 20,
+  "atrLookback": 14,
+  "atrMultiple": 3,
+  "maxExposure": 1
 }
 ```
 
@@ -152,6 +172,8 @@ Cash and buy-and-hold use `{}`.
 | `volatilityLookback`                             | Return window ending one complete bar before the decision                                  |
 | `targetVolatilityPercent`                        | Non-annualized per-bar volatility target used to scale confirmed trend exposure            |
 | `maxExposureIncreasePerBar`                      | Maximum upward exposure change per bar; reductions are not delayed                          |
+| `channelLookback`                                | Prior completed-bar high window for Donchian entry                                           |
+| `atrLookback`, `atrMultiple`                     | Completed true-range window and non-loosening trailing-stop distance                          |
 | `lookback`                                       | Rolling z-score, breakout, volatility, or relative-strength window                         |
 | `entryZScore`, `exitZScore`                      | Mean-reversion activation and exit boundaries                                              |
 | `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                                               |
@@ -174,6 +196,7 @@ The current backtester:
 
 - Sorts and validates returned bars.
 - Executes target-exposure changes at bar close.
+- Requires strict coherent OHLC for Donchian channel/ATR decisions; gap and intrabar stop detection changes the close target and does not synthesize an intrabar fill price.
 - Defaults to $10,000 initial cash, 0 bps fee, and 5 bps slippage.
 - Returns strategy and cash/buy-and-hold baseline results.
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, reasons, a `tradeMetrics` object, and an `uncertainty` object. Trade metrics cover material order count, position episodes, closed round trips, average holding bars/days, gross/net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings.
