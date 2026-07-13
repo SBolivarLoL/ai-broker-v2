@@ -1,5 +1,11 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import type { createStore } from "../../persistence/store";
 import { orderSessionGuidance } from "../markets/market-workspace";
 import {
@@ -218,10 +224,20 @@ export function createBasketRoutes({
       const previous = store.submission(idempotencyKey);
       if (previous)
         return previous.pending
-          ? json({ error: "Basket submission is already processing" }, 409)
+          ? conflictResponse(
+              "Basket submission is already processing",
+              "submission_in_progress",
+              true,
+              "wait_for_submission",
+            )
           : json(previous, previous.status === "partial" ? 207 : 200);
       if (!store.reserveSubmission(idempotencyKey))
-        return json({ error: "Basket submission is already processing" }, 409);
+        return conflictResponse(
+          "Basket submission is already processing",
+          "submission_in_progress",
+          true,
+          "wait_for_submission",
+        );
       let preview;
       let freshLegs: {
         symbol: string;
@@ -248,9 +264,11 @@ export function createBasketRoutes({
                   alpaca.marketData.getLatestPrice(leg.symbol),
                 ]);
                 if (!asset.tradable || asset._class !== "us_equity")
-                  throw new ClientError(
+                  throw conflict(
                     `${leg.symbol} is no longer tradable`,
-                    409,
+                    "asset_capability_changed",
+                    true,
+                    "refresh_preview",
                   );
                 if (
                   typeof price !== "number" ||
@@ -259,14 +277,18 @@ export function createBasketRoutes({
                 )
                   throw new Error(`Fresh price unavailable for ${leg.symbol}`);
                 if (!asset.fractionable && !Number.isInteger(leg.qty))
-                  throw new ClientError(
+                  throw conflict(
                     `${leg.symbol} no longer supports this fractional order`,
-                    409,
+                    "asset_capability_changed",
+                    true,
+                    "refresh_preview",
                   );
                 if (Math.abs(price / leg.price - 1) > 0.01)
-                  throw new ClientError(
+                  throw conflict(
                     `${leg.symbol} moved more than 1%; review the basket again`,
-                    409,
+                    "market_price_changed",
+                    true,
+                    "refresh_preview",
                   );
                 return {
                   symbol: leg.symbol,
@@ -353,9 +375,11 @@ export function createBasketRoutes({
               { allowed: false, simulation: reservation.validation },
               422,
             );
-          return json(
-            { error: "Basket submission is already processing" },
-            409,
+          return conflictResponse(
+            "Basket submission is already processing",
+            "submission_in_progress",
+            true,
+            "wait_for_submission",
           );
         }
         reservationKeys = reservation.keys;

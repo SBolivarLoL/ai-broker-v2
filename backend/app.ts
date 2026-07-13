@@ -321,7 +321,10 @@ export function createApp({
       return json({ error: "Not found" }, 404);
     } catch (error) {
       if (error instanceof ClientError)
-        return json({ error: error.message }, error.status);
+        return json(
+          { error: error.message, ...(error.details ?? {}) },
+          error.status,
+        );
       console.error("request failed", {
         method: request.method,
         path: url.pathname,

@@ -636,13 +636,8 @@ $("#basket-form").onsubmit = async (event) => {
       ))
     )
       return;
-    const submitted = await api("/api/orders/basket", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        previewToken: preview.previewToken,
-        idempotencyKey: crypto.randomUUID(),
-      }),
+    const submitted = await submitPaperOrder("/api/orders/basket", {
+      previewToken: preview.previewToken,
     });
     notify(
       `Basket ${submitted.status}. Decision receipt ${submitted.receiptId.slice(0, 8)} created.`,
@@ -747,14 +742,11 @@ $("#orders").addEventListener("click", async (event) => {
       ))
     )
       return;
-    await api(`/api/orders/${encodeURIComponent(button.dataset.orderId)}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        previewToken,
-        idempotencyKey: crypto.randomUUID(),
-      }),
-    });
+    await submitPaperOrder(
+      `/api/orders/${encodeURIComponent(button.dataset.orderId)}`,
+      { previewToken },
+      "PATCH",
+    );
     notify("Replacement submitted. Waiting for Alpaca stream confirmation.");
     await loadOrders();
   } catch (error) {
@@ -1204,13 +1196,8 @@ $("#order-form").onsubmit = async (e) => {
       ))
     )
       return;
-    const submitted = await api("/api/orders", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        previewToken: preview.previewToken,
-        idempotencyKey: crypto.randomUUID(),
-      }),
+    const submitted = await submitPaperOrder("/api/orders", {
+      previewToken: preview.previewToken,
     });
     notify(
       `Order ${submitted.status.replaceAll("_", " ")}. Decision receipt ${submitted.receiptId.slice(0, 8)} created.`,

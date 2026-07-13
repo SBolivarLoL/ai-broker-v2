@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `edac011`: 2026-07-13.
+Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -8,10 +8,10 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-07-13                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 472 tests, 0 failures, 2,553 assertions across 96 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 475 tests, 0 failures, 2,590 assertions across 97 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
-| `bun run coverage` | Pass: 98.01% functions, 97.37% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 98.03% functions, 97.39% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
@@ -175,11 +175,11 @@ OpenAI request, order, policy, retention, or broker mutation.
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation | Eight tracked Markdown files: project guidance, root onboarding, five product/architecture records under `docs/`, and one design-options index |
-| TypeScript    | 108 backend modules, 13 operational/test-support scripts, 97 TypeScript files under `tests/`, and one Playwright configuration     |
-| Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
+| TypeScript    | 109 backend modules, 13 TypeScript operational/test-support scripts, 98 TypeScript files under `tests/`, and one Playwright configuration |
+| Concentration | `backend/app.ts` 404 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `edac011`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `5d7eb32`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -211,7 +211,7 @@ OpenAI request, order, policy, retention, or broker mutation.
 ## Full documentation and repository audit
 
 The 2026-07-13 operability review rechecked the affected documentation against
-merged `main` at `edac011`, traced every strategy through historical backtest,
+merged `main` at `5d7eb32`, traced every strategy through historical backtest,
 current-data shadow, approval, and broker-submission boundaries, and added fresh
 read-only provider evidence. The broader 2026-07-07 command, path, environment,
 inventory, link, and architecture audit remains applicable where no code changed.
@@ -244,8 +244,8 @@ Additional mechanical checks:
 - `.env.example` covers every runtime/server setting. The remaining source-read
   variables are deliberate command flags: `SMOKE_ORDER`, `SMOKE_SIDE`,
   `SMOKE_SYMBOL`, `SEC_SYMBOL`, and `RESEARCH_EVAL_SYMBOLS`.
-- Fresh inventory checks found 108 backend TypeScript modules, 13 operational
-  and browser-test-support scripts, 97 TypeScript files under `tests/`, one
+- Fresh inventory checks found 109 backend TypeScript modules, 13 TypeScript operational
+  and browser-test-support scripts, 98 TypeScript files under `tests/`, one
   coverage-gate test under `scripts/`, one Playwright browser file, 15
   ordered migrations, 23 SQLite tables, 16 governance sources, and 12
   stored-output categories. Every
@@ -547,7 +547,10 @@ The following read-only checks were run:
   channel, lagged ATR, stop-multiple, hard-cap, and conservative-preset
   controls. It then selects regime-filtered mean reversion and verifies lagged
   trend/volatility/liquidity, minimum dollar volume, stop, holding ceiling, and
-  conservative-preset controls. The destructive kill-switch fixture verifies
+  conservative-preset controls. A listed time-sliced run carries only the
+  server-provided state-model readiness result; the suite verifies the visible
+  `Shadow only` label, exact server reason, and disabled protocol/approval
+  controls without a browser-maintained strategy list. The destructive kill-switch fixture verifies
   initial confirm focus, danger treatment, forward/reverse focus wrapping,
   Escape cancellation with zero mutation requests, trigger-focus restoration,
   and a second explicit keyboard confirmation before exactly one fixture POST.
@@ -768,9 +771,11 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Order confirmation reloads relevant broker and market state and rejects invalid signatures, expiry, drift, capacity, exposure, turnover, or incomplete evidence.
 - Local reservations and working broker orders consume projected capacity, preventing concurrent order stacking.
 - Failed equity placement releases the pending submission and reservation so the same idempotency key can retry; released and expired reservation rows no longer strand capacity.
+- Every order and Strategy Lab 409 now carries exact `code`, `retryable`, and `nextAction` fields. Direct application contracts cover state drift, protocol absence, unsupported strategy evidence, and a pending duplicate. A trader/admin read-only submission-status route returns 202 while the original idempotent mutation is pending and the exact stored response after completion without making a broker call.
+- `strategy-paper-readiness-v1` is derived on the server and returned with listed runs. Pure and direct API contracts prove five allow-listed paper-capability strategies, seven fail-closed backtest/shadow strategies, unknown-capability rejection, protocol-required/ready/state-blocked transitions, and exact unsupported-strategy 409 payloads. The maintained browser fixture proves controls use this server result and disable protocol/approval for a state-model-blocked run.
 - Concurrent standard equity submissions are serialized through SQLite reservation validation and cannot cross the rolling-turnover limit.
 - Basket submissions reserve every leg before placement, persist complete or partial receipts, preserve HTTP 207 on replay, and do not expose raw broker failure text.
-- Strategy paper orders require explicit run approval and pass strategy-specific plus global operations policy.
+- Strategy paper orders require explicit run approval, a server-owned supported capability, and passing strategy-specific plus global operations policy.
 - Strategy parameters are canonicalized through one strict per-strategy schema before backtests or saved runs; malformed or contradictory configuration fails closed.
 - Walk-forward evaluation supports rolling and anchored out-of-sample modes, rejects malformed or overlapping regime slices, keeps candidate selection train-only, excludes final holdouts from fold selection, scores holdouts once with pre-holdout-selected parameters, and reports validation and holdout regime observations separately.
 - Backtests emit deterministic `tradeMetrics` covering material simulated order count, position episodes, closed round trips, average holding time, gross/net returns, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings; the direct API contract persists the shape.

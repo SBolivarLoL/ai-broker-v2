@@ -1,5 +1,11 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import type { createStore } from "../../persistence/store";
 import { orderSessionGuidance } from "../markets/market-workspace";
 import {
@@ -237,10 +243,20 @@ export function createEquityRoutes({
       const previous = store.submission(idempotencyKey);
       if (previous)
         return previous.pending
-          ? json({ error: "Order submission is already processing" }, 409)
+          ? conflictResponse(
+              "Order submission is already processing",
+              "submission_in_progress",
+              true,
+              "wait_for_submission",
+            )
           : json(previous);
       if (!store.reserveSubmission(idempotencyKey))
-        return json({ error: "Order submission is already processing" }, 409);
+        return conflictResponse(
+          "Order submission is already processing",
+          "submission_in_progress",
+          true,
+          "wait_for_submission",
+        );
       let preview: Preview;
       let freshPrice = 0;
       let freshQty = 0;
@@ -254,9 +270,11 @@ export function createEquityRoutes({
           async (intent) => {
             const auctionError = auctionSubmissionError(intent.timeInForce);
             if (auctionError)
-              throw new ClientError(
+              throw conflict(
                 `${auctionError}; review the order again`,
-                409,
+                "order_session_changed",
+                true,
+                "refresh_preview",
               );
             const [account, positions, asset, price, recentOrders] =
               await Promise.all([
@@ -272,7 +290,12 @@ export function createEquityRoutes({
                 }),
               ]);
             if (!asset.tradable || asset._class !== "us_equity")
-              throw new ClientError("The asset is no longer tradable", 409);
+              throw conflict(
+                "The asset is no longer tradable",
+                "asset_capability_changed",
+                true,
+                "refresh_preview",
+              );
             if (
               account.equity === undefined ||
               account.cash === undefined ||
@@ -286,32 +309,40 @@ export function createEquityRoutes({
                 ? intent.notional! / price
                 : intent.qty;
             if (!asset.fractionable && !Number.isInteger(qty))
-              throw new ClientError(
+              throw conflict(
                 "This asset does not support fractional or dollar-notional orders",
-                409,
+                "asset_capability_changed",
+                true,
+                "refresh_preview",
               );
             const shortError = intent.allowShort
               ? shortCapabilityError(account, asset)
               : null;
             if (shortError)
-              throw new ClientError(
+              throw conflict(
                 `${shortError}; review the order again`,
-                409,
+                "account_capability_changed",
+                true,
+                "refresh_preview",
               );
             if (recentOrders.length >= 500)
               throw new Error(
                 "The complete order window could not be verified",
               );
             if (Math.abs(price / intent.price - 1) > 0.01)
-              throw new ClientError(
+              throw conflict(
                 "The price moved more than 1%; review the order again",
-                409,
+                "market_price_changed",
+                true,
+                "refresh_preview",
               );
             const linkedError = linkedOrderError(intent, price);
             if (linkedError)
-              throw new ClientError(
+              throw conflict(
                 `${linkedError}; review the linked order again`,
-                409,
+                "linked_order_invalidated",
+                true,
+                "refresh_preview",
               );
             const brokerPending = await runtime.pendingBrokerOrders(
               recentOrders,
@@ -396,7 +427,12 @@ export function createEquityRoutes({
               { allowed: false, simulation: reservation.validation },
               422,
             );
-          return json({ error: "Order submission is already processing" }, 409);
+          return conflictResponse(
+            "Order submission is already processing",
+            "submission_in_progress",
+            true,
+            "wait_for_submission",
+          );
         }
         freshSimulation = reservation.validation;
       } catch (error) {

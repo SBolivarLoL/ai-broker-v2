@@ -1,5 +1,11 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import {
   evaluateOperationsPolicy,
   type OperationsPolicyEvaluation,
@@ -315,12 +321,19 @@ export async function handleStrategyExecutionRequest(
     const previous = store.submission(idempotencyKey);
     if (previous)
       return previous.pending
-        ? json({ error: "Crypto order submission is already processing" }, 409)
+        ? conflictResponse(
+            "Crypto order submission is already processing",
+            "submission_in_progress",
+            true,
+            "wait_for_submission",
+          )
         : json(previous);
     if (!store.reserveSubmission(idempotencyKey))
-      return json(
-        { error: "Crypto order submission is already processing" },
-        409,
+      return conflictResponse(
+        "Crypto order submission is already processing",
+        "submission_in_progress",
+        true,
+        "wait_for_submission",
       );
     let preview!: CryptoOrderPreview;
     let freshPreview!: CryptoOrderPreview;
@@ -355,9 +368,11 @@ export async function handleStrategyExecutionRequest(
       if (recentOrders.length >= 500)
         throw new Error("The complete order window could not be verified");
       if (latest.record.stale)
-        throw new ClientError(
+        throw conflict(
           "Crypto market data is stale; review the order again",
-          409,
+          "market_data_stale",
+          true,
+          "refresh_preview",
         );
       const fresh = buildCryptoOrderPreview({
         ticket,
@@ -425,9 +440,11 @@ export async function handleStrategyExecutionRequest(
             market: fresh.market,
             snapshot: latest.record,
           });
-        return json(
-          { error: "Crypto order submission is already processing" },
-          409,
+        return conflictResponse(
+          "Crypto order submission is already processing",
+          "submission_in_progress",
+          true,
+          "wait_for_submission",
         );
       }
       riskReserved = true;
@@ -436,9 +453,11 @@ export async function handleStrategyExecutionRequest(
         Math.abs(fresh.preview.referencePrice / preview.referencePrice - 1) >
         0.01
       )
-        throw new ClientError(
+        throw conflict(
           "Crypto reference price moved more than 1%; review the order again",
-          409,
+          "market_price_changed",
+          true,
+          "refresh_preview",
         );
       freshPreview = fresh.preview;
       freshMarket = fresh.market;

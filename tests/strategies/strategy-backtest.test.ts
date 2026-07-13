@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, donchianAtrBreakoutStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, regimeFilteredMeanReversionStrategy, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, donchianAtrBreakoutStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, regimeFilteredMeanReversionStrategy, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { strategySupportsPaperAutomation } from "../../backend/features/strategies/strategy-paper-readiness";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -617,6 +618,10 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(strategySupportsPaperAutomation("volatility-targeted-trend")).toBe(false);
   expect(strategySupportsPaperAutomation("donchian-atr-breakout")).toBe(false);
   expect(strategySupportsPaperAutomation("regime-filtered-mean-reversion")).toBe(false);
+  expect(strategySupportsPaperAutomation("time-sliced-accumulation")).toBe(false);
+  expect(strategySupportsPaperAutomation("breakout-momentum")).toBe(false);
+  expect(strategySupportsPaperAutomation("mean-reversion")).toBe(false);
+  expect(strategySupportsPaperAutomation("order-book-liquidity-scout")).toBe(false);
   expect(strategySupportsPaperAutomation("moving-average-trend")).toBe(true);
 });
 

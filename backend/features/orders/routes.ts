@@ -1,5 +1,11 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import type { createStore } from "../../persistence/store";
 import {
   localResponseTimeFields,
@@ -80,6 +86,18 @@ export function createOrderRoutes({
     const equityResponse = await equityRoutes(request, url, actor);
     if (equityResponse) return equityResponse;
 
+    const submissionMatch =
+      request.method === "GET" &&
+      url.pathname.match(/^\/api\/order-submissions\/([\w-]{8,100})$/);
+    if (submissionMatch) {
+      const submission = store.submission(submissionMatch[1]!);
+      if (!submission)
+        return json({ error: "Order submission not found" }, 404);
+      return submission.pending
+        ? json({ pending: true, idempotencyKey: submissionMatch[1] }, 202)
+        : json(submission);
+    }
+
     if (
       !url.pathname.startsWith("/api/orders") &&
       !url.pathname.startsWith("/api/receipts") &&
@@ -144,7 +162,12 @@ export function createOrderRoutes({
       ).filter((order) => order.id && canCancelOrder(order.status));
       const retrievedAt = now();
       if (!orders.length)
-        return json({ error: "There are no cancelable working orders" }, 409);
+        return conflictResponse(
+          "There are no cancelable working orders",
+          "no_cancelable_orders",
+          true,
+          "refresh_orders",
+        );
       const expiresAt = retrievedAt.getTime() + 60_000,
         orderIds = orders.map((order) => order.id!);
       const serverRespondedAt = now();
@@ -219,18 +242,20 @@ export function createOrderRoutes({
         nested: true,
       });
       if (!order.id || !canCancelOrder(order.status))
-        return json(
-          {
-            error: `Order is no longer cancelable (${order.status ?? "unknown"})`,
-          },
-          409,
+        return conflictResponse(
+          `Order is no longer cancelable (${order.status ?? "unknown"})`,
+          "order_state_changed",
+          true,
+          "refresh_orders",
         );
       try {
         await alpaca.trading.orders.deleteOrderByOrderID({ orderId });
       } catch {
-        throw new ClientError(
+        throw conflict(
           "Alpaca could not accept the cancellation because the order state changed. Refresh the blotter.",
-          409,
+          "order_state_changed",
+          true,
+          "refresh_orders",
         );
       }
       store.event("order.cancel.requested", actor, {
@@ -319,7 +344,12 @@ export function createOrderRoutes({
       const previous = store.submission(idempotencyKey);
       if (previous)
         return previous.pending
-          ? json({ error: "Replacement is already processing" }, 409)
+          ? conflictResponse(
+              "Replacement is already processing",
+              "submission_in_progress",
+              true,
+              "wait_for_submission",
+            )
           : json(previous);
       let preview;
       try {
@@ -338,7 +368,12 @@ export function createOrderRoutes({
           400,
         );
       if (!store.reserveSubmission(idempotencyKey))
-        return json({ error: "Replacement is already processing" }, 409);
+        return conflictResponse(
+          "Replacement is already processing",
+          "submission_in_progress",
+          true,
+          "wait_for_submission",
+        );
       try {
         const order = await alpaca.trading.orders.getOrderByOrderID({
           orderId: preview.orderId,
@@ -347,9 +382,11 @@ export function createOrderRoutes({
         if (
           (order.updatedAt?.toISOString() ?? null) !== preview.expectedUpdatedAt
         )
-          throw new ClientError(
+          throw conflict(
             "The order changed after preview. Refresh and review the replacement again.",
-            409,
+            "order_state_changed",
+            true,
+            "refresh_orders",
           );
         buildReplacementPreview(order, preview.replacement, preview.expiresAt);
         let replaced;
@@ -397,9 +434,11 @@ export function createOrderRoutes({
       } catch (error) {
         store.releaseSubmission(idempotencyKey);
         if (error instanceof ClientError) throw error;
-        throw new ClientError(
+        throw conflict(
           "Alpaca could not replace the order because its state changed. Refresh the blotter.",
-          409,
+          "order_state_changed",
+          true,
+          "refresh_orders",
         );
       }
     }

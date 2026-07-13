@@ -742,13 +742,8 @@ $("#option-order-form").onsubmit = async (event) => {
       ))
     )
       return;
-    const submitted = await api("/api/options/orders", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        previewToken: result.previewToken,
-        idempotencyKey: crypto.randomUUID(),
-      }),
+    const submitted = await submitPaperOrder("/api/options/orders", {
+      previewToken: result.previewToken,
     });
     notify(
       `Option order ${submitted.status.replaceAll("_", " ")}. Receipt ${submitted.receiptId.slice(0, 8)} created.`,

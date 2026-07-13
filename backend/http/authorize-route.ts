@@ -18,6 +18,8 @@ export function authorizeRoute(
       method === "GET" ? ["operator", "admin"] : ["admin"],
     );
   }
+  if (path.startsWith("/api/order-submissions/"))
+    return authorize(auth, ["trader", "admin"]);
   if (method === "GET") return true;
   if (
     path.startsWith("/api/orders") ||

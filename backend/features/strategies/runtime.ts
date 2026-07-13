@@ -1,5 +1,5 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError } from "../../http/http";
+import { conflict } from "../../http/http";
 import type { createStore } from "../../persistence/store";
 import {
   evaluateOperationsPolicy,
@@ -11,8 +11,8 @@ import { rollingTurnover } from "../../shared/risk";
 import {
   evaluateStrategyPlugin,
   strategyPluginFromId,
-  strategySupportsPaperAutomation,
 } from "./strategy-backtest";
+import { strategySupportsPaperAutomation } from "./strategy-paper-readiness";
 import {
   cryptoBarsDto,
   cryptoSnapshotDto,
@@ -311,14 +311,18 @@ export function createStrategyRuntime(
     const tickStartedAt = Date.now(),
       traceId = crypto.randomUUID();
     if (!["shadow", "paper"].includes(run.status))
-      throw new ClientError(
+      throw conflict(
         "Only shadow or approved paper runs can be evaluated by this endpoint",
-        409,
+        "strategy_run_state_conflict",
+        true,
+        "refresh_strategy_run",
       );
     if (!run.backtestId || !run.provenance || !run.comparable)
-      throw new ClientError(
+      throw conflict(
         "Legacy strategy runs cannot be evaluated without a reviewed backtest; create a new run",
-        409,
+        "strategy_backtest_required",
+        true,
+        "create_matching_backtest",
       );
     const config = run.config as {
       symbols: string[];

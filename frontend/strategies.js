@@ -21,11 +21,6 @@ const strategyLabels = {
   "order-book-liquidity-scout": "Order-book liquidity scout",
   "mean-reversion": "Mean reversion",
 };
-const shadowOnlyStrategies = new Set([
-  "volatility-targeted-trend",
-  "donchian-atr-breakout",
-  "regime-filtered-mean-reversion",
-]);
 const strategyDefaultParams = {
   cash: {},
   "buy-and-hold": {},
@@ -272,8 +267,8 @@ function localDateTimeValue(date) {
 function syncStrategyLifecycleControls() {
   const run = activeStrategyRun(),
     protocol = run?.config?.experimentProtocol,
-    shadowOnly = Boolean(run && shadowOnlyStrategies.has(run.strategyId)),
-    protocolAllowed = run && !shadowOnly && ["shadow", "paused"].includes(run.status),
+    readiness = run?.paperReadiness,
+    protocolAllowed = readiness?.canRegisterProtocol === true,
     protocolButton = $("#strategy-protocol-submit"),
     approvalButton = $("#strategy-paper-approve"),
     pauseButton = $("#strategy-pause-button"),
@@ -281,7 +276,7 @@ function syncStrategyLifecycleControls() {
     reviewButton = $("#strategy-review-submit"),
     now = new Date();
   protocolButton.disabled = !protocolAllowed;
-  approvalButton.disabled = shadowOnly || !protocolAllowed || !protocol;
+  approvalButton.disabled = readiness?.canApprovePaper !== true;
   pauseButton.disabled =
     !run || ["paused", "completed", "killed", "retired"].includes(run.status);
   killButton.disabled =
@@ -292,22 +287,28 @@ function syncStrategyLifecycleControls() {
     : "Required";
   $("#strategy-protocol-badge").className =
     `pill ${protocol ? "gain" : "loss"}`;
-  $("#strategy-paper-readiness").textContent = shadowOnly
-    ? "Shadow only"
-    : protocol
-      ? "Protocol ready"
-      : "Blocked";
+  $("#strategy-paper-readiness").textContent = !readiness
+    ? "Blocked"
+    : readiness.status === "research_only"
+      ? "Shadow only"
+      : readiness.status === "paper_active"
+        ? "Paper active"
+        : readiness.status === "ready_for_approval"
+          ? "Protocol ready"
+          : "Blocked";
   $("#strategy-paper-readiness").className =
-    `pill ${protocol && !shadowOnly ? "gain" : "loss"}`;
+    `pill ${readiness && ["ready_for_approval", "paper_active"].includes(readiness.status) ? "gain" : "loss"}`;
   $("#strategy-protocol-status").textContent = !run
     ? "Select a run to register its required protocol."
-    : shadowOnly
-      ? `${strategyLabels[run.strategyId] || run.strategyId} is limited to backtest and shadow evaluation; paper protocol and approval are unavailable.`
+    : !readiness
+      ? "Paper readiness is unavailable; controls are disabled."
+    : readiness.status === "research_only"
+      ? `${readiness.summary} ${readiness.reasons.join(" ")}`
     : protocol
       ? `Version ${protocol.version} · ${new Date(protocol.startAt).toLocaleString()} to ${new Date(protocol.stopAt).toLocaleString()} · maximum ${money.format(protocol.maximumBudget)}.`
       : protocolAllowed
         ? "Register a falsifiable protocol before paper approval. Parameters are frozen to the reviewed backtest."
-        : `Protocol registration is unavailable while the run is ${run.status}.`;
+        : readiness.summary;
   if (!protocol) {
     $("#strategy-protocol-start").value ||= localDateTimeValue(now);
     $("#strategy-protocol-stop").value ||= localDateTimeValue(
@@ -867,6 +868,7 @@ $("#strategy-form").onsubmit = async (event) => {
     notify(`Shadow run ${run.runId.slice(0, 8)} created.`);
     await loadStrategyRuns();
   } catch (error) {
+    await recoverConflict(error, { refreshStrategyRun: loadStrategyRuns });
     notify(error.message);
   } finally {
     button.disabled = !latestStrategyBacktestId;
@@ -1011,6 +1013,7 @@ $("#strategy-protocol-form").onsubmit = async (event) => {
     notify("Paper experiment protocol registered.");
     await loadStrategyRuns();
   } catch (error) {
+    await recoverConflict(error, { refreshStrategyRun: loadStrategyRuns });
     notify(error.message);
   } finally {
     button.textContent = "Register protocol";
@@ -1058,6 +1061,7 @@ $("#strategy-paper-form").onsubmit = async (event) => {
     );
     await Promise.all([loadStrategyRuns(), loadClosedBetaReview()]);
   } catch (error) {
+    await recoverConflict(error, { refreshStrategyRun: loadStrategyRuns });
     notify(error.message);
   } finally {
     syncStrategyLifecycleControls();
@@ -1266,13 +1270,8 @@ $("#crypto-order-preview").onclick = async (event) => {
   try {
     button.disabled = true;
     button.textContent = "Submitting…";
-    const submitted = await api("/api/strategy/crypto/orders", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        previewToken: cryptoOrderPreviewToken,
-        idempotencyKey: crypto.randomUUID(),
-      }),
+    const submitted = await submitPaperOrder("/api/strategy/crypto/orders", {
+      previewToken: cryptoOrderPreviewToken,
     });
     cryptoOrderPreviewToken = null;
     notify(
@@ -1286,6 +1285,14 @@ $("#crypto-order-preview").onclick = async (event) => {
       loadClosedBetaReview(),
     ]);
   } catch (error) {
+    await recoverConflict(error, {
+      clearPreview: () => {
+        cryptoOrderPreviewToken = null;
+        cryptoOrderPreview = null;
+        $("#crypto-order-preview").innerHTML =
+          '<div class="empty">Market or account state changed. Review a fresh preview before confirming again.</div>';
+      },
+    });
     notify(error.message);
   } finally {
     button.disabled = false;
