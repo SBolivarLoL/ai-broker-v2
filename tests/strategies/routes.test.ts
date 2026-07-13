@@ -95,6 +95,14 @@ test("strategy routes create and list shadow runs through the runtime boundary",
   const listed = await handleStrategyRequest(list, new URL(list.url), context);
   const listedBody = await listed?.json();
   expect(listedBody.runs).toHaveLength(1);
+  expect(listedBody.runs[0].paperReadiness).toMatchObject({
+    version: "strategy-paper-readiness-v1",
+    status: "protocol_required",
+    code: "strategy_protocol_required",
+    paperAutomationSupported: true,
+    canRegisterProtocol: true,
+    canApprovePaper: false,
+  });
   expect(listedBody).toMatchObject({
     retrievedAt: null,
     time: { retrievalTime: null },
@@ -145,6 +153,72 @@ test("strategy routes create and list shadow runs through the runtime boundary",
     observedAt: null,
     publishedAt: null,
     effectivePeriod: null,
+  });
+
+  const blockedBacktestRequest = new Request(
+    "http://localhost/api/strategy/backtests",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        strategyId: "time-sliced-accumulation",
+        symbols: "BTC/USD",
+        timeframe: "1Hour",
+        days: 30,
+        params: { slices: 2, maxExposure: 1 },
+      }),
+    },
+  );
+  const blockedBacktest = await handleStrategyRequest(
+    blockedBacktestRequest,
+    new URL(blockedBacktestRequest.url),
+    context,
+  );
+  const blockedBacktestBody = await blockedBacktest!.json();
+  const blockedRunRequest = new Request(
+    "http://localhost/api/strategy/runs",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        backtestId: blockedBacktestBody.backtestId,
+        strategyId: "time-sliced-accumulation",
+        symbols: "BTC/USD",
+        timeframe: "1Hour",
+        days: 30,
+        params: { slices: 2, maxExposure: 1 },
+      }),
+    },
+  );
+  const blockedRun = await handleStrategyRequest(
+    blockedRunRequest,
+    new URL(blockedRunRequest.url),
+    context,
+  );
+  const blockedRunBody = await blockedRun!.json();
+  const protocolRequest = new Request(
+    `http://localhost/api/strategy/runs/${blockedRunBody.runId}/experiment-protocol`,
+    { method: "POST", body: "{}" },
+  );
+  const protocolResponse = await handleStrategyRequest(
+    protocolRequest,
+    new URL(protocolRequest.url),
+    context,
+  );
+  expect(protocolResponse?.status).toBe(409);
+  expect(await protocolResponse?.json()).toMatchObject({
+    error: "The strategy state model is not safe for paper automation.",
+    code: "strategy_state_model_unsupported",
+    retryable: false,
+    nextAction: "collect_shadow_evidence",
+    paperReadiness: {
+      status: "research_only",
+      paperAutomationSupported: false,
+      canRegisterProtocol: false,
+      canApprovePaper: false,
+      reasons: [
+        "Historical-bar index progress does not represent durable cross-tick paper execution state.",
+        "Paper automation remains blocked until the mismatch is corrected and directly validated.",
+      ],
+    },
   });
 });
 

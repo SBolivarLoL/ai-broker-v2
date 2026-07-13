@@ -250,11 +250,63 @@ async function api(path, options) {
       ) ||
       body.simulation?.reasons ||
       body.reasons;
-    throw Error(
+    const error = Error(
       body.error || reasons?.join("\n") || "The request was rejected",
     );
+    error.status = response.status;
+    error.code = body.code || null;
+    error.retryable = body.retryable === true;
+    error.nextAction = body.nextAction || null;
+    error.response = body;
+    throw error;
   }
   return body;
+}
+
+async function pollPaperSubmission(idempotencyKey, attempts = 8) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const result = await api(
+      `/api/order-submissions/${encodeURIComponent(idempotencyKey)}`,
+    );
+    if (!result.pending) return result;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw Error(
+    "The paper submission is still processing. Refresh orders before trying again.",
+  );
+}
+
+async function submitPaperOrder(path, body, method = "POST") {
+  const idempotencyKey = crypto.randomUUID();
+  try {
+    return await api(path, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...body, idempotencyKey }),
+    });
+  } catch (error) {
+    if (
+      error.status === 409 &&
+      error.code === "submission_in_progress" &&
+      error.nextAction === "wait_for_submission"
+    )
+      return pollPaperSubmission(idempotencyKey);
+    throw error;
+  }
+}
+
+async function recoverConflict(error, handlers = {}) {
+  if (error.status !== 409) return false;
+  if (error.nextAction === "refresh_orders" && handlers.refreshOrders)
+    await handlers.refreshOrders();
+  if (
+    error.nextAction === "refresh_strategy_run" &&
+    handlers.refreshStrategyRun
+  )
+    await handlers.refreshStrategyRun();
+  if (error.nextAction === "refresh_preview" && handlers.clearPreview)
+    handlers.clearPreview();
+  return true;
 }
 let operationsPolicy = null;
 function renderOperationsPolicy(data) {

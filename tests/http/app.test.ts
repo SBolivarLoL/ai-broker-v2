@@ -6,6 +6,26 @@ import { canonicalHash, STRATEGY_FEATURE_SCHEMA_VERSION } from "../../backend/fe
 
 const codeIdentity = { gitCommit: "a".repeat(40), workingTreeDirty: false };
 const optionSymbols = ["AAPL260717C00100000", "AAPL260717C00101000"] as const;
+const shadowEvidenceConflict = {
+  error: "Shadow evidence is required before paper automation.",
+  code: "strategy_shadow_evidence_required",
+  retryable: false,
+  nextAction: "collect_shadow_evidence",
+  paperReadiness: {
+    version: "strategy-paper-readiness-v1",
+    status: "research_only",
+    code: "strategy_shadow_evidence_required",
+    paperAutomationSupported: false,
+    canRegisterProtocol: false,
+    canApprovePaper: false,
+    retryable: false,
+    nextAction: "collect_shadow_evidence",
+    summary: "Shadow evidence is required before paper automation.",
+    reasons: [
+      "This strategy is implemented for backtest and shadow evaluation, but prospective shadow evidence and an explicit paper experiment have not been approved.",
+    ],
+  },
+};
 const stores: ReturnType<typeof createStore>[] = [];
 afterEach(() => {
   while (stores.length) stores.pop()!.close();
@@ -549,6 +569,21 @@ test("API authorization distinguishes authentication roles and route families", 
   const researchUnavailable = await app.fetch(new Request("https://broker.example.com/api/research/runs", { method: "POST", headers: productionHeaders("researcher", true), body: "{}" }));
   expect(researchUnavailable.status).toBe(503);
 
+  const forbiddenSubmissionRead = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/order-submissions/unknown-key",
+      { headers: productionHeaders("researcher") },
+    ),
+  );
+  expect(forbiddenSubmissionRead.status).toBe(403);
+  const traderSubmissionRead = await app.fetch(
+    new Request(
+      "https://broker.example.com/api/order-submissions/unknown-key",
+      { headers: productionHeaders("trader") },
+    ),
+  );
+  expect(traderSubmissionRead.status).toBe(404);
+
   const portfolio = await app.fetch(new Request("https://broker.example.com/api/portfolio/risk", { headers: productionHeaders("viewer") }));
   expect(portfolio.status).toBe(502);
 });
@@ -959,10 +994,7 @@ test("strategy backtest API persists anchored walk-forward holdout and regimes",
       },
     ));
     expect(blocked.status).toBe(409);
-    expect(await blocked.json()).toEqual({
-      error:
-        "volatility-targeted-trend is limited to backtest and shadow evaluation",
-    });
+    expect(await blocked.json()).toEqual(shadowEvidenceConflict);
   }
   const persistedShadow = app.store.getStrategyRun(shadowRunId)!;
   const malformedPaperConfig = {
@@ -1097,9 +1129,7 @@ test("Donchian ATR API executes reviewed shadow evidence and rejects paper autho
       },
     ));
     expect(blocked.status).toBe(409);
-    expect(await blocked.json()).toEqual({
-      error: "donchian-atr-breakout is limited to backtest and shadow evaluation",
-    });
+    expect(await blocked.json()).toEqual(shadowEvidenceConflict);
   }
   const persistedShadow = app.store.getStrategyRun(runId)!;
   const malformedPaperConfig = {
@@ -1241,9 +1271,7 @@ test("regime-filtered mean-reversion API preserves evidence and rejects paper au
       },
     ));
     expect(blocked.status).toBe(409);
-    expect(await blocked.json()).toEqual({
-      error: "regime-filtered-mean-reversion is limited to backtest and shadow evaluation",
-    });
+    expect(await blocked.json()).toEqual(shadowEvidenceConflict);
   }
   const persistedShadow = app.store.getStrategyRun(runId)!;
   const malformedPaperConfig = {
@@ -1751,6 +1779,21 @@ test("strategy paper approval requires a pre-registered experiment protocol", as
   expect(prematureApproval.status).toBe(409);
   expect(await prematureApproval.json()).toEqual({
     error: "Strategy paper approval requires a pre-registered experiment protocol",
+    code: "strategy_protocol_required",
+    retryable: true,
+    nextAction: "register_experiment_protocol",
+    paperReadiness: {
+      version: "strategy-paper-readiness-v1",
+      status: "protocol_required",
+      code: "strategy_protocol_required",
+      paperAutomationSupported: true,
+      canRegisterProtocol: true,
+      canApprovePaper: false,
+      retryable: true,
+      nextAction: "register_experiment_protocol",
+      summary: "Register a falsifiable protocol before paper approval.",
+      reasons: ["A current experiment protocol is required before paper approval."],
+    },
   });
 
   const protocol = await app.fetch(new Request(`http://local/api/strategy/runs/${run.runId}/experiment-protocol`, {
@@ -1965,7 +2008,12 @@ test("strategy API persists a reviewed backtest and exact run and decision prove
     body: JSON.stringify({ ...definition, days: 31, backtestId }),
   }));
   expect(mismatch.status).toBe(409);
-  expect(await mismatch.json()).toEqual({ error: "Strategy run code or configuration does not match the reviewed backtest" });
+  expect(await mismatch.json()).toEqual({
+    error: "Strategy run code or configuration does not match the reviewed backtest",
+    code: "strategy_backtest_mismatch",
+    retryable: true,
+    nextAction: "create_matching_backtest",
+  });
 });
 
 test("approved strategy paper tick submits one bounded broker order with trace and receipt", async () => {
@@ -2174,6 +2222,38 @@ test("equity order API sanitizes broker failure, releases capacity, and permits 
   expect(app.orderAttempts).toHaveLength(2);
 });
 
+test("order submission status is read-only and returns pending or the original response", async () => {
+  const app = testApp();
+  const key = "submission-status-key";
+  expect(app.store.reserveSubmission(key)).toBe(true);
+  const pending = await app.fetch(
+    new Request(`http://local/api/order-submissions/${key}`),
+  );
+  expect(pending.status).toBe(202);
+  expect(await pending.json()).toEqual({ pending: true, idempotencyKey: key });
+  const duplicate = await equitySubmission(app, "unused-preview-token", key);
+  expect(duplicate.status).toBe(409);
+  expect(await duplicate.json()).toEqual({
+    error: "Order submission is already processing",
+    code: "submission_in_progress",
+    retryable: true,
+    nextAction: "wait_for_submission",
+  });
+  app.store.completeSubmission(key, "paper-order-1", {
+    id: "paper-order-1",
+    status: "accepted",
+  });
+  const completed = await app.fetch(
+    new Request(`http://local/api/order-submissions/${key}`),
+  );
+  expect(completed.status).toBe(200);
+  expect(await completed.json()).toEqual({
+    id: "paper-order-1",
+    status: "accepted",
+  });
+  expect(app.orderAttempts).toEqual([]);
+});
+
 test("linked order API submits exact bracket, OCO, and OTO payloads with durable receipts", async () => {
   const cases = [
     { label: "bracket", ticket: { side: "buy", orderClass: "bracket", takeProfitPrice: 110, stopLossPrice: 90 }, expected: { side: "buy", takeProfit: { limitPrice: 110 }, stopLoss: { stopPrice: 90 } } },
@@ -2243,7 +2323,12 @@ test("replacement API releases failed idempotency and replays one successful bro
 
   const failed = await request();
   expect(failed.status).toBe(409);
-  expect(await failed.json()).toEqual({ error: "Alpaca could not replace the order because its state changed. Refresh the blotter." });
+  expect(await failed.json()).toEqual({
+    error: "Alpaca could not replace the order because its state changed. Refresh the blotter.",
+    code: "order_state_changed",
+    retryable: true,
+    nextAction: "refresh_orders",
+  });
   expect(app.store.submission(key)).toBeNull();
 
   options.replacementError = undefined;
@@ -2274,7 +2359,12 @@ test("exact cancellation maps broker state changes to a stable conflict", async 
   const failedOrder = await (await equitySubmission(failure, (await equityPreview(failure)).previewToken, "cancel-conflict")).json() as any;
   const failed = await failure.fetch(new Request(`http://local/api/orders/${failedOrder.id}`, { method: "DELETE" }));
   expect(failed.status).toBe(409);
-  expect(await failed.json()).toEqual({ error: "Alpaca could not accept the cancellation because the order state changed. Refresh the blotter." });
+  expect(await failed.json()).toEqual({
+    error: "Alpaca could not accept the cancellation because the order state changed. Refresh the blotter.",
+    code: "order_state_changed",
+    retryable: true,
+    nextAction: "refresh_orders",
+  });
   expect(failure.cancellationAttempts).toEqual([failedOrder.id]);
 });
 
@@ -2563,7 +2653,12 @@ test("option position API blocks quantity drift and sanitizes provider failure b
   positions[0]!.qty = "2";
   const blocked = await optionAction(drift, driftPreview.previewToken);
   expect(blocked.status).toBe(409);
-  expect(await blocked.json()).toEqual({ error: "Option position quantity changed after preview" });
+  expect(await blocked.json()).toEqual({
+    error: "Option position quantity changed after preview",
+    code: "option_position_changed",
+    retryable: true,
+    nextAction: "refresh_preview",
+  });
   expect(drift.optionActionAttempts).toEqual([]);
 
   const options: FakeAlpacaOptions = { positions: [{ symbol: optionSymbols[0], qty: "1" }], optionActionError: new Error("private option action failure") };

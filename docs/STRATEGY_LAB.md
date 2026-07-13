@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `edac011`: 2026-07-13.
+Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -72,22 +72,22 @@ Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one sym
 
 ### Operational capability matrix
 
-`Code paper gate` describes what the server permits today. It does not mean that a credentialed paper order, a 30-day experiment, or promotion evidence exists.
+`Code paper gate` comes from the server's `strategy-paper-readiness-v1` result. The browser does not maintain its own strategy list. An enabled gate does not mean that a credentialed paper order, a 30-day experiment, or promotion evidence exists.
 
 | Strategy ID | Real-bar backtest | Current-data shadow | Code paper gate | Current operational assessment |
 | --- | --- | --- | --- | --- |
 | `cash` | Yes | Yes | Enabled | Baseline only; a new zero-exposure run creates no entry order |
 | `buy-and-hold` | Yes | Yes | Enabled | Coherent simple target; paper implementation exists but was not credentialed-order-smoked in this review |
-| `time-sliced-accumulation` | Yes | Yes | Enabled | Do not paper-approve: a prospective tick uses the latest historical-bar index, so an old-enough window can jump to full exposure on its first run tick |
+| `time-sliced-accumulation` | Yes | Yes | Blocked | Historical-bar index is not durable run progress; paper remains unavailable until persisted slice state is implemented and validated |
 | `moving-average-trend` | Yes | Yes | Enabled | Stateless latest-history decision; suitable for the first tightly bounded paper-path validation |
 | `volatility-targeted-trend` | Yes | Yes | Blocked | Intentionally shadow-only while prospective evidence accumulates |
 | `donchian-atr-breakout` | Yes | Yes | Blocked | Intentionally shadow-only; isolated ticks reconstruct entry and trailing-stop state from history |
 | `regime-filtered-mean-reversion` | Yes | Yes | Blocked | PR #123 strategy; intentionally shadow-only and reconstructs entry/holding state from history |
-| `mean-reversion` | Yes | Yes | Enabled | Do not paper-approve: sequential backtests retain `active`, but a new runtime plugin loses that state between ticks |
-| `breakout-momentum` | Yes | Yes | Enabled | Do not paper-approve: sequential backtests retain `active` and entry price, but runtime ticks do not reconstruct them |
+| `mean-reversion` | Yes | Yes | Blocked | Sequential backtests retain `active`, but a new runtime plugin loses that state between ticks |
+| `breakout-momentum` | Yes | Yes | Blocked | Sequential backtests retain `active` and entry price, but runtime ticks do not reconstruct them |
 | `volatility-filter` | Yes | Yes | Enabled | Stateless latest-history decision; paper implementation exists but lacks a credentialed strategy-order smoke |
 | `btc-eth-relative-strength` | Yes, with synchronized pair | Yes | Enabled | Trades only the first symbol as one leg; it is not cross-sectional or multi-leg portfolio rotation |
-| `order-book-liquidity-scout` | Technically yes, but flat without depth | Yes, with current depth | Enabled | Do not paper-approve: bar-only backtests provide no order book and cannot validate the live decision rule |
+| `order-book-liquidity-scout` | Technically yes, but flat without depth | Yes, with current depth | Blocked | Bar-only backtests provide no immutable order-book depth and cannot validate the prospective decision rule |
 
 The coherent near-term paper candidates are therefore `moving-average-trend`, `volatility-filter`, a deliberately bounded `buy-and-hold` baseline, and the single-primary-leg BTC/ETH relative-strength strategy. “Candidate” still requires a fresh reviewed backtest, prospective shadow evidence, a pre-registered protocol, explicit approval, and a deliberate paper-order validation.
 
@@ -119,7 +119,7 @@ required signal close or lagged volume observation exits flat. Once entered, a c
 the configured entry-price stop, mean-reversion threshold, incompatible regime,
 or exact `maxHoldingBars` ceiling. All target changes use close execution.
 
-PR #123 does not paper trade because `regime-filtered-mean-reversion` is present in the server's shadow-only capability list. Lifecycle routes reject both protocol registration and paper approval with HTTP 409, and the runtime repeats the block before account reads or order drafting. Alpaca access is not the missing piece. Enabling it responsibly requires prospective real-data shadow observations, reviewed costs and invalidation behavior, a code change to the server-owned capability gate, matching direct API/runtime/browser tests, and then a tiny explicitly approved paper experiment. Removing the gate alone would make the endpoint reachable but would not create the missing evidence.
+PR #123 does not paper trade because `regime-filtered-mean-reversion` returns `strategy_shadow_evidence_required` from the server-owned readiness registry. Lifecycle routes reject both protocol registration and paper approval with HTTP 409, and the runtime repeats the block before account reads or order drafting. Alpaca access is not the missing piece. Enabling it responsibly requires prospective real-data shadow observations, reviewed costs and invalidation behavior, a code change to the server capability registry, matching direct API/runtime/browser tests, and then a tiny explicitly approved paper experiment. Removing the gate alone would make the endpoint reachable but would not create the missing evidence.
 
 ## Controls
 
@@ -350,6 +350,8 @@ Approved ticks use fresh account cash/buying power, 24/7 crypto session handling
 
 Paper execution additionally requires an active/tradable crypto asset, current non-stale bars and snapshot, a usable spread, a clean linked backtest, a current experiment window, an unexpired approval within its budget, sufficient account state, complete bounded recent-order evidence, no strategy/global kill switch, and passing loss/drawdown/turnover/cooldown policies. The 2026-07-13 read-only review proved account access and current BTC/USD data, not a submitted strategy order.
 
+Order and Strategy Lab conflicts return HTTP 409 with `error`, stable `code`, `retryable`, and `nextAction`. `refresh_preview` means discard the signed preview and require another review plus confirmation; `refresh_orders` means reload broker order state; `register_experiment_protocol` and `collect_shadow_evidence` name lifecycle blockers; and `wait_for_submission` means the original idempotent mutation is still pending. The browser handles the last case with read-only `GET /api/order-submissions/{idempotencyKey}` polling and never sends a second mutation or automatically confirms a changed preview.
+
 Use `Pause run` to stop evaluation. `Kill run` retires the run and records a kill-switch flag. Review actions are `continue`, `pause`, `retire`, `revise`, and `promote`; `promote` only completes the experiment record and never enables live trading.
 
 ### Standalone crypto ticket
@@ -440,7 +442,7 @@ curl -fsS http://localhost:3000/api/strategy/runs/RUN_ID/report
 curl -fsS http://localhost:3000/api/strategy/decision-traces/TRACE_ID
 ```
 
-Standalone ticket endpoints are `POST /api/strategy/crypto/order-preview` and `POST /api/strategy/crypto/orders`. The second request uses the reviewed `previewToken` and a unique `idempotencyKey`.
+Standalone ticket endpoints are `POST /api/strategy/crypto/order-preview` and `POST /api/strategy/crypto/orders`. The second request uses the reviewed `previewToken` and a unique `idempotencyKey`. `GET /api/order-submissions/{idempotencyKey}` is a trader/admin read-only recovery endpoint for a mutation that already returned `submission_in_progress`; it cannot create an order.
 
 ## Evaluation checklist
 
@@ -472,7 +474,7 @@ Before continuing or increasing a paper experiment:
 | Performance unavailable   | Filled strategy order, positive budget, and post-fill bars are all required                                                                               |
 | Order-book replay missing | The decision-time snapshot did not include usable depth; the app will not infer it                                                                        |
 | Account unavailable       | Confirm `.env` exists, both `APCA_` credentials are paper keys, and `bun run smoke:read` passes; SEC/OpenAI values do not repair Alpaca account access   |
-| New strategy cannot approve | Check the capability matrix. The three newest strategies intentionally return 409 for protocol and approval; this is not an Alpaca credential failure    |
-| Backtest works but paper behavior differs | Do not approve time-sliced accumulation, legacy mean reversion, breakout momentum, or the order-book scout until the documented state/data gaps are fixed |
+| Strategy cannot approve | Inspect the run's `paperReadiness` and the 409 `code`/`nextAction`. The three newest strategies require shadow evidence; four legacy strategies have explicit state/data blocks. Neither condition is an Alpaca credential failure |
+| Backtest works but paper behavior differs | Time-sliced accumulation, legacy mean reversion, breakout momentum, and the order-book scout now fail closed until their documented state/data gaps are fixed and directly validated |
 
 For implementation priorities and the next strategy catalog, see `roadmap.md`. For current automated evidence and its boundaries, see `VALIDATION.md`.

@@ -246,8 +246,7 @@ captures, and performance keeps benchmark insufficiency consequential.
 The strategy boundary is split by responsibility the same way:
 
 - `strategies/strategy-backtest.ts` owns strict strategy schemas, deterministic
-  plugin lifecycles, backtest calculations, and initial-mode capability
-  decisions. Volatility-targeted trend derives its scale from returns ending
+  plugin lifecycles and backtest calculations. Volatility-targeted trend derives its scale from returns ending
   one bar before the decision, applies a hard non-levered cap and bounded
   upward ramp. Donchian breakout requires coherent OHLC, derives its entry
   channel and ATR from completed bars, reconstructs active/trailing state when
@@ -255,9 +254,13 @@ The strategy boundary is split by responsibility the same way:
   stops without inventing an intrabar fill. Regime-filtered mean reversion
   similarly replays active/entry/holding state while keeping trend, volatility,
   and average dollar-volume regime inputs one completed bar behind its close
-  signal. All three are registered as shadow-only. Lifecycle routes reject
-  their paper protocol/approval while the runtime
-  repeats that gate before drafting or submitting any paper order.
+  signal.
+- `strategies/strategy-paper-readiness.ts` owns the complete paper-capability
+  allow-list and run-level `strategy-paper-readiness-v1` result. It blocks the
+  three evidence-gated strategies, the four known prospective-equivalence
+  mismatches, and unknown capabilities. Lifecycle routes expose and enforce
+  this result, the runtime repeats the gate before account reads or drafting,
+  and the browser consumes the result instead of duplicating strategy IDs.
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
 - Lifecycle backtests pass synchronized historical bar maps to plugins and do not pass historical order-book snapshots. The prospective runtime constructs a fresh plugin for each tick, then passes the latest 1-90 day bars plus current snapshot/order-book evidence. Strategies with hidden mutable plugin state must reconstruct it from supplied history or remain shadow-only; time-sliced accumulation, legacy mean reversion, legacy breakout momentum, and the order-book scout do not yet satisfy that complete backtest-to-prospective equivalence.
 - `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.
@@ -272,6 +275,14 @@ The strategy boundary is split by responsibility the same way:
 - `strategies/strategy-runtime-reporting.ts` owns order reconciliation, attribution, performance, and alert reporting.
 
 These modules share one strategy runtime and route context and preserve the safety pipeline above.
+
+`http/http.ts` owns the stable order/strategy conflict envelope. Every guarded
+HTTP 409 in those boundaries includes a human-readable error plus machine-readable
+`code`, `retryable`, and `nextAction`. `orders/routes.ts` owns the read-only
+submission-status lookup used to recover an already-started idempotent request;
+it cannot reserve risk or call the broker. Browser recovery may refresh state or
+poll that existing key, but state drift always requires a new preview and human
+confirmation before another mutation.
 
 Persistence is composed behind the `createStore()` API:
 

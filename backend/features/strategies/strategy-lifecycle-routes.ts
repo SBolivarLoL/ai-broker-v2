@@ -1,13 +1,19 @@
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import { localResponseTimeFields } from "../../shared/time-provenance";
 import {
   parseStrategyParams,
   runBacktest,
   strategyFunctionFromPlugin,
   strategyPluginFromId,
-  strategySupportsPaperAutomation,
   walkForwardWindows,
 } from "./strategy-backtest";
+import { strategyPaperReadiness } from "./strategy-paper-readiness";
 import {
   parseWalkForwardRequest,
   runWalkForwardEvaluation,
@@ -346,8 +352,16 @@ export async function handleStrategyLifecycleRequest(
       ? json(backtest)
       : json({ error: "Strategy backtest not found" }, 404);
   }
-  if (url.pathname === "/api/strategy/runs" && request.method === "GET")
-    return json({ runs: store.strategyRuns(), ...localResponseTimeFields(new Date()) });
+  if (url.pathname === "/api/strategy/runs" && request.method === "GET") {
+    const runs = store.strategyRuns();
+    return json({
+      runs: runs.map((run) => ({
+        ...run,
+        paperReadiness: strategyPaperReadiness(run),
+      })),
+      ...localResponseTimeFields(new Date()),
+    });
+  }
   if (url.pathname === "/api/strategy/runs" && request.method === "POST") {
     if (!allow(`${actor}:strategy-runs`, 10))
       return json({ error: "Strategy run rate limit exceeded" }, 429);
@@ -407,9 +421,11 @@ export async function handleStrategyLifecycleRequest(
     if (!backtest || backtest.actor !== actor)
       throw new ClientError("Strategy backtest not found", 404);
     if (!backtest.comparable)
-      throw new ClientError(
+      throw conflict(
         "Backtests from a dirty working tree cannot seed a comparable strategy run",
-        409,
+        "strategy_backtest_not_comparable",
+        true,
+        "create_matching_backtest",
       );
     const definitionHash = canonicalHash(
       runtime.definition(
@@ -428,9 +444,11 @@ export async function handleStrategyLifecycleRequest(
       backtest.provenance.featureSchemaVersion !==
         STRATEGY_FEATURE_SCHEMA_VERSION
     )
-      throw new ClientError(
+      throw conflict(
         "Strategy run code or configuration does not match the reviewed backtest",
-        409,
+        "strategy_backtest_mismatch",
+        true,
+        "create_matching_backtest",
       );
     const runId = crypto.randomUUID();
     const schedule = intervalMinutes
@@ -517,20 +535,22 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyProtocolMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
-    if (!strategySupportsPaperAutomation(run.strategyId))
-      return json(
-        {
-          error: `${run.strategyId} is limited to backtest and shadow evaluation`,
-        },
-        409,
+    const readiness = strategyPaperReadiness(run);
+    if (!readiness.paperAutomationSupported)
+      return conflictResponse(
+        readiness.summary,
+        readiness.code,
+        readiness.retryable,
+        readiness.nextAction,
+        { paperReadiness: readiness },
       );
     if (!["shadow", "paused"].includes(run.status))
-      return json(
-        {
-          error:
-            "Only shadow or paused runs can register a paper experiment protocol",
-        },
-        409,
+      return conflictResponse(
+        readiness.summary,
+        readiness.code,
+        readiness.retryable,
+        readiness.nextAction,
+        { paperReadiness: readiness },
       );
     const input = await requestJson(request);
     let protocol: ReturnType<typeof parseStrategyExperimentProtocol>;
@@ -591,20 +611,22 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyPaperApprovalMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
-    if (!strategySupportsPaperAutomation(run.strategyId))
-      return json(
-        {
-          error: `${run.strategyId} is limited to backtest and shadow evaluation`,
-        },
-        409,
+    const readiness = strategyPaperReadiness(run);
+    if (!readiness.paperAutomationSupported)
+      return conflictResponse(
+        readiness.summary,
+        readiness.code,
+        readiness.retryable,
+        readiness.nextAction,
+        { paperReadiness: readiness },
       );
     if (!["shadow", "paused"].includes(run.status))
-      return json(
-        {
-          error:
-            "Only shadow or paused runs can be approved for paper automation",
-        },
-        409,
+      return conflictResponse(
+        readiness.summary,
+        readiness.code,
+        readiness.retryable,
+        readiness.nextAction,
+        { paperReadiness: readiness },
       );
     const input = await requestJson(request);
     let approval: StrategyPaperApproval;
@@ -618,12 +640,12 @@ export async function handleStrategyLifecycleRequest(
     }
     const protocol = currentStrategyExperimentProtocol(run.config);
     if (!protocol)
-      return json(
-        {
-          error:
-            "Strategy paper approval requires a pre-registered experiment protocol",
-        },
-        409,
+      return conflictResponse(
+        "Strategy paper approval requires a pre-registered experiment protocol",
+        "strategy_protocol_required",
+        true,
+        "register_experiment_protocol",
+        { paperReadiness: readiness },
       );
     if (approval.budget > protocol.maximumBudget)
       throw new ClientError(
@@ -659,7 +681,12 @@ export async function handleStrategyLifecycleRequest(
     if (
       !store.approveStrategyRunPaper(runId, approval.budget, config, configHash)
     )
-      return json({ error: "Strategy run could not be approved" }, 409);
+      return conflictResponse(
+        "Strategy run could not be approved because its state changed",
+        "strategy_run_state_changed",
+        true,
+        "refresh_strategy_run",
+      );
     runtime.recordAudit(
       actor,
       "paper_approved",
@@ -772,12 +799,12 @@ export async function handleStrategyLifecycleRequest(
         reviewedAt: parsed.review.reviewedAt,
       });
       if (promotionEvidence.status !== "pass")
-        return json(
-          {
-            error: "Strategy promotion needs more paper evidence",
-            promotionEvidence,
-          },
-          409,
+        return conflictResponse(
+          "Strategy promotion needs more paper evidence",
+          "strategy_promotion_evidence_required",
+          false,
+          "collect_shadow_evidence",
+          { promotionEvidence },
         );
       (parsed.review as Record<string, unknown>).promotionEvidence =
         promotionEvidence;

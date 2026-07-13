@@ -14,13 +14,54 @@ export function json(body: unknown, status = 200) {
   });
 }
 
+export type ConflictNextAction =
+  | "collect_shadow_evidence"
+  | "create_matching_backtest"
+  | "refresh_orders"
+  | "refresh_preview"
+  | "refresh_strategy_run"
+  | "register_experiment_protocol"
+  | "select_shadow_or_paused_run"
+  | "wait_for_submission";
+
+export type ConflictDetails = {
+  code: string;
+  retryable: boolean;
+  nextAction: ConflictNextAction;
+};
+
 export class ClientError extends Error {
   constructor(
     message: string,
     readonly status = 400,
+    readonly details?: ConflictDetails,
   ) {
     super(message);
   }
+}
+
+/** Builds a stable, machine-readable HTTP 409 without weakening the guardrail. */
+export function conflict(
+  message: string,
+  code: string,
+  retryable: boolean,
+  nextAction: ConflictNextAction,
+) {
+  return new ClientError(message, 409, { code, retryable, nextAction });
+}
+
+/** Returns the same conflict contract for routes that do not throw. */
+export function conflictResponse(
+  message: string,
+  code: string,
+  retryable: boolean,
+  nextAction: ConflictNextAction,
+  context: Record<string, unknown> = {},
+) {
+  return json(
+    { ...context, error: message, code, retryable, nextAction },
+    409,
+  );
 }
 
 const MAX_JSON_BYTES = 16_384;

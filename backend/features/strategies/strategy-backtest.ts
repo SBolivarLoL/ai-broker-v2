@@ -116,16 +116,6 @@ export const STRATEGY_IDS = [
 ] as const;
 export type StrategyId = typeof STRATEGY_IDS[number];
 
-export const SHADOW_ONLY_STRATEGY_IDS = [
-  "volatility-targeted-trend",
-  "donchian-atr-breakout",
-  "regime-filtered-mean-reversion",
-] as const satisfies readonly StrategyId[];
-
-export function strategySupportsPaperAutomation(strategyId: string) {
-  return !(SHADOW_ONLY_STRATEGY_IDS as readonly string[]).includes(strategyId);
-}
-
 const boundedInteger = (minimum: number, maximum: number, defaultValue: number) => z.number().finite().int().min(minimum).max(maximum).default(defaultValue);
 const exposure = z.number().finite().min(0).max(1).default(1);
 const STRATEGY_PARAMETER_SCHEMAS = {

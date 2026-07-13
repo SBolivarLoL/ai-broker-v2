@@ -1,5 +1,11 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
-import { ClientError, json, requestJson } from "../../http/http";
+import {
+  ClientError,
+  conflict,
+  conflictResponse,
+  json,
+  requestJson,
+} from "../../http/http";
 import type { createStore } from "../../persistence/store";
 import {
   evaluateOperationsPolicy,
@@ -275,14 +281,21 @@ export function createOptionRoutes({
         );
       }
       if (preview.symbol !== symbol)
-        return json({ error: "Option position changed after preview" }, 409);
+        return conflictResponse(
+          "Option position changed after preview",
+          "option_position_changed",
+          true,
+          "refresh_preview",
+        );
       const position = await alpaca.trading.positions.getOpenPosition({
         symbolOrAssetId: symbol,
       });
       if (Number(position.qty) !== preview.qty)
-        return json(
-          { error: "Option position quantity changed after preview" },
-          409,
+        return conflictResponse(
+          "Option position quantity changed after preview",
+          "option_position_changed",
+          true,
+          "refresh_preview",
         );
       if (preview.action === "exercise")
         await alpaca.trading.positions.optionExercise({
@@ -406,10 +419,20 @@ export function createOptionRoutes({
       const previous = store.submission(idempotencyKey);
       if (previous)
         return previous.pending
-          ? json({ error: "Option order is already processing" }, 409)
+          ? conflictResponse(
+              "Option order is already processing",
+              "submission_in_progress",
+              true,
+              "wait_for_submission",
+            )
           : json(previous);
       if (!store.reserveSubmission(idempotencyKey))
-        return json({ error: "Option order is already processing" }, 409);
+        return conflictResponse(
+          "Option order is already processing",
+          "submission_in_progress",
+          true,
+          "wait_for_submission",
+        );
       let preview,
         reservation,
         operationalPolicy: OperationsPolicyEvaluation | null = null;
@@ -435,9 +458,11 @@ export function createOptionRoutes({
           ]);
         const requiredLevel = ticket.kind === "vertical" ? 3 : 2;
         if (Number(account.optionsTradingLevel ?? 0) < requiredLevel)
-          throw new ClientError(
+          throw conflict(
             "Options permission changed; review the order again",
-            409,
+            "account_capability_changed",
+            true,
+            "refresh_preview",
           );
         const freshRisk = optionOrderRisk(
             ticket,
@@ -453,14 +478,18 @@ export function createOptionRoutes({
           ticket.type === "market" &&
           freshRisk.maxLoss > preview.maxLoss * 1.1
         )
-          throw new ClientError(
+          throw conflict(
             "Option ask moved more than 10%; review the order again",
-            409,
+            "market_price_changed",
+            true,
+            "refresh_preview",
           );
         if (freshRisk.maxLoss > maxOrderRisk || freshRisk.maxLoss > buyingPower)
-          throw new ClientError(
+          throw conflict(
             "Option risk or buying power changed; review the order again",
-            409,
+            "account_state_changed",
+            true,
+            "refresh_preview",
           );
         operationalPolicy = evaluateOperationsPolicy({
           policy: store.operationsPolicy(),
@@ -517,7 +546,12 @@ export function createOptionRoutes({
               },
               422,
             );
-          return json({ error: "Option order is already processing" }, 409);
+          return conflictResponse(
+            "Option order is already processing",
+            "submission_in_progress",
+            true,
+            "wait_for_submission",
+          );
         }
       } catch (error) {
         store.releaseSubmission(idempotencyKey);

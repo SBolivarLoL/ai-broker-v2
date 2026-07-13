@@ -177,6 +177,38 @@ async function installApiFixtures(page: Page) {
           lastRecoveryAt: null,
         },
       });
+    if (url.pathname === "/api/strategy/runs" && request.method() === "GET")
+      return fulfillJson(route, {
+        runs: [
+          {
+            id: "shadow-run-browser",
+            strategyId: "time-sliced-accumulation",
+            status: "shadow",
+            symbols: ["BTC/USD"],
+            policyVersion: "strategy-risk-v1",
+            backtestId: "backtest-browser",
+            createdAt: generatedAt,
+            config: { timeframe: "1Hour", days: 30 },
+            paperReadiness: {
+              version: "strategy-paper-readiness-v1",
+              status: "research_only",
+              code: "strategy_state_model_unsupported",
+              paperAutomationSupported: false,
+              canRegisterProtocol: false,
+              canApprovePaper: false,
+              retryable: false,
+              nextAction: "collect_shadow_evidence",
+              summary:
+                "The strategy state model is not safe for paper automation.",
+              reasons: [
+                "Historical-bar index progress does not represent durable cross-tick paper execution state.",
+                "Paper automation remains blocked until the mismatch is corrected and directly validated.",
+              ],
+            },
+          },
+        ],
+        asOf: generatedAt,
+      });
     return fulfillJson(
       route,
       { error: `Fixture unavailable for ${url.pathname}` },
@@ -213,6 +245,14 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   const strategies = page.getByRole("button", { name: "Strategy Lab" });
   await strategies.focus();
   await page.keyboard.press("Enter");
+  await expect(page.locator("#strategy-paper-readiness")).toHaveText(
+    "Shadow only",
+  );
+  await expect(page.locator("#strategy-protocol-submit")).toBeDisabled();
+  await expect(page.locator("#strategy-paper-approve")).toBeDisabled();
+  await expect(page.locator("#strategy-protocol-status")).toContainText(
+    "state model is not safe for paper automation",
+  );
   await page
     .getByLabel("Strategy", { exact: true })
     .selectOption("volatility-targeted-trend");

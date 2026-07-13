@@ -2,7 +2,7 @@
 
 These project-specific rules apply to AI-assisted work in `ai-broker-v2`.
 
-Review baseline: `main` at `edac011` on 2026-07-13.
+Review baseline: `main` at `5d7eb32` on 2026-07-13.
 Only use subagents if the user explicitly requests them
 
 ## Delivery workflow
