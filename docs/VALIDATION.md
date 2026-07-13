@@ -1,6 +1,6 @@
 # Validation record
 
-Last reviewed against `main` commit `4809b9d`: 2026-07-13.
+Last reviewed against `main` commit `edac011`: 2026-07-13.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
@@ -15,6 +15,23 @@ This file records reproducible confidence evidence. It does not convert paper-on
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
+
+## Live Alpaca and Strategy Lab evidence
+
+The 2026-07-13 11:47 CEST review used the local ignored `.env` without printing a credential, account identifier, balance, position, order, or market price.
+
+| Check | Result | What it establishes | What it does not establish |
+| --- | --- | --- | --- |
+| Configuration presence | `.env` exists; Alpaca key/secret, 32+-character `PREVIEW_SECRET`, SEC identity containing an email, and OpenAI key are configured | Required local values are present; FRED, BEA, Finnhub, OpenFIGI, and production vault keys remain optional/missing | Secret validity beyond the calls below, external terms approval, or a recoverable copy in Git |
+| `bun run smoke:read` | Pass | Current paper account, position list, and open-order list are readable with the configured Alpaca credentials | Crypto order permission or mutation behavior |
+| `/ready` through real Alpaca plus in-memory SQLite | HTTP 200, `status:"ready"`, `paper:true` | Preview, SEC identity, development security, and current paper-account readiness gates pass | Production proxy/vault readiness or long-running scheduler health |
+| BTC/USD asset read | Active, crypto, tradable, and fractionable | The current Alpaca asset master exposes BTC/USD as an eligible paper-order symbol | That a specific future order will be accepted or filled |
+| Seven-day BTC/USD historical probe | 168 `1Hour` bars, from `2026-07-06T10:00:00.000Z` through `2026-07-13T09:00:00.000Z`, source `Alpaca crypto historical bars`, feed `us` | Current real crypto history is reachable and non-empty | Completeness beyond the returned window, independent corroboration, or future availability |
+| Real-data Strategy Lab flow with in-memory SQLite | Backtest HTTP 201 and persisted; linked shadow run HTTP 201; manual shadow tick HTTP 200; one current snapshot; decision `hold`; zero orders | The actual Alpaca history/snapshot path composes end to end with persistence and shadow evaluation without mock operator data | Paper approval, broker order submission, a profitable result, or a scheduled/long-duration run |
+
+The read-only evidence resolves the earlier local “account unavailable” symptom: the current `.env` and paper credentials are usable. No order was submitted. A credentialed strategy paper-order smoke remains deliberately unperformed because it is mutating and needs an explicit strategy, protocol, budget, and approval decision.
+
+A separate deterministic probe compared sequential plugin evaluation with the fresh-plugin-per-runtime-tick boundary. For one controlled history, legacy `mean-reversion` and `breakout-momentum` each held target exposure `1` in sequential evaluation but returned `0` from a fresh instance at the same final bar. `time-sliced-accumulation` returned full target `1` on a first prospective evaluation over a 20-bar history with ten slices. `order-book-liquidity-scout` returned target `0` and `waiting for order-book liquidity snapshot` when given the same bar-only market context used by ordinary backtests. These are demonstrated behavioral gaps, not hypothetical risks.
 
 The reconciliation slice adds ten focused service contracts plus direct
 operations-handler and composed-application API coverage. They prove healthy
@@ -157,12 +174,12 @@ OpenAI request, order, policy, retention, or broker mutation.
 
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Documentation | One root README and project guidance, with product and architecture records under `docs/`                                          |
+| Documentation | Eight tracked Markdown files: project guidance, root onboarding, five product/architecture records under `docs/`, and one design-options index |
 | TypeScript    | 108 backend modules, 13 operational/test-support scripts, 97 TypeScript files under `tests/`, and one Playwright configuration     |
 | Concentration | `backend/app.ts` 401 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `4809b9d`; no open pull request at change start                                  |
+| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `edac011`; no open pull request at change start                                  |
 
 ## Test-layer policy
 
@@ -173,6 +190,7 @@ OpenAI request, order, policy, retention, or broker mutation.
 - Provider contract tests own versioned fixture provenance/redaction integrity and adapter behavior for malformed, partial, throttled, revised, and timestamp-edge responses. Restricted live values remain outside the committed fixtures.
 - Browser/computer-use validation is reserved for rendering, layout, accessibility, responsive behavior, and interaction wiring. It should not be used to populate or verify backend state that can be exercised through functions or HTTP.
 - The maintained Playwright suite owns stable keyboard/focus interaction wiring against committed assets and isolated API fixtures. It does not claim backend, provider, entitlement, or broker behavior.
+- Credentialed real-data checks own current provider/account reachability and end-to-end integration evidence. They remain explicit and read-only by default. Deterministic CI fixtures remain necessary for malformed, stale, throttled, rejected, and mutation-boundary coverage; they must never be described as an operator backtest or current provider evidence.
 
 ## Confidence by area
 
@@ -180,7 +198,7 @@ OpenAI request, order, policy, retention, or broker mutation.
 | --------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Risk and portfolio math     | High at module level                               | Unit, regression, portfolio system tests, and scheduled account/position reconciliation contracts                                                                                                                                                                                                                                                                                                                                                                                                           | No credentialed scheduled reconciliation over a long account history                                                                      |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
-| Strategy decisions          | High for deterministic plugin and lineage behavior | Strict configuration/default tests plus immutable versioned datasets, train-only rolling/anchored walk-forward scoring, final holdout isolation, regime-slice contracts, deterministic trade metrics, moving-block-bootstrap uncertainty ranges, bounded timestamp-aligned comparison charts, comparison decision/OOS/holdout/leakage evidence, explicit promotion blockers, friction calibration, pre-registered paper protocols, promotion evidence gates, linked runs, scheduler, paper policy, observability, replay, attribution, performance, direct API, and strategy system tests | No long paper cohort yet                                                                                                                  |
+| Strategy decisions          | High for deterministic modules; mixed for prospective equivalence | Strict configuration/default tests plus immutable versioned datasets, walk-forward/holdout evidence, trade metrics, uncertainty, comparison, paper policy, observability, replay, direct API tests, and the fresh real-data backtest-to-shadow check | No long paper cohort or credentialed strategy order; time-sliced accumulation, legacy mean reversion, breakout momentum, and the order-book scout have documented prospective/backtest mismatches |
 | Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation/scenario/company-research replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                                                        |
 | Provider normalization      | Good with recorded/redacted fixtures and targeted live reads | A versioned manifest covers all 15 external governance source IDs; contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas. Every canonical-evidence constructor must explicitly declare all five time meanings, the five provider research reports expose calculation-level coverage, and the static DTO inventory rejects unclassified time-bearing exports | CI fixtures and one read-only browser pass cannot prove current entitlement or long-term provider stability; historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, selective enforcement, external review open | Unit and direct API tests cover 16 sources, 12 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, actor-scoped strategy dataset quality stats, and transactional retention for named high-growth records with lineage protection | Internal classifications and the local retention policy are not legal or data-entitlement approval; durable records outside the named high-growth categories remain deliberately unpruned |
@@ -192,26 +210,34 @@ OpenAI request, order, policy, retention, or broker mutation.
 
 ## Full documentation and repository audit
 
-The 2026-07-07 review inspected the affected documentation and checked its
-commands, paths, configuration names, counts, capability statements, and status
-language against `d188e0c` plus fresh command output.
+The 2026-07-13 operability review rechecked the affected documentation against
+merged `main` at `edac011`, traced every strategy through historical backtest,
+current-data shadow, approval, and broker-submission boundaries, and added fresh
+read-only provider evidence. The broader 2026-07-07 command, path, environment,
+inventory, link, and architecture audit remains applicable where no code changed.
 
 | File                          | Audit disposition                                                                                                                            |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENTS.md`                   | Workflow, ownership, validation, roadmap, and safety rules match the repository; review baseline refreshed                                   |
-| `README.md`                   | Setup, layout, commands, runtime, paper-only boundary, and production configuration match source; command-specific symbol overrides added    |
-| `docs/FEATURES.md`            | Capability, safety, persistence, governance, and limitation claims match source and tests; relative-strength peer derivation made explicit   |
-| `docs/STRATEGY_LAB.md`        | Strategy catalog, defaults, lifecycle, endpoints, limits, and execution assumptions match source; API/UI timeframe scope clarified           |
-| `docs/VALIDATION.md`          | Counts, line inventory, Git state, provider checks, browser evidence, and confidence gaps refreshed from this audit                          |
-| `docs/roadmap.md`             | Completed/open status remains consistent with code and external gates; one obsolete Alpaca reference corrected                               |
-| `docs/architecture/README.md` | Every named module exists and the documented composition, feature, integration, persistence, and safety dependency direction matches imports |
+| `AGENTS.md`                   | User's explicit subagent restriction is preserved; review baseline now names merged PR #123                                                  |
+| `README.md`                   | Setup now separates Alpaca strategy requirements from SEC/OpenAI and names the known paper-capability gaps                                   |
+| `docs/FEATURES.md`            | Implemented real-data/paper boundaries and code-enabled-versus-operational strategy limitations are explicit                                |
+| `docs/STRATEGY_LAB.md`        | Adds the real-data boundary, all-strategy capability matrix, PR #123 explanation, enablement requirements, and corrected protocol example     |
+| `docs/VALIDATION.md`          | Records credential presence safely, account/readiness/asset/history results, real-data backtest-to-shadow evidence, and reproduced mismatches |
+| `docs/roadmap.md`             | Adds only unresolved prospective-equivalence and credentialed-smoke work; existing external gates remain open                                |
+| `docs/architecture/README.md` | Documents bar-only backtests, fresh-plugin prospective ticks, and the state/data equivalence requirement                                     |
+| `output/design-options/README.md` | Selected workstation, unimplemented alternative, and superseded light-system descriptions still match the three tracked image artifacts   |
 
 Additional mechanical checks:
 
-- All 10 relative Markdown links resolve to tracked files or directories.
-- Twenty-three unique external Markdown links were requested. Twenty-two
-  resolved as written; the only failure was the obsolete Alpaca historical API
-  path, which this audit replaced with the current official URL.
+- All eight tracked Markdown files were enumerated and all 11 relative links
+  resolve to tracked files or directories.
+- Twenty-six unique external Markdown links were requested with redirects.
+  Eighteen returned HTTP success. Alpaca options returned a rate limit; SEC and
+  BLS rejected the automated audit client; Treasury returned a decompression
+  error; and two FRED requests timed out. These are request-policy/network
+  results, not evidence that the documented URLs are obsolete. The newly relied
+  upon Alpaca paper, market-data, and crypto-order references were separately
+  confirmed through current official documentation.
 - All 15 `package.json` scripts are represented accurately by the command
   reference or documented as internal composition (`start`, `coverage`, and
   the checks they invoke included).
