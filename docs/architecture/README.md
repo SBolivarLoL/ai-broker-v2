@@ -249,9 +249,12 @@ The strategy boundary is split by responsibility the same way:
   plugin lifecycles, backtest calculations, and initial-mode capability
   decisions. Volatility-targeted trend derives its scale from returns ending
   one bar before the decision, applies a hard non-levered cap and bounded
-  upward ramp, and is registered as shadow-only. Lifecycle routes reject its
-  paper protocol/approval while the runtime repeats that gate before drafting
-  or submitting any paper order.
+  upward ramp. Donchian breakout requires coherent OHLC, derives its entry
+  channel and ATR from completed bars, reconstructs active/trailing state when
+  an isolated shadow tick evaluates the latest bar, and records gap-through
+  stops without inventing an intrabar fill. Both are registered as shadow-only.
+  Lifecycle routes reject their paper protocol/approval while the runtime
+  repeats that gate before drafting or submitting any paper order.
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
 - `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.
 - `strategies/strategy-execution-routes.ts` owns crypto market-data ingest and the signed-preview paper-execution pipeline.

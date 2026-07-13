@@ -235,6 +235,17 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   await expect(
     page.getByLabel("Maximum exposure increase per bar"),
   ).toHaveValue("0.1");
+  await page
+    .getByLabel("Strategy", { exact: true })
+    .selectOption("donchian-atr-breakout");
+  await expect(page.getByLabel("Donchian channel lookback")).toHaveValue("20");
+  await expect(page.getByLabel("Lagged ATR lookback")).toHaveValue("14");
+  await expect(page.getByLabel("ATR stop multiple")).toHaveValue("3");
+  await page.getByLabel("Strategy preset").selectOption("conservative");
+  await expect(page.getByLabel("ATR stop multiple")).toHaveValue("2");
+  await expect(
+    page.getByLabel("Maximum exposure", { exact: true }),
+  ).toHaveValue("0.5");
   await page.locator("#strategy-compare-ids").fill("one-backtest-id");
   const compare = page.getByRole("button", { name: "Compare backtests" });
   await compare.focus();
