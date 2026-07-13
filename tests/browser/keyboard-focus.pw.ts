@@ -246,6 +246,23 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   await expect(
     page.getByLabel("Maximum exposure", { exact: true }),
   ).toHaveValue("0.5");
+  await page
+    .getByLabel("Strategy", { exact: true })
+    .selectOption("regime-filtered-mean-reversion");
+  await expect(page.getByLabel("Lagged trend lookback")).toHaveValue("50");
+  await expect(page.getByLabel("Minimum lagged trend return (%)")).toHaveValue("0");
+  await expect(page.getByLabel("Lagged volatility lookback")).toHaveValue("20");
+  await expect(page.getByLabel("Maximum volatility (%)")).toHaveValue("6");
+  await expect(page.getByLabel("Lagged liquidity lookback")).toHaveValue("20");
+  await expect(page.getByLabel("Minimum average dollar volume ($)")).toHaveValue("100000");
+  await expect(page.getByLabel("Stop loss (%)")).toHaveValue("8");
+  await expect(page.getByLabel("Maximum holding period (bars)")).toHaveValue("50");
+  await page.getByLabel("Strategy preset").selectOption("conservative");
+  await expect(page.getByLabel("Minimum lagged trend return (%)")).toHaveValue("1");
+  await expect(page.getByLabel("Maximum volatility (%)")).toHaveValue("4");
+  await expect(page.getByLabel("Minimum average dollar volume ($)")).toHaveValue("250000");
+  await expect(page.getByLabel("Stop loss (%)")).toHaveValue("5");
+  await expect(page.getByLabel("Maximum holding period (bars)")).toHaveValue("20");
   await page.locator("#strategy-compare-ids").fill("one-backtest-id");
   const compare = page.getByRole("button", { name: "Compare backtests" });
   await compare.focus();

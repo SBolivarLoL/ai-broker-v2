@@ -1,6 +1,6 @@
 # Strategy Lab guide
 
-Last reviewed against `main` commit `eee45b6`: 2026-07-13.
+Last reviewed against `main` commit `4809b9d`: 2026-07-13.
 
 Strategy Lab is the crypto strategy research and observability workspace in AI Broker. It supports deterministic backtests, persisted shadow runs, manual or scheduled signal evaluation, and explicitly approved bounded Alpaca paper orders.
 
@@ -48,6 +48,7 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 | `moving-average-trend`       | Holds exposure when fast average exceeds slow average            | Whipsaw in range-bound markets                        |
 | `volatility-targeted-trend`  | Scales confirmed trend exposure from one-bar-lagged volatility   | Timeframe-sensitive target and volatility whipsaw     |
 | `donchian-atr-breakout`      | Enters above prior highs and trails a lagged ATR stop             | False breakouts, gaps, and close-execution slippage    |
+| `regime-filtered-mean-reversion` | Enters oversold closes only inside a lagged eligible regime   | Regime shifts, liquidity decay, and clustered losses   |
 | `mean-reversion`             | Enters below a rolling mean and exits near it                    | Persistent trends and clustered losses                |
 | `breakout-momentum`          | Requires prior-high breakout plus volume confirmation and a stop | False breakouts and gap/slippage risk                 |
 | `volatility-filter`          | Holds exposure only inside a realized-volatility band            | Missed upside or unstable regime boundaries           |
@@ -56,10 +57,11 @@ All strategies use the plugin lifecycle `prepare`, `features`, `decide`, `riskAd
 
 Supported symbols are `BTC/USD`, `ETH/USD`, and `SOL/USD`. Most runs use one symbol. Relative strength accepts `BTC/USD,ETH/USD` or the reverse; the first symbol is the traded primary.
 
-`volatility-targeted-trend` and `donchian-atr-breakout` are deliberately
-backtest/shadow only. The server rejects paper-protocol registration and paper
-approval for either strategy, and the runtime blocks submission if malformed
-persisted state presents one as a paper run. The volatility target is a
+`volatility-targeted-trend`, `donchian-atr-breakout`, and
+`regime-filtered-mean-reversion` are deliberately backtest/shadow only. The
+server rejects paper-protocol registration and paper approval for any of the
+three, and the runtime blocks submission if malformed persisted state presents
+one as a paper run. The volatility target is a
 non-annualized percentage per selected bar; do not reuse the same target across
 `15Min`, `1Hour`, and `1Day` without a separate experiment.
 
@@ -72,6 +74,16 @@ is labeled a gap-through; any low at or below it is a stop touch. Both are
 observed only after the bar completes and target exposure changes still execute
 at the bar close, so this model does not claim a fill at the stop or opening
 price. Missing or incoherent OHLC resets exposure to zero.
+
+Regime-filtered mean reversion calculates the decision-bar z-score from the
+current completed close, but its regime evidence ends one bar earlier. The
+explicit regime requires lagged return over `trendLookback` bars at or above
+`minimumTrendReturnPercent`, lagged realized volatility inside the configured
+minimum/maximum range, and prior average close-times-volume over
+`liquidityLookback` bars at or above `minimumAverageDollarVolume`. A missing
+required signal close or lagged volume observation exits flat. Once entered, a completed close can exit through
+the configured entry-price stop, mean-reversion threshold, incompatible regime,
+or exact `maxHoldingBars` ceiling. All target changes use close execution.
 
 ## Controls
 
@@ -120,6 +132,24 @@ The UI defaults to labeled, strategy-specific numeric controls and keeps the can
   "atrLookback": 14,
   "atrMultiple": 3,
   "maxExposure": 1
+}
+```
+
+```json
+{
+  "lookback": 20,
+  "entryZScore": -2,
+  "exitZScore": -0.25,
+  "trendLookback": 50,
+  "minimumTrendReturnPercent": 0,
+  "volatilityLookback": 20,
+  "minVolatilityPercent": 0,
+  "maxVolatilityPercent": 6,
+  "liquidityLookback": 20,
+  "minimumAverageDollarVolume": 100000,
+  "stopLossPercent": 8,
+  "maxHoldingBars": 50,
+  "exposure": 1
 }
 ```
 
@@ -174,6 +204,9 @@ Cash and buy-and-hold use `{}`.
 | `maxExposureIncreasePerBar`                      | Maximum upward exposure change per bar; reductions are not delayed                          |
 | `channelLookback`                                | Prior completed-bar high window for Donchian entry                                           |
 | `atrLookback`, `atrMultiple`                     | Completed true-range window and non-loosening trailing-stop distance                          |
+| `trendLookback`, `minimumTrendReturnPercent`     | Completed-bar trend-return window and eligible lower bound                                    |
+| `liquidityLookback`, `minimumAverageDollarVolume` | Completed-bar average dollar-volume window and eligible lower bound                           |
+| `maxHoldingBars`                                 | Maximum number of consecutive close decisions that may remain exposed                         |
 | `lookback`                                       | Rolling z-score, breakout, volatility, or relative-strength window                         |
 | `entryZScore`, `exitZScore`                      | Mean-reversion activation and exit boundaries                                              |
 | `volumeLookback`, `volumeMultiple`               | Breakout volume confirmation                                                               |
@@ -197,6 +230,7 @@ The current backtester:
 - Sorts and validates returned bars.
 - Executes target-exposure changes at bar close.
 - Requires strict coherent OHLC for Donchian channel/ATR decisions; gap and intrabar stop detection changes the close target and does not synthesize an intrabar fill price.
+- Uses one-bar-lagged trend, volatility, and dollar-volume evidence for regime-filtered mean reversion; missing evidence, its stop, a regime change, or its holding ceiling exits flat at close.
 - Defaults to $10,000 initial cash, 0 bps fee, and 5 bps slippage.
 - Returns strategy and cash/buy-and-hold baseline results.
 - Reports total return, max drawdown, exposure time, turnover, modeled costs, points, features, thresholds, reasons, a `tradeMetrics` object, and an `uncertainty` object. Trade metrics cover material order count, position episodes, closed round trips, average holding bars/days, gross/net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings.
