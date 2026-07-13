@@ -724,6 +724,14 @@ test("strategy routes reject invalid configuration without provider calls", asyn
   expect(invalidDonchian.status).toBe(400);
   expect(await invalidDonchian.json()).toEqual({ error: "Invalid donchian-atr-breakout parameters: Too small: expected number to be >=0.1" });
 
+  const invalidRegimeReversion = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ symbols: ["BTC/USD"], strategyId: "regime-filtered-mean-reversion", timeframe: "1Hour", days: 30, params: { maxHoldingBars: 0 } }),
+  }));
+  expect(invalidRegimeReversion.status).toBe(400);
+  expect(await invalidRegimeReversion.json()).toEqual({ error: "Invalid regime-filtered-mean-reversion parameters: Too small: expected number to be >=1" });
+
   const ambiguousPeer = await app.fetch(new Request("http://local/api/strategy/backtests", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1091,6 +1099,150 @@ test("Donchian ATR API executes reviewed shadow evidence and rejects paper autho
     expect(blocked.status).toBe(409);
     expect(await blocked.json()).toEqual({
       error: "donchian-atr-breakout is limited to backtest and shadow evaluation",
+    });
+  }
+  const persistedShadow = app.store.getStrategyRun(runId)!;
+  const malformedPaperConfig = {
+    ...(persistedShadow.config as Record<string, unknown>),
+    mode: "paper",
+    paperApproval: {
+      approvedAt: new Date().toISOString(),
+      approvedBy: "malformed-fixture",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      budget: 100,
+      maxPositionNotional: 100,
+      maxOrderNotional: 25,
+      minOrderNotional: 5,
+      maxSpreadBps: 200,
+      timeInForce: "gtc",
+      riskPolicy: {
+        session: "crypto_24_7",
+        requireCashAndBuyingPower: true,
+        maxDailyLossPercent: 5,
+        maxDrawdownPercent: 10,
+        maxDailyTurnoverPercent: 50,
+        errorCooldownMinutes: 1,
+      },
+    },
+  };
+  expect(app.store.approveStrategyRunPaper(
+    runId,
+    100,
+    malformedPaperConfig,
+    canonicalHash(malformedPaperConfig),
+  )).toBe(true);
+  const blockedTick = await app.fetch(new Request(
+    `http://local/api/strategy/runs/${runId}/tick`,
+    { method: "POST" },
+  ));
+  expect(blockedTick.status).toBe(200);
+  expect(await blockedTick.json()).toMatchObject({
+    trace: {
+      decision: "block",
+      riskChecks: {
+        submittedOrder: false,
+        reasons: ["strategy_shadow_only"],
+      },
+    },
+  });
+  expect(app.cryptoBarRequests).toHaveLength(2);
+  expect(app.orderAttempts).toEqual([]);
+});
+
+test("regime-filtered mean-reversion API preserves evidence and rejects paper authority", async () => {
+  const app = testApp({}, {
+    cryptoBars: (request) => {
+      const end = new Date(request.end).getTime();
+      const closes = [100, 102, 104, 106, 90, 89, 88];
+      return {
+        "BTC/USD": closes.map((close, index) => ({
+          t: new Date(end - (closes.length - index) * 86_400_000).toISOString(),
+          o: close,
+          h: close + 1,
+          l: close - 1,
+          c: close,
+          v: index === 4 ? 1_000_000 : 10,
+        })),
+      };
+    },
+  });
+  const params = {
+    lookback: 3,
+    entryZScore: -1,
+    exitZScore: 0.5,
+    trendLookback: 3,
+    minimumTrendReturnPercent: 0,
+    volatilityLookback: 2,
+    minVolatilityPercent: 0,
+    maxVolatilityPercent: 100,
+    liquidityLookback: 2,
+    minimumAverageDollarVolume: 500,
+    stopLossPercent: 8,
+    maxHoldingBars: 10,
+    exposure: 0.6,
+  };
+  const backtest = await app.fetch(new Request("http://local/api/strategy/backtests", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      symbols: ["BTC/USD"],
+      strategyId: "regime-filtered-mean-reversion",
+      timeframe: "1Day",
+      days: 30,
+      params,
+    }),
+  }));
+  expect(backtest.status).toBe(201);
+  const backtestBody = await backtest.json() as any;
+  expect(backtestBody).toMatchObject({
+    result: {
+      strategyId: "regime-filtered-mean-reversion",
+      points: expect.arrayContaining([
+        expect.objectContaining({
+          targetExposure: 0.6,
+          reason: "oversold signal entered inside the eligible regime",
+          features: expect.objectContaining({
+            laggedAverageDollarVolume: 1050,
+            regimeEligible: 1,
+            entered: 1,
+            stopPrice: 82.8,
+          }),
+          thresholds: expect.objectContaining({
+            regimeLagBars: 1,
+            maxHoldingBars: 10,
+            execution: "close",
+          }),
+        }),
+      ]),
+    },
+  });
+
+  const run = await app.fetch(new Request("http://local/api/strategy/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      backtestId: backtestBody.backtestId,
+      symbols: ["BTC/USD"],
+      strategyId: "regime-filtered-mean-reversion",
+      timeframe: "1Day",
+      days: 30,
+      params,
+    }),
+  }));
+  expect(run.status).toBe(201);
+  const runId = String((await run.json() as any).runId);
+  for (const suffix of ["experiment-protocol", "paper-approval"]) {
+    const blocked = await app.fetch(new Request(
+      `http://local/api/strategy/runs/${runId}/${suffix}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    ));
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({
+      error: "regime-filtered-mean-reversion is limited to backtest and shadow evaluation",
     });
   }
   const persistedShadow = app.store.getStrategyRun(runId)!;

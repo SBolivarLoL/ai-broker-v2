@@ -252,8 +252,11 @@ The strategy boundary is split by responsibility the same way:
   upward ramp. Donchian breakout requires coherent OHLC, derives its entry
   channel and ATR from completed bars, reconstructs active/trailing state when
   an isolated shadow tick evaluates the latest bar, and records gap-through
-  stops without inventing an intrabar fill. Both are registered as shadow-only.
-  Lifecycle routes reject their paper protocol/approval while the runtime
+  stops without inventing an intrabar fill. Regime-filtered mean reversion
+  similarly replays active/entry/holding state while keeping trend, volatility,
+  and average dollar-volume regime inputs one completed bar behind its close
+  signal. All three are registered as shadow-only. Lifecycle routes reject
+  their paper protocol/approval while the runtime
   repeats that gate before drafting or submitting any paper order.
 - `strategies/runtime.ts` owns strategy evaluation, paper-order and risk decisions, evidence writes, and scheduler polling.
 - `strategies/routes.ts` guards the `/api/strategy/` prefix and composes the strategy route handlers in pipeline order.

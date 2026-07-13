@@ -107,6 +107,7 @@ export const STRATEGY_IDS = [
   "moving-average-trend",
   "volatility-targeted-trend",
   "donchian-atr-breakout",
+  "regime-filtered-mean-reversion",
   "breakout-momentum",
   "volatility-filter",
   "mean-reversion",
@@ -118,6 +119,7 @@ export type StrategyId = typeof STRATEGY_IDS[number];
 export const SHADOW_ONLY_STRATEGY_IDS = [
   "volatility-targeted-trend",
   "donchian-atr-breakout",
+  "regime-filtered-mean-reversion",
 ] as const satisfies readonly StrategyId[];
 
 export function strategySupportsPaperAutomation(strategyId: string) {
@@ -152,6 +154,23 @@ const STRATEGY_PARAMETER_SCHEMAS = {
     atrMultiple: z.number().finite().min(0.1).max(100).default(3),
     maxExposure: exposure,
   }).strict(),
+  "regime-filtered-mean-reversion": z.object({
+    lookback: boundedInteger(3, 10_000, 20),
+    entryZScore: z.number().finite().min(-20).max(20).default(-2),
+    exitZScore: z.number().finite().min(-20).max(20).default(-0.25),
+    trendLookback: boundedInteger(2, 10_000, 50),
+    minimumTrendReturnPercent: z.number().finite().min(-99.99).max(1_000).default(0),
+    volatilityLookback: boundedInteger(2, 10_000, 20),
+    minVolatilityPercent: z.number().finite().min(0).max(1_000).default(0),
+    maxVolatilityPercent: z.number().finite().min(0).max(1_000).default(6),
+    liquidityLookback: boundedInteger(1, 10_000, 20),
+    minimumAverageDollarVolume: z.number().finite().min(0).max(1_000_000_000_000_000).default(100_000),
+    stopLossPercent: z.number().finite().min(0.1).max(100).default(8),
+    maxHoldingBars: boundedInteger(1, 10_000, 50),
+    exposure,
+  }).strict()
+    .refine(params => params.entryZScore < params.exitZScore, { message: "entryZScore must be less than exitZScore", path: ["exitZScore"] })
+    .refine(params => params.maxVolatilityPercent >= params.minVolatilityPercent, { message: "maxVolatilityPercent must be at least minVolatilityPercent", path: ["maxVolatilityPercent"] }),
   "mean-reversion": z.object({
     lookback: boundedInteger(3, 10_000, 20),
     entryZScore: z.number().finite().min(-20).max(20).default(-2),
@@ -586,6 +605,26 @@ export function volatilityTargetedTrendStrategy(params: { fast?: number; slow?: 
 
 export function donchianAtrBreakoutStrategy(params: { channelLookback?: number; atrLookback?: number; atrMultiple?: number; maxExposure?: number } = {}): BacktestStrategy {
   return strategyFunctionFromPlugin(donchianAtrBreakoutPlugin(parseStrategyParams("donchian-atr-breakout", params)));
+}
+
+type RegimeFilteredMeanReversionParams = {
+  lookback?: number;
+  entryZScore?: number;
+  exitZScore?: number;
+  trendLookback?: number;
+  minimumTrendReturnPercent?: number;
+  volatilityLookback?: number;
+  minVolatilityPercent?: number;
+  maxVolatilityPercent?: number;
+  liquidityLookback?: number;
+  minimumAverageDollarVolume?: number;
+  stopLossPercent?: number;
+  maxHoldingBars?: number;
+  exposure?: number;
+};
+
+export function regimeFilteredMeanReversionStrategy(params: RegimeFilteredMeanReversionParams = {}): BacktestStrategy {
+  return strategyFunctionFromPlugin(regimeFilteredMeanReversionPlugin(parseStrategyParams("regime-filtered-mean-reversion", params)));
 }
 
 export function meanReversionStrategy(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): BacktestStrategy {
@@ -1025,6 +1064,235 @@ export function donchianAtrBreakoutPlugin(params: { channelLookback?: number; at
   };
 }
 
+type RegimeFilteredMeanReversionPrepared = {
+  price: number | null;
+  mean: number | null;
+  zScore: number | null;
+  laggedTrendReturnPercent: number | null;
+  laggedVolatilityPercent: number | null;
+  laggedAverageDollarVolume: number | null;
+  regimeReady: number;
+  trendCompatible: number;
+  volatilityCompatible: number;
+  liquidityCompatible: number;
+  regimeEligible: number;
+  activeBefore: number;
+  activeAfter: number;
+  entryPrice: number | null;
+  holdingBars: number;
+  stopPrice: number | null;
+  stopped: number;
+  holdingLimitReached: number;
+  meanExit: number;
+  regimeExit: number;
+  entered: number;
+  targetExposure: number;
+};
+
+export function regimeFilteredMeanReversionPlugin(params: RegimeFilteredMeanReversionParams = {}): StrategyPlugin<RegimeFilteredMeanReversionPrepared> {
+  const lookback = Math.max(3, Math.floor(params.lookback ?? 20));
+  const entryZScore = Number(params.entryZScore ?? -2);
+  const exitZScore = Number(params.exitZScore ?? -0.25);
+  const trendLookback = Math.max(2, Math.floor(params.trendLookback ?? 50));
+  const minimumTrendReturnPercent = Number(params.minimumTrendReturnPercent ?? 0);
+  const volatilityLookback = Math.max(2, Math.floor(params.volatilityLookback ?? 20));
+  const minVolatilityPercent = Math.max(0, Number(params.minVolatilityPercent ?? 0));
+  const maxVolatilityPercent = Math.max(minVolatilityPercent, Number(params.maxVolatilityPercent ?? 6));
+  const liquidityLookback = Math.max(1, Math.floor(params.liquidityLookback ?? 20));
+  const minimumAverageDollarVolume = Math.max(0, Number(params.minimumAverageDollarVolume ?? 100_000));
+  const stopLossPercent = Math.max(0.1, Number(params.stopLossPercent ?? 8));
+  const maxHoldingBars = Math.max(1, Math.floor(params.maxHoldingBars ?? 50));
+  const exposure = clamp(params.exposure ?? 1);
+  let cachedHistory: BacktestBar[] | null = null;
+  let cachedIndex = -1;
+  let cachedPrepared: RegimeFilteredMeanReversionPrepared | null = null;
+  let active = false;
+  let entryPrice: number | null = null;
+  let holdingBars = 0;
+
+  const reset = (history: BacktestBar[]) => {
+    cachedHistory = history;
+    cachedIndex = -1;
+    cachedPrepared = null;
+    active = false;
+    entryPrice = null;
+    holdingBars = 0;
+  };
+
+  const exactCloses = (history: BacktestBar[], start: number, end: number) => {
+    if (start < 0) return null;
+    const values = history.slice(start, end).map((bar) => Number(bar.close));
+    return values.length === end - start && values.every((value) => Number.isFinite(value) && value > 0)
+      ? values
+      : null;
+  };
+
+  const advance = (history: BacktestBar[], index: number): RegimeFilteredMeanReversionPrepared => {
+    const signalCloses = exactCloses(history, index - lookback + 1, index + 1);
+    const price = signalCloses?.at(-1) ?? null;
+    const mean = signalCloses ? average(signalCloses) : null;
+    const deviation = signalCloses ? stdev(signalCloses) : null;
+    const zScore = price !== null && mean !== null && deviation !== null && deviation > 0
+      ? (price - mean) / deviation
+      : null;
+    const trendCloses = exactCloses(history, index - trendLookback - 1, index);
+    const laggedTrendReturnPercent = trendCloses
+      ? (trendCloses.at(-1)! / trendCloses[0]! - 1) * 100
+      : null;
+    const volatilityCloses = exactCloses(history, index - volatilityLookback - 1, index);
+    const volatilityReturns = volatilityCloses
+      ? volatilityCloses.slice(1).map((close, offset) => close / volatilityCloses[offset]! - 1)
+      : null;
+    const laggedVolatilityPercent = volatilityReturns
+      ? (stdev(volatilityReturns) ?? 0) * 100
+      : null;
+    const liquidityBars = index - liquidityLookback >= 0
+      ? history.slice(index - liquidityLookback, index)
+      : [];
+    const dollarVolumes = liquidityBars.map((bar) => {
+      const close = Number(bar.close);
+      const volume = Number(bar.volume);
+      return Number.isFinite(close) && close > 0 && Number.isFinite(volume) && volume >= 0
+        ? close * volume
+        : null;
+    });
+    const laggedAverageDollarVolume = dollarVolumes.length === liquidityLookback && dollarVolumes.every((value) => value !== null)
+      ? average(dollarVolumes as number[])
+      : null;
+    const regimeReady = zScore !== null && laggedTrendReturnPercent !== null && laggedVolatilityPercent !== null && laggedAverageDollarVolume !== null;
+    const trendCompatible = laggedTrendReturnPercent !== null && laggedTrendReturnPercent >= minimumTrendReturnPercent;
+    const volatilityCompatible = laggedVolatilityPercent !== null && laggedVolatilityPercent >= minVolatilityPercent && laggedVolatilityPercent <= maxVolatilityPercent;
+    const liquidityCompatible = laggedAverageDollarVolume !== null && laggedAverageDollarVolume >= minimumAverageDollarVolume;
+    const regimeEligible = regimeReady && trendCompatible && volatilityCompatible && liquidityCompatible;
+    const activeBefore = active;
+    let stopped = 0;
+    let holdingLimitReached = 0;
+    let meanExit = 0;
+    let regimeExit = 0;
+    let entered = 0;
+    let stopPrice = active && entryPrice !== null
+      ? entryPrice * (1 - stopLossPercent / 100)
+      : null;
+
+    if (!regimeReady) {
+      active = false;
+      entryPrice = null;
+      holdingBars = 0;
+    } else if (active) {
+      stopped = price! <= stopPrice! ? 1 : 0;
+      holdingLimitReached = !stopped && holdingBars >= maxHoldingBars ? 1 : 0;
+      meanExit = !stopped && !holdingLimitReached && zScore! >= exitZScore ? 1 : 0;
+      regimeExit = !stopped && !holdingLimitReached && !meanExit && !regimeEligible ? 1 : 0;
+      if (stopped || holdingLimitReached || meanExit || regimeExit) {
+        active = false;
+        entryPrice = null;
+        holdingBars = 0;
+      } else {
+        holdingBars++;
+      }
+    } else if (exposure > 0 && regimeEligible && zScore! <= entryZScore) {
+      active = true;
+      entryPrice = price;
+      holdingBars = 1;
+      stopPrice = price! * (1 - stopLossPercent / 100);
+      entered = 1;
+    }
+
+    const prepared: RegimeFilteredMeanReversionPrepared = {
+      price,
+      mean,
+      zScore,
+      laggedTrendReturnPercent,
+      laggedVolatilityPercent,
+      laggedAverageDollarVolume,
+      regimeReady: regimeReady ? 1 : 0,
+      trendCompatible: trendCompatible ? 1 : 0,
+      volatilityCompatible: volatilityCompatible ? 1 : 0,
+      liquidityCompatible: liquidityCompatible ? 1 : 0,
+      regimeEligible: regimeEligible ? 1 : 0,
+      activeBefore: activeBefore ? 1 : 0,
+      activeAfter: active ? 1 : 0,
+      entryPrice,
+      holdingBars,
+      stopPrice,
+      stopped,
+      holdingLimitReached,
+      meanExit,
+      regimeExit,
+      entered,
+      targetExposure: active ? exposure : 0,
+    };
+    cachedIndex = index;
+    cachedPrepared = prepared;
+    return prepared;
+  };
+
+  const prepare = (history: BacktestBar[], index: number) => {
+    if (history !== cachedHistory || index < cachedIndex || index > cachedIndex + 1)
+      reset(history);
+    if (index === cachedIndex && cachedPrepared) return cachedPrepared;
+    let prepared: RegimeFilteredMeanReversionPrepared | null = null;
+    for (let replayIndex = cachedIndex + 1; replayIndex <= index; replayIndex++)
+      prepared = advance(history, replayIndex);
+    return prepared!;
+  };
+
+  return {
+    id: "regime-filtered-mean-reversion",
+    version: "strategy-plugin-v1",
+    prepare: ({ history, index }) => prepare(history, index),
+    features: ({ prepared }) => prepared,
+    decide: ({ prepared, features }) => {
+      const reason = !prepared.regimeReady
+        ? "waiting for signal and lagged regime/liquidity history"
+        : prepared.stopped
+          ? "mean-reversion stop loss reached"
+          : prepared.holdingLimitReached
+            ? "maximum holding period reached"
+            : prepared.meanExit
+              ? "price reverted through the exit threshold"
+              : prepared.regimeExit
+                ? "trend volatility or liquidity regime no longer compatible"
+                : prepared.entered
+                  ? "oversold signal entered inside the eligible regime"
+                  : prepared.activeAfter
+                    ? "holding oversold position inside the eligible regime"
+                    : exposure === 0 && prepared.regimeEligible && prepared.zScore! <= entryZScore
+                      ? "eligible oversold signal but exposure cap is zero"
+                      : !prepared.regimeEligible
+                        ? "trend volatility or liquidity regime is incompatible"
+                        : "waiting for an oversold signal";
+      return {
+        targetExposure: prepared.targetExposure,
+        reason,
+        features,
+        thresholds: {
+          lookback,
+          entryZScore,
+          exitZScore,
+          trendLookback,
+          minimumTrendReturnPercent,
+          volatilityLookback,
+          minVolatilityPercent,
+          maxVolatilityPercent,
+          liquidityLookback,
+          minimumAverageDollarVolume,
+          stopLossPercent,
+          maxHoldingBars,
+          exposure,
+          regimeDefinition: "lagged_trend_return_and_volatility_range_and_average_dollar_volume",
+          regimeLagBars: 1,
+          execution: "close",
+        },
+        weights: { zScore: prepared.zScore ?? 0, regimeEligible: prepared.regimeEligible },
+      };
+    },
+    riskAdjust: ({ decision }) => defaultRiskAdjustment(decision),
+    orders: ({ risk, decision }) => targetExposureOrder(risk.targetExposure, decision.reason),
+    attribution: () => defaultAttribution(),
+  };
+}
+
 export function meanReversionPlugin(params: { lookback?: number; entryZScore?: number; exitZScore?: number; exposure?: number } = {}): StrategyPlugin<{ price: number | null; mean: number | null; zScore: number | null }> {
   const lookback = Math.max(3, Math.floor(params.lookback ?? 20));
   const entryZScore = Number.isFinite(params.entryZScore) ? params.entryZScore! : -2;
@@ -1265,6 +1533,7 @@ export function strategyPluginFromId(strategyId: string, params: unknown = {}): 
   if (strategyId === "moving-average-trend") return movingAverageTrendPlugin(parseStrategyParams("moving-average-trend", params));
   if (strategyId === "volatility-targeted-trend") return volatilityTargetedTrendPlugin(parseStrategyParams("volatility-targeted-trend", params));
   if (strategyId === "donchian-atr-breakout") return donchianAtrBreakoutPlugin(parseStrategyParams("donchian-atr-breakout", params));
+  if (strategyId === "regime-filtered-mean-reversion") return regimeFilteredMeanReversionPlugin(parseStrategyParams("regime-filtered-mean-reversion", params));
   if (strategyId === "mean-reversion") return meanReversionPlugin(parseStrategyParams("mean-reversion", params));
   if (strategyId === "breakout-momentum") return breakoutMomentumPlugin(parseStrategyParams("breakout-momentum", params));
   if (strategyId === "volatility-filter") return volatilityFilterPlugin(parseStrategyParams("volatility-filter", params));

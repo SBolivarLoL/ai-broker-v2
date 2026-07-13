@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, donchianAtrBreakoutStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
+import { breakoutMomentumStrategy, btcEthRelativeStrengthStrategy, buildReturnUncertainty, buyAndHoldStrategy, cashStrategy, donchianAtrBreakoutStrategy, evaluateStrategyPlugin, meanReversionStrategy, movingAverageTrendStrategy, orderBookLiquidityScoutStrategy, parseStrategyParams, regimeFilteredMeanReversionStrategy, runBacktest, STRATEGY_IDS, strategyFromId, strategyPluginFromId, strategySupportsPaperAutomation, timeSlicedAccumulationStrategy, volatilityFilterStrategy, volatilityTargetedTrendStrategy, walkForwardWindows } from "../../backend/features/strategies/strategy-backtest";
 
 const bars = [
   { timestamp: "2026-01-01T00:00:00Z", close: 100 },
@@ -396,6 +396,131 @@ test("Donchian ATR breakout uses coherent OHLC, prior-bar signals, and gap-aware
   });
 });
 
+test("regime-filtered mean reversion enforces lagged regime liquidity stop and holding controls", () => {
+  const regimeBars = [100, 102, 104, 106, 90, 89, 88].map((close, index) => ({
+    timestamp: `2026-02-0${index + 1}T00:00:00Z`,
+    close,
+    volume: index === 4 ? 1_000_000 : 10,
+  }));
+  const baseParams = {
+    lookback: 3,
+    entryZScore: -1,
+    exitZScore: 0.5,
+    trendLookback: 3,
+    minimumTrendReturnPercent: 0,
+    volatilityLookback: 2,
+    minVolatilityPercent: 0,
+    maxVolatilityPercent: 100,
+    liquidityLookback: 2,
+    minimumAverageDollarVolume: 500,
+    stopLossPercent: 8,
+    maxHoldingBars: 10,
+    exposure: 0.6,
+  };
+  const strategy = regimeFilteredMeanReversionStrategy(baseParams);
+  const decisions = regimeBars.map((_, index) => strategy(regimeBars, index));
+
+  expect(decisions[3]).toMatchObject({
+    targetExposure: 0,
+    reason: "waiting for signal and lagged regime/liquidity history",
+  });
+  expect(decisions[4]).toMatchObject({
+    targetExposure: 0.6,
+    reason: "oversold signal entered inside the eligible regime",
+    features: {
+      laggedAverageDollarVolume: 1050,
+      trendCompatible: 1,
+      volatilityCompatible: 1,
+      liquidityCompatible: 1,
+      regimeEligible: 1,
+      entered: 1,
+      entryPrice: 90,
+      stopPrice: 82.8,
+      holdingBars: 1,
+    },
+    thresholds: {
+      regimeLagBars: 1,
+      regimeDefinition: "lagged_trend_return_and_volatility_range_and_average_dollar_volume",
+      maxHoldingBars: 10,
+      execution: "close",
+    },
+  });
+  expect(decisions[4]!.features!.laggedTrendReturnPercent).toBeCloseTo(6);
+  expect(decisions[4]!.features!.laggedVolatilityPercent).toBeGreaterThan(0);
+  expect(decisions[4]!.features!.laggedVolatilityPercent).toBeLessThan(0.1);
+  expect(decisions[5]).toMatchObject({
+    targetExposure: 0,
+    reason: "trend volatility or liquidity regime no longer compatible",
+    features: { activeBefore: 1, regimeExit: 1 },
+  });
+  expect(regimeFilteredMeanReversionStrategy(baseParams)(regimeBars, 5)).toMatchObject({
+    targetExposure: 0,
+    reason: "trend volatility or liquidity regime no longer compatible",
+  });
+
+  const permissive = { ...baseParams, minimumTrendReturnPercent: -50 };
+  const holdingStrategy = regimeFilteredMeanReversionStrategy({
+    ...permissive,
+    maxHoldingBars: 2,
+  });
+  const holdingDecisions = regimeBars.map((_, index) =>
+    holdingStrategy(regimeBars, index),
+  );
+  expect(holdingDecisions[5]).toMatchObject({
+    targetExposure: 0.6,
+    reason: "holding oversold position inside the eligible regime",
+    features: { holdingBars: 2 },
+  });
+  expect(holdingDecisions[6]).toMatchObject({
+    targetExposure: 0,
+    reason: "maximum holding period reached",
+    features: { holdingLimitReached: 1 },
+  });
+
+  const stoppedBars = regimeBars.map((bar) => ({ ...bar }));
+  stoppedBars[5] = { ...stoppedBars[5]!, close: 80 };
+  expect(regimeFilteredMeanReversionStrategy(permissive)(stoppedBars, 5)).toMatchObject({
+    targetExposure: 0,
+    reason: "mean-reversion stop loss reached",
+    features: { stopped: 1, stopPrice: 82.8 },
+  });
+
+  const revertedBars = regimeBars.map((bar) => ({ ...bar }));
+  revertedBars[5] = { ...revertedBars[5]!, close: 100 };
+  expect(regimeFilteredMeanReversionStrategy({
+    ...permissive,
+    exitZScore: 0,
+  })(revertedBars, 5)).toMatchObject({
+    targetExposure: 0,
+    reason: "price reverted through the exit threshold",
+    features: { meanExit: 1 },
+  });
+
+  expect(regimeFilteredMeanReversionStrategy({
+    ...baseParams,
+    minimumAverageDollarVolume: 2_000,
+  })(regimeBars, 4)).toMatchObject({
+    targetExposure: 0,
+    reason: "trend volatility or liquidity regime is incompatible",
+    features: { liquidityCompatible: 0, regimeEligible: 0 },
+  });
+  expect(regimeFilteredMeanReversionStrategy({
+    ...baseParams,
+    maxVolatilityPercent: 0.01,
+  })(regimeBars, 4)).toMatchObject({
+    targetExposure: 0,
+    reason: "trend volatility or liquidity regime is incompatible",
+    features: { volatilityCompatible: 0, regimeEligible: 0 },
+  });
+  const missingLiquidity = regimeBars.map((bar) => ({ ...bar }));
+  missingLiquidity[3] = { ...missingLiquidity[3]!, volume: Number.NaN };
+  expect(regimeFilteredMeanReversionStrategy(baseParams)(missingLiquidity, 4)).toMatchObject({
+    targetExposure: 0,
+    reason: "waiting for signal and lagged regime/liquidity history",
+    features: { regimeReady: 0 },
+  });
+});
+
 test("mean reversion enters on oversold z-score and exits near mean", () => {
   const reversionBars = [100, 100, 100, 90, 100].map((close, index) => ({ timestamp: `2026-01-0${index + 1}T00:00:00Z`, close }));
   const strategy = meanReversionStrategy({ lookback: 3, entryZScore: -1, exitZScore: -0.1 });
@@ -482,6 +607,7 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(typeof strategyFromId("moving-average-trend", { fast: 2, slow: 3 })).toBe("function");
   expect(typeof strategyFromId("volatility-targeted-trend", { fast: 2, slow: 3, volatilityLookback: 2 })).toBe("function");
   expect(typeof strategyFromId("donchian-atr-breakout", { channelLookback: 2, atrLookback: 2 })).toBe("function");
+  expect(typeof strategyFromId("regime-filtered-mean-reversion", { lookback: 3, trendLookback: 3, volatilityLookback: 2, liquidityLookback: 2 })).toBe("function");
   expect(typeof strategyFromId("mean-reversion", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("breakout-momentum", { lookback: 3 })).toBe("function");
   expect(typeof strategyFromId("volatility-filter", { lookback: 3 })).toBe("function");
@@ -490,6 +616,7 @@ test("strategy factory exposes the initial crypto strategy catalog", () => {
   expect(() => strategyFromId("unknown")).toThrow("Unknown strategyId");
   expect(strategySupportsPaperAutomation("volatility-targeted-trend")).toBe(false);
   expect(strategySupportsPaperAutomation("donchian-atr-breakout")).toBe(false);
+  expect(strategySupportsPaperAutomation("regime-filtered-mean-reversion")).toBe(false);
   expect(strategySupportsPaperAutomation("moving-average-trend")).toBe(true);
 });
 
@@ -499,6 +626,7 @@ test("strategy configuration applies one canonical set of defaults", () => {
   expect(parseStrategyParams("moving-average-trend")).toEqual({ fast: 5, slow: 20, exposure: 1 });
   expect(parseStrategyParams("volatility-targeted-trend")).toEqual({ fast: 5, slow: 20, volatilityLookback: 20, targetVolatilityPercent: 2, maxExposure: 1, maxExposureIncreasePerBar: 0.25 });
   expect(parseStrategyParams("donchian-atr-breakout")).toEqual({ channelLookback: 20, atrLookback: 14, atrMultiple: 3, maxExposure: 1 });
+  expect(parseStrategyParams("regime-filtered-mean-reversion")).toEqual({ lookback: 20, entryZScore: -2, exitZScore: -0.25, trendLookback: 50, minimumTrendReturnPercent: 0, volatilityLookback: 20, minVolatilityPercent: 0, maxVolatilityPercent: 6, liquidityLookback: 20, minimumAverageDollarVolume: 100_000, stopLossPercent: 8, maxHoldingBars: 50, exposure: 1 });
   expect(parseStrategyParams("mean-reversion")).toEqual({ lookback: 20, entryZScore: -2, exitZScore: -0.25, exposure: 1 });
   expect(parseStrategyParams("breakout-momentum", { lookback: 12 })).toEqual({ lookback: 12, volumeLookback: 12, volumeMultiple: 1.25, stopLossPercent: 8, exposure: 1 });
   expect(parseStrategyParams("volatility-filter")).toEqual({ lookback: 20, minVolatilityPercent: 0, maxVolatilityPercent: 6, exposure: 1 });
@@ -515,6 +643,9 @@ test("strategy configuration rejects malformed and contradictory parameters", ()
   expect(() => parseStrategyParams("volatility-targeted-trend", { maxExposure: 1.1 })).toThrow("Too big");
   expect(() => parseStrategyParams("donchian-atr-breakout", { channelLookback: 1 })).toThrow("Too small");
   expect(() => parseStrategyParams("donchian-atr-breakout", { atrMultiple: Number.POSITIVE_INFINITY })).toThrow("expected number");
+  expect(() => parseStrategyParams("regime-filtered-mean-reversion", { entryZScore: 1, exitZScore: 0 })).toThrow("entryZScore must be less than exitZScore");
+  expect(() => parseStrategyParams("regime-filtered-mean-reversion", { minVolatilityPercent: 5, maxVolatilityPercent: 4 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
+  expect(() => parseStrategyParams("regime-filtered-mean-reversion", { maxHoldingBars: 0 })).toThrow("Too small");
   expect(() => parseStrategyParams("mean-reversion", { entryZScore: 0, exitZScore: -1 })).toThrow("entryZScore must be less than exitZScore");
   expect(() => parseStrategyParams("volatility-filter", { minVolatilityPercent: 10, maxVolatilityPercent: 5 })).toThrow("maxVolatilityPercent must be at least minVolatilityPercent");
   expect(() => parseStrategyParams("breakout-momentum", { volumeMultiple: Number.NaN })).toThrow("expected number");

@@ -14,6 +14,7 @@ const strategyLabels = {
   "moving-average-trend": "Moving average trend",
   "volatility-targeted-trend": "Volatility-targeted trend",
   "donchian-atr-breakout": "Donchian breakout with ATR exit",
+  "regime-filtered-mean-reversion": "Regime-filtered mean reversion",
   "breakout-momentum": "Breakout momentum",
   "volatility-filter": "Volatility filter",
   "btc-eth-relative-strength": "BTC/ETH relative strength",
@@ -23,6 +24,7 @@ const strategyLabels = {
 const shadowOnlyStrategies = new Set([
   "volatility-targeted-trend",
   "donchian-atr-breakout",
+  "regime-filtered-mean-reversion",
 ]);
 const strategyDefaultParams = {
   cash: {},
@@ -42,6 +44,21 @@ const strategyDefaultParams = {
     atrLookback: 14,
     atrMultiple: 3,
     maxExposure: 1,
+  },
+  "regime-filtered-mean-reversion": {
+    lookback: 20,
+    entryZScore: -2,
+    exitZScore: -0.25,
+    trendLookback: 50,
+    minimumTrendReturnPercent: 0,
+    volatilityLookback: 20,
+    minVolatilityPercent: 0,
+    maxVolatilityPercent: 6,
+    liquidityLookback: 20,
+    minimumAverageDollarVolume: 100000,
+    stopLossPercent: 8,
+    maxHoldingBars: 50,
+    exposure: 1,
   },
   "breakout-momentum": {
     lookback: 20,
@@ -93,6 +110,11 @@ const strategyParameterLabels = {
   channelLookback: "Donchian channel lookback",
   atrLookback: "Lagged ATR lookback",
   atrMultiple: "ATR stop multiple",
+  trendLookback: "Lagged trend lookback",
+  minimumTrendReturnPercent: "Minimum lagged trend return (%)",
+  liquidityLookback: "Lagged liquidity lookback",
+  minimumAverageDollarVolume: "Minimum average dollar volume ($)",
+  maxHoldingBars: "Maximum holding period (bars)",
   minRelativeStrengthPercent: "Minimum relative strength (%)",
   maxSpreadBps: "Maximum spread (bps)",
   minVisibleAskNotional: "Minimum visible asks ($)",
@@ -121,6 +143,11 @@ const strategyParameterBounds = {
   channelLookback: [2, 10_000],
   atrLookback: [2, 10_000],
   atrMultiple: [0.1, 100],
+  trendLookback: [2, 10_000],
+  minimumTrendReturnPercent: [-99.99, 1_000],
+  liquidityLookback: [1, 10_000],
+  minimumAverageDollarVolume: [0, 1_000_000_000_000_000],
+  maxHoldingBars: [1, 10_000],
   minRelativeStrengthPercent: [-1_000, 1_000],
   maxSpreadBps: [1, 10_000],
   minVisibleAskNotional: [0, 1_000_000_000_000],
@@ -132,7 +159,8 @@ function strategyParamBounds(key) {
   if (key === "lookback") {
     const strategyId = $("#strategy-id").value;
     if (strategyId === "btc-eth-relative-strength") return [1, 10_000];
-    if (strategyId === "mean-reversion") return [3, 10_000];
+    if (["mean-reversion", "regime-filtered-mean-reversion"].includes(strategyId))
+      return [3, 10_000];
     return [2, 10_000];
   }
   return strategyParameterBounds[key] || ["", ""];
@@ -189,6 +217,16 @@ function strategyPresetParams(strategyId, preset) {
   if (Object.hasOwn(params, "atrMultiple"))
     params.atrMultiple =
       preset === "conservative" ? 2 : preset === "aggressive" ? 4 : 3;
+  if (strategyId === "regime-filtered-mean-reversion") {
+    params.minimumTrendReturnPercent =
+      preset === "conservative" ? 1 : preset === "aggressive" ? -1 : 0;
+    params.maxVolatilityPercent =
+      preset === "conservative" ? 4 : preset === "aggressive" ? 10 : 6;
+    params.minimumAverageDollarVolume =
+      preset === "conservative" ? 250000 : preset === "aggressive" ? 25000 : 100000;
+    params.maxHoldingBars =
+      preset === "conservative" ? 20 : preset === "aggressive" ? 80 : 50;
+  }
   return params;
 }
 
