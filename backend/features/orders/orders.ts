@@ -1,8 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { OrderPriceEvidence } from "./market-price";
 
 export const Preview = z
   .object({
+    priceEvidence: OrderPriceEvidence.optional(),
     symbol: z.string().regex(/^[A-Z.]{1,10}$/),
     side: z.enum(["buy", "sell"]),
     qty: z.number().positive().finite(),

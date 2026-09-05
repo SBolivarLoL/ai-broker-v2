@@ -1,3 +1,5 @@
+import { conflict } from "../../http/http";
+import { getOrderPrice, assertFreshOrderPrice } from "./market-price";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import type { createStore } from "../../persistence/store";
 import {
@@ -74,23 +76,33 @@ export function createOrderRuntime(
     const working = orders.filter((order) =>
       workingBrokerOrderStatuses.has(String(order.status)),
     );
-    const symbols = [...new Set(working.map((order) => String(order.symbol)))];
+    const unpriced = working.filter((order) =>
+      order.limitPrice == null && order.stopPrice == null &&
+      !candidatePrices.has(String(order.symbol)));
+    if (unpriced.some((order) =>
+      (order.assetClass && order.assetClass !== "us_equity") ||
+      !/^[A-Z.]{1,10}$/.test(String(order.symbol))))
+      throw conflict(
+        "A pending non-equity market order has no supported fresh valuation. Wait for its resolution, then refresh orders and create a new preview.",
+        "pending_order_price_unavailable", true, "refresh_orders",
+      );
+    const symbols = [...new Set(unpriced.map((order) => String(order.symbol)))];
     const prices = new Map(
       await Promise.all(
         symbols.map(
           async (symbol) =>
             [
               symbol,
-              candidatePrices.get(symbol) ??
-                (await alpaca.marketData.getLatestPrice(symbol)),
+              await getOrderPrice(alpaca.marketData, symbol, now),
             ] as const,
         ),
       ),
     );
+    for (const evidence of prices.values()) assertFreshOrderPrice(evidence, now());
     return working.map((order) => {
       const qty = Number(order.qty) - Number(order.filledQty ?? 0);
       const price = Number(
-        order.limitPrice ?? order.stopPrice ?? prices.get(String(order.symbol)),
+        order.limitPrice ?? order.stopPrice ?? candidatePrices.get(String(order.symbol)) ?? prices.get(String(order.symbol))?.price,
       );
       if (
         !(qty > 0) ||

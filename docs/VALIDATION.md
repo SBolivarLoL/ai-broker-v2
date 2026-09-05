@@ -8,16 +8,18 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-09-05                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 476 tests, 0 failures, 2,602 assertions across 97 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 490 tests, 0 failures, 2,733 assertions across 99 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
-| `bun run coverage` | Pass: 98.03% functions, 97.39% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.78% functions, 97.42% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 | `bun test tests/scripts/alpaca.test.ts` | Pass: 4 tests, 0 failures, 57 assertions | Bun dotenv parsing with spaces, credential mapping, forced paper mode, inherited-control stripping, missing credentials, blocked mutations, help/version without credentials, and child exit propagation |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
 
 The 2026-09-05 dependency review found 19 transitive advisories (7 high, 11 moderate, and 1 low) below the optional MCP dependency installed by `@openai/agents-core`. The application imports the Agents SDK for typed research and advisor flows but does not configure MCP, Hono, or Express directly. Exact package overrides keep the existing `@openai/agents` API while resolving `@hono/node-server`, `fast-uri`, `hono`, `ip-address`, and `qs` to patched releases; the resulting frozen lockfile passes `bun audit` with no known vulnerabilities.
+
+The September order-price contracts exercise explicit symbol/feed selection, separate observation/retrieval times, the exact 60-second cutoff, invalid values/timestamps, future evidence, confirmation-time drift, missing basket-leg observations, durable receipt evidence, and pending-order valuation. Invalid market evidence returns `409 market_price_unavailable` with `refresh_preview` before broker mutation. Fixtures and in-memory SQLite only; no real order or provider request was performed.
 
 ## Live Alpaca and Strategy Lab evidence
 

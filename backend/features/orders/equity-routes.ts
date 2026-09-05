@@ -1,3 +1,4 @@
+import { getOrderPrice, assertFreshOrderPrice, type OrderPriceEvidence } from "./market-price";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import {
   ClientError,
@@ -41,6 +42,7 @@ type EquityRouteDependencies = {
   allow: RateLimit;
   previewSecret: string;
   getMarketClock: () => Promise<any>;
+  now?: () => Date;
 };
 
 function shortCapabilityError(account: any, asset: any) {
@@ -61,6 +63,7 @@ export function createEquityRoutes({
   allow,
   previewSecret,
   getMarketClock,
+  now = () => new Date(),
 }: EquityRouteDependencies) {
   return async function handleEquityRequest(
     request: Request,
@@ -99,7 +102,7 @@ export function createEquityRoutes({
         account,
         positions,
         asset,
-        price,
+        priceEvidence,
         recentOrders,
         clock,
         marketSnapshot,
@@ -109,11 +112,13 @@ export function createEquityRoutes({
         alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
           symbolOrAssetId: symbol,
         }),
-        alpaca.marketData.getLatestPrice(symbol),
+        getOrderPrice(alpaca.marketData, symbol, now),
         alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
         getMarketClock(),
         alpaca.marketData.stocks.stockSnapshotSingle({ symbol, feed: "iex" }),
       ]);
+      assertFreshOrderPrice(priceEvidence, now());
+      const price = priceEvidence.price;
       if (!asset.tradable || asset._class !== "us_equity")
         return json(
           { error: "Only tradable US stocks and ETFs are supported" },
@@ -170,6 +175,7 @@ export function createEquityRoutes({
         simulation,
         operationalPolicy,
         liquidity,
+        priceEvidence,
       });
       if (!simulation.allowed)
         return json({ allowed: false, simulation, liquidity }, 422);
@@ -178,8 +184,9 @@ export function createEquityRoutes({
           simulation,
           liquidity,
         });
-      const expiresAt = Date.now() + 120_000;
+      const expiresAt = now().getTime() + 120_000;
       const preview: Preview = {
+        priceEvidence,
         symbol,
         side,
         qty,
@@ -203,6 +210,7 @@ export function createEquityRoutes({
       };
       return json({
         allowed: true,
+        priceEvidence,
         simulation,
         operationalPolicy,
         liquidity,
@@ -258,6 +266,7 @@ export function createEquityRoutes({
           "wait_for_submission",
         );
       let preview: Preview;
+      let freshPriceEvidence: OrderPriceEvidence | undefined;
       let freshPrice = 0;
       let freshQty = 0;
       let freshRiskPrice = 0;
@@ -276,19 +285,21 @@ export function createEquityRoutes({
                 true,
                 "refresh_preview",
               );
-            const [account, positions, asset, price, recentOrders] =
+            const [account, positions, asset, priceEvidence, recentOrders] =
               await Promise.all([
                 alpaca.trading.account.getAccount(),
                 alpaca.trading.positions.getAllOpenPositions(),
                 alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
                   symbolOrAssetId: intent.symbol,
                 }),
-                alpaca.marketData.getLatestPrice(intent.symbol),
+                getOrderPrice(alpaca.marketData, intent.symbol, now),
                 alpaca.trading.orders.getAllOrders({
                   status: "all",
                   limit: 500,
                 }),
               ]);
+            assertFreshOrderPrice(priceEvidence, now());
+            const price = priceEvidence.price;
             if (!asset.tradable || asset._class !== "us_equity")
               throw conflict(
                 "The asset is no longer tradable",
@@ -366,6 +377,7 @@ export function createEquityRoutes({
             return {
               account,
               positions,
+              priceEvidence,
               price,
               qty,
               riskPrice,
@@ -374,12 +386,15 @@ export function createEquityRoutes({
               operationalPolicy,
             };
           },
+          now().getTime(),
         );
         preview = fresh.preview;
+        freshPriceEvidence = fresh.validation.priceEvidence;
         freshPrice = fresh.validation.price;
         freshQty = fresh.validation.qty;
         freshRiskPrice = fresh.validation.riskPrice;
         freshOperationalPolicy = fresh.validation.operationalPolicy;
+        assertFreshOrderPrice(fresh.validation.priceEvidence, now());
         if (!freshOperationalPolicy.allowed) {
           store.releaseSubmission(idempotencyKey);
           return blockedOperationsPolicyResponse(freshOperationalPolicy);
@@ -452,6 +467,7 @@ export function createEquityRoutes({
         notional: preview.notional,
         type: preview.type,
         price: freshPrice,
+        priceEvidence: freshPriceEvidence,
         riskPrice: freshRiskPrice,
         simulation: freshSimulation,
         operationalPolicy: freshOperationalPolicy,
@@ -496,13 +512,14 @@ export function createEquityRoutes({
           ...preview,
           qty: freshQty,
           price: freshPrice,
+          priceEvidence: freshPriceEvidence,
           simulation: freshSimulation,
           operationalPolicy: freshOperationalPolicy,
         },
         idempotencyKey,
         orderId: order.id,
         status: order.status,
-        createdAt: new Date().toISOString(),
+        createdAt: now().toISOString(),
       });
       store.event("order.submitted", actor, {
         orderId: order.id,

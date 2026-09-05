@@ -32,6 +32,8 @@ afterEach(() => {
 });
 
 type FakeAlpacaOptions = {
+  stockTrade?: (symbol: string) => any;
+  onPlacement?: () => void;
   accountError?: Error;
   placementError?: Error;
   placementErrorAt?: number;
@@ -104,6 +106,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       legs: [],
     };
     acceptedOrders.set(input.clientOrderId, order);
+    options.onPlacement?.();
     return order;
   };
   const alpaca = {
@@ -111,6 +114,7 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
       stockStream: () => stockStream,
       getLatestPrice: async () => 100,
       stocks: {
+        stockLatestTradeSingle: async ({symbol}: any) => options.stockTrade?.(symbol) ?? ({symbol, trade: {p: 100, t: new Date()}}),
         stockSnapshotSingle: async () => ({
           latestQuote: { bp: 99.9, ap: 100.1 },
           dailyBar: { v: 1_000_000 },
@@ -2715,4 +2719,75 @@ test("unexpected provider errors map to a stable response without leaking detail
   const response = await app.fetch(new Request("http://local/api/account"));
   expect(response.status).toBe(502);
   expect(await response.json()).toEqual({ error: "The broker service could not complete the request" });
+});
+
+
+test("equity and basket previews require valid current trade identity and observation", async () => {
+  for (const invalid of [
+    (symbol: string) => ({symbol, trade: {p: 100}}),
+    (symbol: string) => ({symbol, trade: {p: 100, t: new Date(Date.now() - 61_000)}}),
+    (symbol: string) => ({symbol, trade: {p: 100, t: new Date(Date.now() + 60_000)}}),
+    (_symbol: string) => ({symbol: "WRONG", trade: {p: 100, t: new Date()}}),
+    (symbol: string) => ({symbol, trade: {p: 0, t: new Date()}}),
+  ]) {
+    for (const [path,body] of [
+      ["/api/orders/preview", {symbol:"SPY", side:"buy", qty:0.1}],
+      ["/api/orders/basket/preview", {legs:[{symbol:"SPY",side:"buy",qty:0.1},{symbol:"AAPL",side:"buy",qty:0.1}]}],
+    ] as const) {
+      const app = testApp({PREVIEW_SECRET:"x".repeat(32)}, {stockTrade:invalid});
+      const response = await app.fetch(new Request("http://local"+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({code:"market_price_unavailable",nextAction:"refresh_preview"});
+      expect(app.orderAttempts).toHaveLength(0);
+    }
+  }
+});
+
+test("equity confirmation rechecks observation and stores the price evidence", async () => {
+  let observedAt = new Date();
+  const app=testApp({PREVIEW_SECRET:"x".repeat(32)}, {stockTrade:(symbol)=>({symbol,trade:{p:100,t:observedAt}})});
+  const preview=await equityPreview(app);
+  expect(preview.priceEvidence).toMatchObject({symbol:"SPY",feed:"iex",observedAt:observedAt.toISOString(),maxAgeSeconds:60});
+  observedAt = new Date(Date.now()-61_000);
+  const blocked=await equitySubmission(app,preview.previewToken,"stale-price-proof");
+  expect(blocked.status).toBe(409);
+  expect(await blocked.json()).toMatchObject({code:"market_price_unavailable"});
+  expect(app.orderAttempts).toHaveLength(0);
+  expect(app.store.submission("stale-price-proof")).toBeNull();
+  observedAt=new Date();
+  const fresh=await equityPreview(app);
+  const accepted=await equitySubmission(app,fresh.previewToken,"fresh-price-proof");
+  expect(accepted.status).toBe(200);
+  const result=await accepted.json() as any;
+  expect(app.store.getReceipt(result.receiptId)).toMatchObject({preview:{priceEvidence:{symbol:"SPY",feed:"iex",observedAt:observedAt.toISOString()}}});
+});
+
+test("basket confirmation fails before any leg on newly missing trade evidence",async()=>{
+  let stale=false;
+  const app=testApp({PREVIEW_SECRET:"x".repeat(32)}, {stockTrade:(symbol)=>({symbol,trade:{p:100,t:stale?null:new Date()}})});
+  const preview=await basketPreview(app);
+  stale=true;
+  const response=await basketSubmission(app,preview.previewToken,"basket-stale-proof");
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({code:"market_price_unavailable"});
+  expect(app.orderAttempts).toHaveLength(0);
+});
+
+
+test("basket expiry between independent placements retains the first order and releases later legs",async()=>{
+ let time=Date.now(); const observed=new Date(time);
+ const app=testApp({PREVIEW_SECRET:"x".repeat(32)}, {stockTrade:(symbol)=>({symbol,trade:{p:100,t:observed}}),onPlacement:()=>{time+=61_000;}},()=>new Date(time));
+ const preview=await basketPreview(app);
+ const response=await basketSubmission(app,preview.previewToken,"basket-between-legs");
+ expect(response.status).toBe(207);
+ const result=await response.json() as any;
+ expect(result.status).toBe("partial");
+ expect(app.orderAttempts).toHaveLength(1);
+ expect(result.results[0].orderId).toBeTruthy();
+ expect(result.results[1]).toMatchObject({orderId:null,status:"not_submitted"});
+ expect(app.store.getReceipt(result.receiptId)).toMatchObject({status:"partial",orderIds:[result.results[0].orderId]});
+ expect(app.store.submission("basket-between-legs")).toMatchObject({status:"partial"});
+ const active=app.store.activeRiskReservations();
+ expect(active).toHaveLength(1);
+ expect(active[0]).toMatchObject({status:"submitted",orderId:result.results[0].orderId});
 });

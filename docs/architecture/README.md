@@ -110,6 +110,8 @@ The market boundary keeps provider retrieval and presentation separate:
   source-specific time provenance for asset metadata, quotes, sessions, derived
   statistics, benchmark windows, bars, and news.
 
+`orders/market-price.ts` preserves explicit IEX trade identity, price and provider observation/retrieval time. It rejects invalid or older-than-60-second evidence, including outside core hours. Equity and basket routes repeat freshness checks after asynchronous validation and before reservations; sequential basket submission checks each leg again. Pending orders with limit/stop prices reuse those authoritative values, while market-price fallbacks require fresh evidence. No SDK-wide wrapper or duplicate pagination layer is introduced.
+
 The order boundary is deliberately split by responsibility:
 
 - `orders/runtime.ts` owns broker recovery, stream reconciliation, pending-order valuation, and broker submission helpers.

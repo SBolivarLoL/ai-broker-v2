@@ -64,6 +64,7 @@ export function createOrderRoutes({
     allow,
     previewSecret,
     getMarketClock,
+    now,
   });
   const equityRoutes = createEquityRoutes({
     alpaca,
@@ -72,6 +73,7 @@ export function createOrderRoutes({
     allow,
     previewSecret,
     getMarketClock,
+    now,
   });
 
   return async function handleOrderRequest(

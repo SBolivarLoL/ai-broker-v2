@@ -5,7 +5,7 @@ import { createStore } from "../../backend/persistence/store";
 
 test("order runtime values working broker orders conservatively", async () => {
   const alpaca = {
-    marketData: { getLatestPrice: async () => 125 },
+    marketData: { stocks: { stockLatestTradeSingle: async ({symbol}: any) => ({symbol, trade:{p:125,t:new Date()}}) } },
   } as unknown as Alpaca;
   const runtime = createOrderRuntime(alpaca, createStore(":memory:"));
   const pending = await runtime.pendingBrokerOrders(
@@ -96,4 +96,38 @@ test("stale broker snapshots cannot reconcile durable state after a newer stream
   });
   expect(receiptReconciliations).toBe(0);
   expect(strategyReconciliations).toBe(0);
+});
+
+
+test("pending order valuation skips broker price reads when an authoritative limit exists",async()=>{
+ let calls=0;
+ const store=createStore(":memory:");
+ const runtime=createOrderRuntime({marketData:{stocks:{stockLatestTradeSingle:async()=>{calls++;throw new Error("unexpected");}}}} as any,store);
+ try {
+  const values=await runtime.pendingBrokerOrders([{id:"limit",symbol:"SPY",side:"buy",status:"accepted",qty:"1",filledQty:"0",limitPrice:"90"}],new Map());
+  expect(values[0]?.price).toBe(90);
+  expect(calls).toBe(0);
+ } finally {store.close();}
+});
+
+test("pending market orders with stale reference trades block risk reservation",async()=>{
+ const store=createStore(":memory:");
+ const runtime=createOrderRuntime({marketData:{stocks:{stockLatestTradeSingle:async()=>({symbol:"SPY",trade:{p:100,t:new Date(Date.now()-61_000)}})}}} as any,store);
+ try {
+  await expect(runtime.pendingBrokerOrders([{id:"market",symbol:"SPY",side:"buy",status:"accepted",qty:"1",filledQty:"0"}],new Map())).rejects.toThrow("60 seconds");
+ } finally {store.close();}
+});
+
+
+test("mixed-asset pending orders never use the stock endpoint for unsupported valuations",async()=>{
+ const store=createStore(":memory:"); let calls=0;
+ const runtime=createOrderRuntime({marketData:{stocks:{stockLatestTradeSingle:async()=>{calls++;throw new Error("unexpected stock endpoint");}}}} as any,store);
+ try {
+  for(const [symbol,assetClass] of [["BTC/USD","crypto"],["AAPL260918C00100000","us_option"]]) {
+   const order={id:"other",symbol,assetClass,side:"buy",status:"accepted",qty:"1",filledQty:"0"};
+   await expect(runtime.pendingBrokerOrders([order],new Map())).rejects.toMatchObject({status:409,details:{code:"pending_order_price_unavailable",nextAction:"refresh_orders"}});
+   expect((await runtime.pendingBrokerOrders([order],new Map([[symbol!,100]])))[0]?.price).toBe(100);
+  }
+  expect(calls).toBe(0);
+ } finally {store.close();}
 });

@@ -35,6 +35,8 @@ The shared browser shell uses a dark operator-workstation visual system. Desktop
 
 ### Orders and receipts
 
+- Equity and basket previews, confirmations, and fallback valuation of pending market orders use explicit IEX latest-trade identity and observation time. A trade must be positive, match the requested symbol, and be observed no more than 60 seconds ago without future observation/retrieval times. The same rule applies outside core hours; an old close cannot authorize a queued order. Price evidence is retained in previews, events and receipts. A pending non-equity market order without a separately validated candidate price blocks confirmation with a recoverable conflict; it is never sent to the stock-data endpoint.
+
 - Equity market, limit, stop, stop-limit, trailing-stop, OPG/CLS auction, extended-hours eligible, fractional, and dollar-notional tickets.
 - Buy bracket/OTO and sell OCO linked orders.
 - Multi-leg equity rebalance baskets with application-level atomic preview/reservation and sequential broker submission.

@@ -3,6 +3,7 @@
  * the broker reality that accepted legs submit and fill independently.
  */
 import { z } from "zod";
+import { OrderPriceEvidence } from "./market-price";
 import { signToken, verifyToken } from "./orders";
 import {
   simulateTrade,
@@ -42,7 +43,7 @@ export type PricedBasketLeg = RebalanceBasket["legs"][number] & {
 
 export const RebalanceBasketPreview = z.object({
   legs: z
-    .array(BasketLeg.extend({ price: z.number().positive().finite() }))
+    .array(BasketLeg.extend({ price: z.number().positive().finite(), priceEvidence: OrderPriceEvidence.optional() }))
     .min(2)
     .max(10),
   timeInForce: z.enum(["day", "gtc"]),
