@@ -1,12 +1,12 @@
 # Validation record
 
-Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
+Last reviewed against `main` commit `20602b7`: 2026-09-05.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check              | Result on 2026-07-13                                                              | Scope                                                                                             |
+| Check              | Result on 2026-09-05                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `bun run check`    | Pass: 475 tests, 0 failures, 2,590 assertions across 97 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
@@ -15,6 +15,8 @@ This file records reproducible confidence evidence. It does not convert paper-on
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
+
+The 2026-09-05 dependency review found 19 transitive advisories (7 high, 11 moderate, and 1 low) below the optional MCP dependency installed by `@openai/agents-core`. The application imports the Agents SDK for typed research and advisor flows but does not configure MCP, Hono, or Express directly. Exact package overrides keep the existing `@openai/agents` API while resolving `@hono/node-server`, `fast-uri`, `hono`, `ip-address`, and `qs` to patched releases; the resulting frozen lockfile passes `bun audit` with no known vulnerabilities.
 
 ## Live Alpaca and Strategy Lab evidence
 
