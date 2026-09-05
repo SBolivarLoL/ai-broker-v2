@@ -405,8 +405,14 @@ export async function handleStrategyLifecycleRequest(
     }
     let intervalMinutes: number | null;
     try {
+      const schedule: Record<string, unknown> =
+        input.schedule !== null &&
+        typeof input.schedule === "object" &&
+        !Array.isArray(input.schedule)
+          ? (input.schedule as Record<string, unknown>)
+          : {};
       intervalMinutes = parseStrategyIntervalMinutes(
-        input.intervalMinutes ?? input.schedule?.intervalMinutes,
+        input.intervalMinutes ?? schedule.intervalMinutes,
       );
     } catch (error) {
       throw new ClientError(
@@ -717,7 +723,9 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyPauseMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
-    const input = await requestJson(request).catch(() => ({}));
+    const input: Record<string, unknown> = await requestJson(request).catch(
+      () => ({}),
+    );
     const reason = String(input.reason ?? "Paused from Strategy Lab").slice(
       0,
       200,
@@ -742,7 +750,9 @@ export async function handleStrategyLifecycleRequest(
     const runId = decodeURIComponent(strategyKillMatch[1]!);
     const run = store.getStrategyRun(runId);
     if (!run) return json({ error: "Strategy run not found" }, 404);
-    const input = await requestJson(request).catch(() => ({}));
+    const input: Record<string, unknown> = await requestJson(request).catch(
+      () => ({}),
+    );
     const reason = String(
       input.reason ?? "Kill switch activated from Strategy Lab",
     ).slice(0, 200);

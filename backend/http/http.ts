@@ -66,7 +66,8 @@ export function conflictResponse(
 
 const MAX_JSON_BYTES = 16_384;
 
-export async function requestJson(request: Request) {
+/** Parses the bounded JSON-object envelopes accepted by every mutation route. */
+export async function requestJson(request: Request): Promise<Record<string, unknown>> {
   // Check both the declared and actual encoded size: content-length can be
   // absent or untrusted at the public HTTP boundary.
   const declared = Number(request.headers.get("content-length") ?? 0);
@@ -79,9 +80,17 @@ export async function requestJson(request: Request) {
     throw new ClientError("Request body is too large", 413);
   }
 
+  let parsed: unknown;
   try {
-    return JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     throw new ClientError("Request body must be valid JSON", 400);
   }
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  )
+    throw new ClientError("Request body must be a JSON object", 400);
+  return parsed as Record<string, unknown>;
 }
