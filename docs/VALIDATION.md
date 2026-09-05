@@ -8,7 +8,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-09-05                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 485 tests, 0 failures, 2,664 assertions across 98 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 490 tests, 0 failures, 2,733 assertions across 99 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
 | `bun run coverage` | Pass: 97.78% functions, 97.42% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
