@@ -1,6 +1,6 @@
 # AI Broker product roadmap
 
-Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
+Last reviewed against `main` commit `20602b7`: 2026-09-05.
 
 This is the only future-work inventory for AI Broker. It incorporates the former `LATER_FEATURES.md` and `future-improvements.md` lists. Current behavior belongs in `FEATURES.md`; completed validation evidence belongs in `VALIDATION.md`.
 
@@ -13,6 +13,60 @@ This is the only future-work inventory for AI Broker. It incorporates the former
 
 ## Review baseline
 
+### September 2026 remediation plan
+
+This section is the working ledger for the repository, application-content, and
+Alpaca API/CLI/MCP review. Each item remains open until its implementation and
+named checks land. Changes use separate branches/PRs, with CI passing before
+merge. Subagents are explicitly authorized for this remediation: GPT-5.6 Sol
+handles complex integration work, Terra bounded application fixes, Luna small
+tooling fixes, and GPT-6 owns safety changes and integration review.
+
+The review at `20602b7` passed 475 Bun tests (2,590 assertions), 44 focused eval
+tests, three Chromium interaction tests, and the deterministic-module coverage
+gate (98.03% functions / 97.39% lines). These are overlapping test layers, not
+522 independent tests. A fresh dependency audit reported 19 advisories (seven
+high, eleven moderate, one low), replacing the older clean audit as current
+evidence. No credentialed provider check or real order was performed. The
+installed Alpaca SDK was 0.2.0 and CLI 0.0.11. Direct API reproduction used
+fake broker calls and in-memory SQLite; CLI reproduction used dummy credentials.
+
+| ID | Priority / scope | Finding and acceptance checks | Initial assignment |
+| --- | --- | --- | --- |
+| R01 | P1 · order price freshness | Equity preview/confirmation uses `getLatestPrice`, which loses observation time. A fixture preview and submission succeeded without market timestamps. Preserve symbol, price, feed, observation and retrieval time; reject missing, stale, future, or ambiguous evidence before broker mutation; define closed-session behavior explicitly. Cover preview and confirmation directly, and inspect basket/pending-order reuse. | GPT-6 |
+| R02 | P1 · dependencies | `bun audit` reports 19 transitive advisories through the Agents SDK/MCP dependency graph. Apply compatible fixes, assess reachable paths without equating installed packages with exploitability, run check/eval/browser/audit, and replace stale clean-audit claims. Avoid unrelated major upgrades. | Sol |
+| R03 | P2 · CLI onboarding | `scripts/alpaca.sh` shell-sources `.env`; the unquoted SEC contact example exits 127. Use Bun environment parsing consistently. Test with the example configuration and a fake binary, including values containing spaces, missing credentials, and exit propagation. | Luna |
+| R04 | P2 · CLI authority | The diagnostic wrapper forwards arbitrary CLI commands outside application preview/policy/audit controls. Restrict its diagnostic command surface, preserve forced paper mode, document the tested CLI version and keep mutating smoke execution separately opt-in. Verify blocked mutations without contacting Alpaca. | Luna |
+| R05 | P2 · HTTP contracts | JSON `null` at `/api/orders` and `/api/strategy/backtests`, plus malformed percent encoding at dataset retrieval, return misleading broker 502 errors. Require object bodies and validate decoding; direct API tests must return 400 while genuine provider failures remain sanitized 502. | Terra |
+| R06 | P2 · research loading | Activation caches a symbol before requests succeed and three entry points duplicate provider loading. Consolidate loading, permit failed-load retry and explicit refresh, and prevent an old symbol response overwriting a newer selection. Validate with browser fixtures for partial failure, retry and out-of-order responses. | Sol, after R02 |
+| R07 | P2 · stream lifecycle | `server.ts` suppresses any uncaught error beginning `WebSocket is not open`. Contain the known race at the stream boundary; unrelated errors remain fatal. Add explicit teardown for owned timers/streams and test reconnect/start/stop behavior. | GPT-6 / follow-up |
+| R08 | P2 · onboarding and docs | README plus docs contain about 31,400 words, including repeated DTO provenance detail. Keep README focused on setup/commands, FEATURES on current behavior/limits, architecture on contracts/ownership, VALIDATION on dated evidence and this file on future work. Consolidate without dropping safety limitations, commands, or reproducible evidence; check links and command parity. | Luna, after R03/R04 |
+| R09 | P2 · evidence accuracy | Refresh stale `5d7eb32` baseline references, date security evidence, and separate historical validation from current results. Derive counts from fresh commands; do not imply application-wide coverage or completed external gates. | Integration owner |
+| R10 | P2 · UI content | Lead partial/error states with the consequence and next action, with technical provenance in disclosure. Example: “Missing price history—risk excludes two holdings.” Reuse the coverage vocabulary and preserve missing-data evidence; validate rendering and accessible announcements. | Terra, after R05 |
+| R11 | P2 · overview density | Closed-beta administration competes with account state on Overview. Consider a collapsible operations section that preserves actionable blockers and all review/attachment/export controls. Validate keyboard focus and existing beta workflows. | Terra, after R05 |
+| R12 | P2 · strategy structure | `strategy-backtest.ts` has 1,543 lines mixing schemas, plugin implementations and simulation/report calculations. Extract by responsibility only, preserving public imports, deterministic output and strategy readiness. Run all strategy and API contracts; do not expand paper capability. | Follow-up after safety fixes |
+| R13 | P3 · confirmed dead code | Remove the unused optimizer variance helper and unused portfolio-route/store imports (nine confirmed lines). The unused-symbol compiler probe also reports unused provider/test parameters; inspect before deleting behavior. Enable an appropriate compiler guard if the existing code can satisfy it without suppressions. | Luna, separate cleanup |
+| R14 | P3 · SDK boundaries | Keep direct SDK integration and add small adapters only where identity/time/feed/error semantics require them. Historical-bar helpers already auto-paginate; do not add redundant pagination or an SDK-wide wrapper. | Architectural decision; apply in R01 |
+| R15 | P3 · MCP boundary | No application MCP integration exists. Document upstream v2 schema incompatibility, all-toolsets default, explicit data-tool selection and differing paper environment variables. Do not install MCP or add broker-mutation authority as part of cleanup. | Documentation owner |
+
+Delivery order: dependencies and order freshness first; CLI and parsing may run
+independently; research interaction fixes next; documentation/content and small
+deletions follow. Structural changes remain bounded follow-ups when they would
+delay safety work. Existing feature folders, deterministic policy, SQLite,
+append-only migrations, and the dependency-injected composition root remain the
+chosen architecture. The general store stays intact until a storage family has
+independent ownership/change pressure. No new framework or dependency is needed
+for the editorial and loading fixes.
+
+Official review sources: [Alpaca CLI](https://github.com/alpacahq/cli),
+[Alpaca MCP v2](https://github.com/alpacahq/alpaca-mcp-server),
+[historical bars](https://docs.alpaca.markets/us/reference/stockbars),
+[order workflow](https://docs.alpaca.markets/us/docs/working-with-orders),
+[fast-uri advisory](https://github.com/advisories/GHSA-f65p-4m7j-42xc), and
+[ip-address advisory](https://github.com/advisories/GHSA-mwp4-54f8-5fhr).
+
+### Earlier audit context
+
 The 2026-07-06 audit found a capable deterministic core and a large difference between module-level confidence and whole-application confidence.
 
 | Area                  | Current state                                                                                                                                                                                                                                                                                                 | Evidence / implication                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -20,7 +74,7 @@ The 2026-07-06 audit found a capable deterministic core and a large difference b
 | Repository            | Feature-owned routes, split browser assets, one migration registry, and SQLite persistence; current counts live in `VALIDATION.md`                                                                                                                                                                            | Frontend, backend, tests, scripts, docs, architecture, integrations, and persistence now have explicit homes                                                                                                                                                                                                                                                                                                                                |
 | Automated checks      | Strict TypeScript plus standard and focused safety/evaluation suites                                                                                                                                                                                                                                          | `bun run check` and `bun run eval` pass; current counts live in `VALIDATION.md` and CI enforces the gates                                                                                                                                                                                                                                                                                                                                   |
 | Instrumented coverage | The reviewed deterministic-module boundary passes its floors                                                                                                                                                                                                                                                  | Floors remain 95% functions and 96% lines; exact results live in `VALIDATION.md`                                                                                                                                                                                                                                                                                                                                                            |
-| Dependency audit      | No known vulnerabilities                                                                                                                                                                                                                                                                                      | `bun audit` passes; the dated result lives in `VALIDATION.md`                                                                                                                                                                                                                                                                                                                                                                               |
+| Dependency audit      | September audit requires remediation (R02)                                                                                                                                                                                                                                                                                      | September audit found 19 advisories; R02 owns remediation and refreshed dated evidence                                                                                                                                                                                                                                                                                                                                                                               |
 | Execution             | Alpaca paper only, signed previews, fresh revalidation, idempotency, receipts, risk reservations, global policy                                                                                                                                                                                               | Strong fail-closed order boundary                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Research data         | SEC, Alpaca/IEX, Treasury, BLS, optional FRED/BEA/Finnhub, GDELT, OpenFIGI, and optional OpenAI                                                                                                                                                                                                               | The registry covers 16 sources and all 23 SQLite tables through 12 output categories; provider health, dataset quality, provider contracts, canonical time provenance, and selective retention enforcement are implemented, while full DTO migration and external entitlement review remain open |
 | Strategy research     | Twelve deterministic plugins, immutable linked backtests, versioned long-history crypto bars, rolling/anchored train-only walk-forward evaluation with final holdouts, regime slices, trade metrics, uncertainty ranges, compatible cohort comparison, pre-registered shadow/paper runs, traces and attribution | One server-owned readiness contract permits five reviewed paper-capability paths and fails closed on the three evidence-gated strategies plus four prospective-equivalence gaps; fixing those gaps and collecting long paper evidence remain open |
