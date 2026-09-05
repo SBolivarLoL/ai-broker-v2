@@ -2,178 +2,311 @@
 
 Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
 
-This file describes what exists in the repository now. Planned work belongs only in `roadmap.md`; reproducible confidence evidence belongs in `VALIDATION.md`.
+This file describes behavior implemented in the repository. Planned work belongs
+in [`roadmap.md`](roadmap.md); reproducible evidence belongs in
+[`VALIDATION.md`](VALIDATION.md). Repository and provider ownership are in
+[`docs/architecture/README.md`](architecture/README.md) and the Alpaca API,
+SDK, CLI, and MCP boundaries are in
+[`docs/architecture/alpaca.md`](architecture/alpaca.md).
 
 ## Product scope
 
-AI Broker is a single-user, paper-only investing and strategy-research workstation connected to a personal Alpaca Trading API account. Deterministic code owns calculations, validation, and execution policy. OpenAI agents may retrieve typed evidence, explain it, and draft an action, but cannot submit, cancel, or replace an order.
+AI Broker is a single-user, paper-only investing and strategy-research
+workstation. Deterministic code owns calculations, validation, and execution
+policy. OpenAI agents retrieve typed evidence, explain it, and draft actions;
+they cannot submit, cancel, or replace orders.
 
 The browser exposes seven workspaces:
 
-| Workspace  | Current capability                                                                                                                                                      |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Home       | Paper account, holdings, operations policy, kill switch, closed-beta operator review, and order entry                                                                   |
-| Markets    | Market session, watchlists, movers, most active stocks, monitored news/events, 8-K alerts, and multi-asset capability status                                            |
-| Portfolio  | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management                    |
-| Strategies | Crypto backtests, shadow/scheduled runs, protocol-gated paper approvals, manual crypto tickets, traces, metrics, alerts, performance, attribution, reviews, and reports |
-| Research   | Company market data, SEC evidence, macro context, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research                           |
-| Options    | Bounded option chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions                       |
-| AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority                                                                               |
+| Workspace | Implemented behavior |
+| --- | --- |
+| Home | Paper account, holdings, operations policy, kill switch, closed-beta review, and order entry. |
+| Markets | Session, watchlists, movers, most-active stocks, monitored news/events, 8-K alerts, and multi-asset capability status. |
+| Portfolio | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management. |
+| Strategies | Crypto backtests, shadow/scheduled runs, protocol-gated paper approvals, manual tickets, traces, metrics, alerts, performance, attribution, reviews, and reports. |
+| Research | Company market data, SEC, macro, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research. |
+| Options | Bounded chains, liquidity filters, Greeks, payoff/risk preview, long single-leg and net-debit vertical paper tickets, and position actions. |
+| AI Advisor | Evidence-bound portfolio Q&A and reviewed rebalance ideas with exact simulation authority. |
 
-The shared browser shell uses a dark operator-workstation visual system. Desktop widths expose a persistent labeled navigation rail; tablet widths collapse it to an icon rail; mobile widths use a horizontally scrollable, active-item-centered navigation strip. A sticky status strip exposes locally evidenced data health, the Alpaca paper environment, paper-only execution, and a global private-value mask. The Overview adds explicit equity, buying-power, cash, and account-status cards without inventing unsupported performance claims. Its paper-beta review keeps missing inputs, consequence, next action, status, metrics, and packet export visible; a native disclosure contains all target details, supporting records, the newest recorded beta window, four required drills, unresolved incidents, warnings, append-only record forms, and incident resolution. Research provider reads begin only when the Research workspace is activated. Workspace activation, company refresh, and AI analysis share one research-data coordinator: successful provider results are cached, failed results remain retryable, the company button forces an explicit refresh, and responses from superseded symbol/request generations cannot replace the current view. Recurring account and market polling pauses when its owning workspace or the page is not visible. Loading, toast, and error announcements use live regions. Navigation identifies only the current page rather than applying tab-only selected semantics to ordinary buttons. Confirmation dialogs trap focus, close on Escape, restore the trigger focus, and use a distinct danger treatment for destructive actions. A maintained Playwright/Chromium suite gates these keyboard, focus, research-loading, closed-beta attachment, and packet-export interactions in CI against isolated browser fixtures.
+The shared browser shell uses a dark operator-workstation system with a
+labeled desktop rail, compact tablet rail, active-item-centered mobile
+navigation, and a sticky status strip for locally evidenced data health, the
+Alpaca paper environment, paper-only execution, and private-value masking. The
+Overview shows equity, buying power, cash, and account status without inventing
+unsupported performance claims. Its paper-beta review leads with missing
+inputs, consequence, next action, status, metrics, and packet export; a native
+disclosure contains target details, supporting records, the newest recorded
+beta window, four drills, incidents, warnings, append-only forms, and incident
+resolution. Research activation, company refresh, and AI analysis share one
+loader: successful providers are cached independently, failures can be retried,
+explicit refresh reloads all panels, and superseded responses cannot replace
+the selected company. Chart period and benchmark changes do not invalidate
+other pending research panels. Recurring account and market polling pauses
+when its owner or the page is hidden. Loading, toast, and
+error announcements use live regions, and confirmation dialogs manage focus,
+Escape, restoration, and danger treatment. The maintained Playwright suite
+checks these interactions against isolated fixtures.
 
 ## Capability map
 
 ### Broker and market state
 
-- Alpaca paper account balances, cash, buying power, positions, open orders, activities, account health, and readiness. The account aggregate, account, position, account-activity root/row, managed-order, nested-leg, order-list, and cancel-all-preview DTOs distinguish broker observation from local retrieval and server response time. Account and position observations remain explicitly null because Alpaca does not provide an event timestamp on those current-state responses; order observation uses the most recent available broker order timestamp. Trade activities use execution time as observation; non-trade activities retain provider record creation as publication and the occurrence-or-settlement date as an effective UTC day.
-- Alpaca watchlist create, rename, symbol add/remove, and delete workflows. Watchlist and mutation DTOs distinguish the provider update observation from retrieval and server response; nested asset metadata keeps observation explicitly null. The market-workspace root aggregates child observation/retrieval times and records its own response time.
-- NASDAQ clock/calendar, early-close information, session-aware order guidance, SIP discovery panels where entitled, and an IEX quote/bar SSE bridge.
-- Company price, bid/ask spread, volume, daily bars, SPY/QQQ/DIA comparison, source timestamps, news, eligibility badges, and logo fallback. Cached asset-search root/result DTOs, the single-symbol quote route, market monitoring news/corporate-action/SEC alert DTOs, company-market root/company/quote/session/stats/benchmark/bar/news DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, equity quote/bar stream DTOs, and multi-asset index/FX/crypto DTO distinguish provider observation, publication, effective-period, retrieval, and server response time where applicable. Asset-master and quote observations remain null when Alpaca exposes no event timestamp; cached asset-search, company-market, and market-monitoring responses preserve provider retrieval while refreshing server response time.
-- Read-only crypto quotes for BTC/USD, ETH/USD, and SOL/USD. Index and FX states remain explicitly unavailable when the account lacks entitlement.
-- Fixed-income research returns an explicit unavailable capability record because this personal Trading API account is not a fixed-income-enabled Broker API partner.
+- Alpaca paper account balances, cash, buying power, positions, open orders,
+  activities, health, readiness, watchlists, asset search, market clock,
+  calendar, IEX quotes/bars, company views, monitoring alerts, and entitled
+  multi-asset snapshots.
+- Watchlist CRUD, asset discovery, session-aware order guidance, early-close
+  information, and an IEX quote/bar SSE bridge are implemented. Read-only
+  crypto quotes cover BTC/USD, ETH/USD, and SOL/USD. Index and FX states are
+  explicit unavailable results when the account lacks entitlement.
+- Fixed-income research returns an explicit unavailable capability because this
+  personal Trading API account is not a fixed-income-enabled Broker API
+  partner.
+- Broker and provider responses preserve source/feed, applicable observation
+  or publication time, effective period, retrieval time, and server response
+  time separately. Current account and position endpoints expose no event time,
+  so their observation remains null. Cached retrieval is never relabeled as a
+  market observation.
 
 ### Orders and receipts
 
-- Equity and basket previews, confirmations, and fallback valuation of pending market orders use explicit IEX latest-trade identity and observation time. A trade must be positive, match the requested symbol, and be observed no more than 60 seconds ago without future observation/retrieval times. The same rule applies outside core hours; an old close cannot authorize a queued order. Price evidence is retained in previews, events and receipts. A pending non-equity market order without a separately validated candidate price blocks confirmation with a recoverable conflict; it is never sent to the stock-data endpoint.
+- Equity and basket paper orders require an explicitly identified IEX trade observed within 60 seconds, checked again at confirmation. Missing, future-dated, or older prices block execution even outside the core market session. This intentionally limits off-hours paper ordering.
 
-- Equity market, limit, stop, stop-limit, trailing-stop, OPG/CLS auction, extended-hours eligible, fractional, and dollar-notional tickets.
-- Buy bracket/OTO and sell OCO linked orders.
-- Multi-leg equity rebalance baskets with application-level atomic preview/reservation and sequential broker submission.
-- Explicit paper short workflow with margin, marginability, easy-to-borrow, DAY, quantity, concentration, and fresh-state checks.
-- Long buy-to-open options and defined-risk net-debit verticals. Naked option selling is unavailable. Option-chain and option-portfolio Greek DTOs preserve provider observation, retrieval, and server-response provenance where provider timestamps are available.
-- Standalone paper crypto market, limit, and stop-limit tickets. Approved strategy automation submits only bounded paper crypto market orders.
-- Safe replacement, exact cancellation, and snapshot-bound cancel-all preview for eligible working orders. The shared order tracker retains each accepted REST or stream receipt time and prevents an older recovery snapshot from overwriting a newer streamed order, its retrieval provenance, or the corresponding durable receipt/strategy-order reconciliation.
-- HMAC-signed two-minute previews, exact confirmation, fresh broker/market revalidation, idempotency keys, local risk reservations, broker reconciliation, and decision receipts. Order conflicts use a stable `{error, code, retryable, nextAction}` HTTP 409 contract. The browser disables the active submit control, never resubmits after a preview/state conflict, and polls `GET /api/order-submissions/{idempotencyKey}` only when the original mutation is already pending.
+- Equity market, limit, stop, stop-limit, trailing-stop, OPG/CLS auction,
+  extended-hours, fractional, dollar-notional, bracket/OTO, and OCO tickets.
+- Multi-leg equity rebalance baskets use application-level atomic preview and
+  reservation before sequential broker submission. Explicit paper shorts check
+  margin, marginability, easy-to-borrow, DAY, quantity, concentration, and
+  fresh state.
+- Long buy-to-open options and defined-risk net-debit verticals are available;
+  naked option selling is unavailable. Paper crypto supports market, limit, and
+  stop-limit tickets, while approved strategy automation submits only bounded
+  paper crypto market orders.
+- Eligible working orders support safe replacement, exact cancellation, and a
+  snapshot-bound cancel-all preview. REST and stream receipt times are retained;
+  an older recovery snapshot cannot overwrite newer streamed order evidence.
+- Interactive order workflows pass an HMAC-signed two-minute preview, exact
+  confirmation, fresh broker/market revalidation, idempotency, local risk
+  reservation, reconciliation, and a decision receipt. Approved strategy
+  automation uses its separate pre-registered protocol and server-owned
+  readiness controls before bounded paper crypto orders. Conflicts return the
+  stable `{error, code, retryable, nextAction}` HTTP 409 shape. Browser recovery
+  polls only an already-started idempotent request and requires a new preview
+  after state drift.
 
 ### Portfolio intelligence
 
-- Cashflow-adjusted performance, benchmark attribution, drawdown, volatility, Sharpe-style summary metrics, and persisted daily snapshots. Performance root, summary, daily point, benchmark, current-position attribution, and quality DTOs preserve provider observations, effective windows, separate portfolio/benchmark retrieval, and response time. Current-position observation remains null, and benchmark retrieval remains null when no portfolio points exist and no benchmark request occurs. Current/history snapshot roots plus account, position, risk, order-sync, source, and quality children preserve the original broker-read `capturedAt` as retrieval across SQLite reads and refresh only response time. Order-stream event observation remains separate from REST recovery retrieval, an unpersisted stream receipt remains null, and legacy or malformed rows expose partial provenance without requiring a schema rewrite. Performance and snapshot quality contracts expose expected, received, omitted, freshness, missing, and conclusion-impact evidence through visible browser panels.
-- FIFO activity ledger for fills, fees, dividends, interest, transfers, splits, symbol changes, and broker-provided corporate-action basis allocations. Broker-read completion time is persisted with normalized activity time fields, a 30-second shared read cache preserves that retrieval time while each response receives a fresh server time, and legacy rows expose missing provenance rather than being restamped. The visible evidence panel reports bounded-history, stored-row, retrieval-time, provider-time, unmatched-sell, and unresolved-corporate-action coverage plus its effect on FIFO P&L, basis, and replay; unsupported basis changes remain unresolved rather than guessed.
-- Historical and parametric 95% daily VaR, historical expected shortfall, covariance risk contribution, correlation, liquidity, and SPY benchmark diagnostics. Risk root, current account/position inputs, position-history and IEX-quote inputs, SPY benchmark, advanced analytics, liquidity, weights, diversification, stress, and quality DTOs preserve applicable bar/quote observations, historical effective windows, account versus market retrieval, and response time. Current account/position observations remain null, entitlement-aware historical reads identify their actual SIP/IEX/delayed fallback, and the visible quality panel reports expected, received, omitted, observation coverage, missing inputs, and conclusion impact without applying one false universal age cutoff across bars and quotes.
-- Diversification reports both whole-account concentration, including cash, and invested-asset concentration over gross position value so a cash-heavy account does not make a concentrated invested sleeve appear diversified.
-- Gross and signed asset-class, SEC SIC division/industry, beta, momentum, and realized-volatility exposure with explicit coverage gaps. Exposure root, asset-class/SIC/factor aggregates, positions, provider inputs, sources, cache metadata, and quality DTOs distinguish current Alpaca account/position retrieval, IEX bar observations/effective windows/retrieval, SEC classification retrieval, and server response time. Cache hits preserve external-evidence retrieval while refreshing current-state and response times; failed, unqueried, malformed, unsupported, and position-bound omissions remain explicit, and an irrelevant SPY benchmark is not queried for a portfolio without US-equity holdings. The visible panel exposes expected, received, omitted, observation coverage, and conclusion impact while explicitly warning that retrieval-time SEC SIC is not a point-in-time historical classification.
-- Deterministic rate, technology, volatility, and user-entered held-symbol scenarios. The v2 scenario contract preserves the underlying exposure observation/effective/retrieval evidence separately from response time on roots, scenarios, and positions; identifies local calculations, Alpaca/IEX/SEC inputs, and user assumptions; and exposes expected, received, omitted, and unmodeled position evaluations with their effect on displayed losses. Volatility inputs older than seven days, more than five minutes in the future, or missing an observation time are excluded rather than treated as current.
-- Read-only risk-parity and shrunk mean-variance proposals. The v2 optimizer contract preserves current-account retrieval separately from IEX daily-bar observation/effective windows, market retrieval, and response time; exposes expected, received, omitted, malformed, duplicate, conflicting, stale, future-dated, and insufficient-history evidence plus proposal impact; and excludes unusable histories from target weights. The visible warning identifies IEX as a single-exchange feed rather than consolidated SIP. Targets flow into a constrained rebalance planner before the normal basket preview.
-- Rebalance planning with turnover, cash buffer, fee, imported FIFO lot, tax-rate, maximum-tax, precision, and minimum-notional constraints. The v2 planner contract preserves current account/position retrieval, rolling-order fill observations, durable activity retrieval, FIFO acquisition periods, operations-policy updates, explicit IEX latest-trade observations/retrieval, calculation time, and response time. Target trades older than seven days, more than five minutes in the future, missing an observation, or carrying malformed prices fail closed. Expected, received, omitted, rejected, freshness, tax-lot coverage, and conclusion impact are visible before a draft can flow into the separately revalidated basket preview.
-- Persisted operations policy for kill switch, order notional, symbol notional, position exposure, sector exposure, drawdown, and turnover.
+- Cashflow-adjusted performance, benchmark attribution, drawdown, volatility,
+  Sharpe-style metrics, and persisted daily snapshots.
+- FIFO accounting covers fills, fees, dividends, interest, transfers, splits,
+  symbol changes, and broker corporate-action basis allocations. Unsupported
+  basis changes, unmatched sells, bounded-history truncation, and missing legacy
+  provenance remain unresolved rather than guessed.
+- Historical and parametric 95% daily VaR, expected shortfall, covariance risk
+  contribution, correlation, liquidity, SPY diagnostics, diversification,
+  asset-class/SIC/factor exposure, deterministic scenarios, risk-parity and
+  shrunk mean-variance proposals, and constrained rebalance planning are
+  implemented.
+- The portfolio surfaces show expected, received, omitted, freshness, missing,
+  rejected, and conclusion-impact evidence. Stale, future, malformed,
+  conflicting, unobserved, unsupported, or insufficient-history inputs fail
+  closed. Current-account, provider-bar, benchmark, SEC-classification,
+  activity, policy, and calculation times remain distinguishable.
+- Rebalance planning applies turnover, cash-buffer, fee, FIFO-lot, tax-rate,
+  maximum-tax, precision, and minimum-notional constraints. Prices older than
+  seven days, more than five minutes in the future, missing an observation, or
+  malformed cannot become a draft.
 
 ### Research and AI
 
-- Shared SEC EDGAR client with declared identity, caching, retry/backoff, serialized fair-access requests, filing sections, company facts, financial trends, SIC classification, and material 8-K alerts. Malformed or misaligned recent-filing rows are omitted before dates and archive URLs are normalized; a missing/invalid report date remains an unavailable effective period. Classification, recent-filing, filing-evidence/section, company-facts result, and alert DTOs distinguish applicable filing-date publication, report-date effective period, provider retrieval, and server response time. The SEC research route accepts an optional non-future `YYYY-MM-DD` `asOf` cutoff; eligible facts are selected only after post-cutoff records are removed, later amendments cannot replace earlier observations, post-cutoff filing metadata and extracted sections are omitted, and the response reports excluded filing/section/selected-fact/trend counts plus day-level publication precision. Historical SIC fails closed as unavailable because submissions expose only the current classification. Cache hits retain the original provider retrieval timestamp while each normalized response receives a fresh server timestamp.
-- Canonical evidence records carrying provider/source identity, authority, claim status, observation time, publication time, effective period, retrieval time, server response time, entity identifiers, canonical URL, content hash, and JSON-compatible payload.
-- Conservative evidence deduplication: exact provider IDs, URL plus content, or same-entity exact content only. Similar headlines do not become verified facts.
-- Official macro context from public Treasury and BLS data, with optional FRED and BEA coverage. Root, provider-coverage, indicator, and canonical-evidence DTOs distinguish Treasury publication dates, FRED observation dates, BLS monthly and BEA quarterly effective periods, provider retrieval, and per-response server time. Treasury normalizes independently valid rows, BLS retains a usable CPI or unemployment series as explicit `partial` coverage when the other requested series is absent, annual `M13` records cannot become monthly observations, and multiple FRED vintages for one date remain revisions rather than consecutive periods. Raw cache hits preserve their original provider retrieval timestamps and evidence hashes; unqueried, misconfigured, or failed providers expose `retrievedAt:null` instead of inventing a successful read. Canonical evidence can retain an explicitly unavailable observation as `observedAt:null` instead of substituting an unrelated as-of time.
-- Licensed Alpaca/Benzinga articles, bounded GDELT public-web media signals, optional Finnhub enrichment, and OpenFIGI v3 identity mapping with explicit partial/unavailable states. GDELT media-signal root/article DTOs, Finnhub root/endpoint/profile/earnings/news DTOs, and OpenFIGI root/selected/candidate instrument DTOs preserve applicable publication or effective-period, provider-retrieval, and server-response time. Their canonical evidence now passes `observedAt:null` explicitly: media publication, earnings period, identity retrieval, and provider observation are not interchangeable. Cached provider data keeps its original retrieval time while refreshing per-response server time; unqueried Finnhub states report `retrievedAt:null` instead of inventing a provider fetch. Visible GDELT, Finnhub, and OpenFIGI panels enumerate bounded query/configuration, endpoint/dataset, mapping/candidate, canonical-source, semantic-time, omission, and conclusion-impact evidence.
-- A versioned provider-contract fixture manifest maps every external governance source to recorded/redacted, official-documentation-derived, or application-capability evidence. Fixture integrity tests require honest digest omission reasons, reject credential/private-identity fields, and execute malformed, partial, rate-limit, revision, and timestamp-edge cases through the applicable adapters. Private Alpaca responses and licensed market/news values retain no committed raw digest or value; OpenAI structured-output cases validate the application trust boundary without claiming a model recording.
-- Comparable valuation tables from latest returned Alpaca IEX price plus directly reported SEC revenue, net income, diluted EPS, equity, and shares. The v3 root, canonical sources, and visible quality panel distinguish latest retrieval from historical daily-close mode, SEC filing publication and input effective periods, SEC/IEX retrieval, provider price observation when a historical bar supplies one, response time, requested/received/omitted companies and metrics, and conclusion impact. Missing or invalid inputs remain unavailable; a latest-price retrieval is not relabeled as a trade observation. `POST /api/research/valuation-runs` creates a persisted point-in-time report for one subject and one to four peers using a validated non-future filing-date cutoff, only valuation observations filed by that day, and the last eligible IEX daily bar from a bounded 31-day window. It reports excluded post-cutoff valuation observations, keeps historical SIC unavailable, stores the canonical report and SHA-256 replay manifest in `research_runs`, and does not add deterministic artifacts to model-quality metrics. `POST /api/research/valuation-runs/{runId}/replay` performs zero provider requests and fails closed unless the manifest, every source payload hash, filing cutoff, and market cutoff verify.
-- User-authored bull/base/bear assumptions converted into deterministic 12-month valuation scenarios. The v3 baseline, scenario, canonical-source, and quality contract exposes SEC and price input coverage, all three ordered assumption cases, unavailable outputs, calculation time, reference-price mode, provider observation where available, and conclusion impact. It uses `referencePrice` rather than claiming every input is current. `POST /api/research/valuation-runs/{runId}/scenarios` derives a child run only from a verified persisted historical comparable parent, stores the original assumptions, exact parent replay, and computed memo with canonical hashes, and keeps deterministic artifacts out of model-quality metrics. `POST /api/research/scenario-runs/{runId}/replay` revalidates the parent and recomputes the memo at its original calculation time; changed assumptions, parent evidence, or result values fail closed, and successful replay reports zero provider requests. They are scenarios, not forecasts.
-- Company research and portfolio Q&A agents with typed read-only tools, bounded outputs, evidence-ID validation, numeric grounding checks, and unsafe-certainty rejection. Portfolio-question v2 responses preserve safe evidence IDs, source classes, provider times where exposed, retrieval-only gaps, grounded-claim coverage, and freshness impact. Portfolio-plan v2 applies the same contract separately to proposal and independent-review evidence, and requires exact cited local simulation authority for every actionable idea; the UI renders both coverage contracts before conclusions. Each saved plan contains a canonical `advisor-plan-evidence-v1` replay manifest with only cited allow-listed typed-tool payloads, phase-specific references, exact expected/received/missing counts, per-snapshot hashes, and a deterministic manifest hash. Repeated evidence IDs within one agent phase fail closed instead of creating an ambiguous citation; local simulation snapshots retain the exact policy authority while credentials and account identifiers remain excluded. Saved plan governance classifies these internal-only Alpaca paper-account, IEX, Benzinga, OpenAI, and local-derived snapshots explicitly. Completed company-research v2 payloads persist their generated output, canonical evidence, normalized root time, and a `company-research-replay-v1` manifest, and expose a visible quality panel for five required tool calls, four required and two supplemental evidence categories, cited claims, exactly grounded numeric metrics, semantic source-time records, missing inputs, and conclusion impact. `POST /api/research/runs/{runId}/replay` uses only the persisted artifact, verifies outer and per-source hashes plus run/symbol identity, recomputes deterministic grounding metrics and coverage, and reports zero provider/model requests; missing legacy evidence or changed output, source data, identity, or deterministic metrics fails closed with 409. SEC and news retrieval is never substituted for provider observation; the derived one-year market-history period remains separate from an explicitly unavailable latest-price observation.
-- Official SEC and macro reports expose the same visible calculation-level contract. SEC coverage counts filing metadata, selected fact, trend, section, canonical-hash, and semantic-time evidence while retaining the historical-classification limitation. Macro coverage separates required Treasury/BLS providers, optional FRED/BEA providers, indicator availability, five regime dimensions, canonical sources, and semantic-time evidence; missing optional providers or dimensions remain consequential rather than neutral.
-- The shared canonical-evidence boundary requires every caller to state observation time (or null), publication time (or null), effective period (or null), retrieval time, and server-response time. TypeScript rejects omitted fields in all provider/research constructors, and the runtime rejects missing taxonomy from untyped callers. Historical IEX price evidence also retains its exact observed instant as an effective daily-close period; derived valuation/scenario evidence explicitly declares unavailable observation/publication/effective time instead of inheriting calculation time.
-- Independent counter-thesis review before actionable advisor ideas; unapproved ideas become watch-only.
-- Receipt-linked trade journal with immutable thesis text, human-classified thesis drift, fresh market/position context, and audit history.
+- SEC EDGAR provides declared-identity requests, caching, retry/backoff,
+  serialized fair-access requests, filing sections, company facts, trends, SIC,
+  and material 8-K alerts. An optional non-future `YYYY-MM-DD` `asOf` cutoff
+  excludes later filings, amendments, sections, facts, and trends while
+  reporting exclusion counts. Historical SIC remains unavailable because the
+  submissions payload exposes no classification history.
+- Official Treasury and BLS macro data plus optional FRED and BEA data expose
+  required/optional provider coverage, indicators, five regime dimensions,
+  publication/effective periods, and retrieval evidence. Partial and failed
+  providers remain consequential; FRED vintages remain revisions rather than
+  invented consecutive observations.
+- Licensed Alpaca/Benzinga articles, bounded GDELT signals, optional Finnhub,
+  and OpenFIGI v3 identity mapping expose explicit partial or unavailable
+  states. Media publication, earnings periods, identity retrieval, and
+  provider observation remain distinct.
+- Canonical evidence records provider/source identity, claim status, semantic
+  times, entity identifiers, canonical URL, content hash, and JSON-compatible
+  payload. Exact IDs, URL/content, or same-entity exact-content rules deduplicate
+  evidence; similar headlines do not become verified facts.
+- Comparable valuation v3 uses directly reported SEC metrics and either the
+  latest returned Alpaca IEX price or a bounded historical daily close. It
+  persists point-in-time reports for one subject and one to four peers, stores a
+  SHA-256 replay manifest, and replays without provider requests. Scenario v3
+  derives ordered bear/base/bull assumptions only from a verified historical
+  parent; scenarios are not forecasts.
+- Company research and portfolio Q&A use typed read-only tools, bounded output,
+  evidence-ID validation, numeric grounding, unsafe-certainty rejection, and
+  independent counter-thesis review. Saved plans retain only cited,
+  allow-listed proposal and review evidence with phase ordering and hashes.
+  Generated company reports persist output, evidence, identity, metrics, and a
+  replay manifest; altered or legacy artifacts fail closed and replay performs
+  zero provider/model requests.
+- Every visible report exposes calculation-level expected/received/omitted
+  coverage, semantic time, missing inputs, and conclusion impact before its
+  conclusions. Retrieval-only data remains retrieval-only.
 
 ### Strategy Lab
 
-- Twelve deterministic plugin strategies: cash, buy-and-hold, time-sliced accumulation, moving-average trend, volatility-targeted trend, Donchian breakout with ATR exit, regime-filtered mean reversion, mean reversion, breakout momentum, volatility filter, BTC/ETH relative strength, and order-book liquidity scout. Volatility-targeted trend confirms fast-over-slow direction, sizes from realized returns ending one bar earlier, caps exposure at one or a stricter configured maximum, constrains only exposure increases through a deterministic per-bar ramp, and permits immediate risk reductions. Donchian breakout requires positive coherent OHLC over its full evidence window, excludes the decision bar from both the upper channel and ATR, reconstructs position state deterministically for isolated shadow ticks, and exits on a non-loosening trailing ATR stop. An open at or below the stop is recorded as a gap-through, while the backtest still executes target changes at the documented bar close rather than inventing a stop fill. Regime-filtered mean reversion evaluates the current close against its rolling mean only after lagged trend return, realized volatility, and average dollar volume meet explicit bounds; it exits on a close-based loss stop, mean threshold, regime invalidation, or exact holding-bar ceiling. A missing required signal close or lagged volume observation exits flat, and isolated shadow ticks replay the same state as sequential backtests. All three strategies are available for backtests and shadow runs but fail closed at paper-protocol, approval, and runtime submission boundaries. One strict schema supplies canonical defaults and rejects unknown, non-finite, contradictory, or out-of-range parameters before execution or persistence. Relative strength derives the opposite BTC/ETH peer from the ordered symbol pair rather than accepting a second peer override.
-- Immutable bar-close backtests with cash and buy-and-hold baselines, fees, slippage, drawdown, exposure, turnover, exact normalized dataset hashes, and legacy train/test boundary segmentation.
-- Backtest results include deterministic trade metrics: material simulated order count, position episodes, closed round trips, average holding bars/days, gross and net return, downside deviation, Sortino, Calmar, profit factor, hit rate, average win/loss, turnover, exposure, and capacity warnings for high turnover, high trade frequency, or high exposure.
-- Backtest results and walk-forward out-of-sample aggregates include deterministic moving-block-bootstrap uncertainty evidence for total return and max drawdown. The range uses 5th/50th/95th percentiles over 500 resamples, preserves short-run return clustering through contiguous blocks, reports `insufficient_data` below 20 scored return observations, and is explicitly marked `not_rankable`.
-- Backtest cohorts can be compared through deterministic comparison v2. It requires 2-20 immutable backtests and flags mismatched period, symbols, timeframe, dataset hash, initial cash, fee/slippage/execution model, baseline set, code identity, provider, or feed before any operator treats the metrics as comparable. Each row includes decision counts, normalized full-sample uncertainty, walk-forward/final-holdout/leakage evidence where available, and explicit promotion blockers. Equity-return and drawdown series are timestamp-aligned when the artifacts share exact points and are bounded to 160 shared samples without dropping either endpoint; otherwise the response marks chart alignment unavailable instead of inventing correspondence. Uncertainty remains `not_rankable`, and backtest evidence alone always retains the paper-evidence blocker.
-- The browser defaults to labeled, strategy-specific numeric inputs with balanced/conservative/aggressive presets; advanced JSON remains available for inspection. Backtest results surface costs, trade/capacity evidence, bootstrap uncertainty, provenance, and comparison compatibility. The responsive comparison workspace shows aligned equity/drawdown charts, full-sample and out-of-sample bands, material/increase/reduction decision counts, and promotion blockers. Paper approval remains disabled until the selected run has a registered experiment protocol.
-- Genuine rolling or anchored walk-forward evaluation over a caller-declared set of 1-20 canonical parameter candidates. Each fold ranks candidates only on its training bars, freezes the winner, warms indicators without scoring train execution, evaluates only the untouched test bars, and reports candidate scores, exact boundaries, out-of-sample results/aggregates, and leakage checks. Optional final holdouts are excluded from all fold selection and then scored once with parameters selected from pre-holdout history; optional caller-declared regime slices summarize validation and holdout observations separately. Work is bounded to 100 folds and 2,000,000 evaluated bars; multi-symbol histories must be timestamp-synchronized.
-- Actor-scoped immutable crypto-bar datasets covering up to 3,650 days and 500,000 estimated bars. Ingestion uses bounded 90-day provider chunks and records UTC normalization, provider/feed, gaps, rejected bars, duplicate/conflicting bars, additions, corrections, removals, observed bounds, retrieval/server-response provenance in normalized bar DTOs, correction lineage, and a deterministic content hash. Exact repeats reuse the existing version.
-- Backtests can consume one stored dataset without another provider read. Direct provider backtests and prospective shadow ticks retain the 1-90 day live-query bound.
-- Every new shadow run links to one matching reviewed backtest. Backtests, runs, snapshots, and decisions record Git commit, dirty state, plugin/feature/policy versions, query window, provider/feed, and content hashes; dirty or legacy records are non-comparable, and a changed commit or definition requires a new reviewed backtest.
-- Shadow-run persistence, manual ticks, in-process recurring scheduler, current crypto snapshots/order books, stale-data blocking, decision traces, receipts, and filters.
-- Strategy dashboard v2 responses normalize latest persisted market observation, observation window, completed local evidence retrieval, and server response time. The visible quality panel reports expected, received, and omitted run configuration, linked backtest, clean provenance, comparability, decisions, traces, per-symbol snapshots, semantic observation times, fresh snapshots, and conditional paper approval, broker reconciliation, and fill-quality evidence with explicit conclusion impact. New runs remain `empty` until their first decision; stale or incomplete runs remain `partial`.
-- Explicit run-level paper approval with symbol universe, budget, position/order bounds, spread, loss, drawdown, turnover, error cooldown, expiry, and GTC/IOC controls. Paper approval requires a pre-registered experiment protocol with hypothesis, frozen parameters, start/stop dates, minimum observations, maximum budget, invalidation criteria, and review cadence. New protocol registrations append versioned history instead of overwriting prior versions, and paper orders are blocked outside the approved protocol window. `GET /api/strategy/runs` includes a server-derived `strategy-paper-readiness-v1` object; protocol and approval conflicts return the same readiness evidence in the stable 409 contract, and the browser fails closed if that server result is absent.
-- Paper strategy market-order submission, reconciliation, active performance, 1h/1d/7d post-fill attribution, order-book replay assumptions, paper-friction calibration, deterministic alerts, experiment review history, and promotion evidence gates. Promotion requires `pass` evidence for paper status, a 30-day paper window, enough decisions, and at least 20 fills; otherwise review returns `needs_evidence` and leaves the run in paper mode.
-- SQLite-backed strategy runs, snapshots, decisions, orders, metrics, notes, local OpenTelemetry-shaped spans, hash-chained audit entries, JSON experiment reports, and ordered transactional schema migrations.
-- Operator-created direct backtests and every prospective tick use Alpaca crypto market data. Backtests query historical bars or reuse an immutable dataset previously ingested from Alpaca; shadow and paper ticks query current bars, snapshots, and optional order-book depth. Paper mode changes order routing, not the market-data source: accepted orders go only to Alpaca's simulated paper endpoint.
-- The server paper-capability allow-list is `cash`, `buy-and-hold`, `moving-average-trend`, `volatility-filter`, and `btc-eth-relative-strength`; this is implemented reachability, not paper evidence or external approval. Cash is only a no-entry comparator. Volatility-targeted trend, Donchian ATR breakout, and regime-filtered mean reversion require prospective shadow evidence before a separately reviewed experiment. Time-sliced accumulation uses historical-bar index instead of observations since run start; legacy mean reversion and breakout momentum lose required cross-tick state; and the order-book scout's bar-only backtest lacks depth. Those seven strategies can still backtest and shadow but fail closed at protocol, approval, and runtime paper-drafting boundaries.
+- Twelve deterministic crypto strategies support immutable backtests, actor-
+  scoped long-history datasets, rolling/anchored train-only walk-forward
+  evaluation, untouched holdouts, regime slices, trade metrics, bootstrap
+  uncertainty, compatible cohort comparison, shadow/scheduled runs, traces,
+  alerts, attribution, friction calibration, reports, and promotion evidence.
+- Volatility-targeted trend uses one-bar-lagged realized volatility and a hard
+  non-levered exposure cap. Donchian ATR breakout uses completed-bar channel and
+  ATR inputs, non-loosening stops, and gap-through detection. Regime-filtered
+  mean reversion uses lagged trend, volatility, and dollar-volume evidence with
+  close-based stop, regime, and holding exits.
+- Backtest and shadow lineage records Git commit, dirty state, plugin/feature/
+  policy versions, query window, provider/feed, and dataset hashes. New shadow
+  runs link to one matching clean reviewed backtest; dirty or legacy evidence is
+  non-comparable.
+- `strategy-paper-readiness-v1` is server-owned and consumed by listings,
+  lifecycle, runtime, and browser controls. Paper protocols are currently
+  allowed only for `cash`, `buy-and-hold`, `moving-average-trend`,
+  `volatility-filter`, and `btc-eth-relative-strength`. Cash is a no-entry
+  comparator.
+- Volatility-targeted trend, Donchian ATR breakout, and regime-filtered mean
+  reversion require prospective shadow evidence before a separately reviewed
+  experiment. Time-sliced accumulation, legacy mean reversion, breakout
+  momentum, and the order-book scout fail closed because their prospective state
+  or depth inputs are not equivalent to backtests. Backtest evidence alone never
+  clears the paper-evidence gate.
+- The browser renders strategy-specific inputs and presets, bounded aligned
+  equity/drawdown charts, full-sample and out-of-sample uncertainty, decision
+  counts, and explicit promotion blockers. Uncertainty is never converted into
+  a ranking.
 
-See `STRATEGY_LAB.md` for the operating guide and interpretation rules.
+### Operations and UI
 
-## Runtime and operations
-
-- `GET /health` reports process liveness. `GET /ready` additionally requires preview signing, production security configuration when applicable, a valid SEC identity, and a reachable Alpaca paper account.
-- Startup resolves an exact 40-character Git commit and working-tree state. Packaged deployments without `.git` metadata must provide `APP_GIT_COMMIT`; `APP_GIT_DIRTY=1` keeps results auditable but non-comparable.
-- One process owns HTTP, SQLite, Alpaca streams, recovery polling, portfolio snapshots, SSE heartbeats, the strategy scheduler, scheduled reconciliation, and scheduled retention. Runtime jobs are idempotent where implemented but not durable across restarts.
-- `scripts/alpaca.sh` launches the installed Alpaca CLI through Bun's dotenv parser. Its bounded read-only surface is `doctor`, `account get`, `position list`, and default-open `order list`, with limited help/version output that does not require credentials. It strips inherited Alpaca profile/live/debug controls, forces paper mode, and rejects broker mutations, raw API access, profile commands, and unknown flags before invoking the CLI. The wrapper was checked against Alpaca CLI 0.0.11; the separate `smoke:order` script remains opt-in for its explicit paper mutation drill.
-- The schema has 15 ordered migrations and 23 application tables including migration history. Migration 0015 appends account-activity observation, publication, effective-period, and retrieval fields without rewriting earlier identities. Serialized backup export includes a SHA-256 digest; legacy upgrade, activity-provenance restore, versioned dataset recovery, and both audit chains are tested.
-- The source/output governance registry has 16 sources and 12 stored-output categories. It records selective automatic-pruning decisions for operations events, research runs, and strategy experiments; this internal policy does not constitute external terms approval.
-- `GET /api/operations/data-quality` reports provider health from local success, failure, stale-data, and throttling events, plus actor-scoped strategy dataset quality from immutable dataset stats: freshness, completeness, gaps, schema failures, duplicate rate, revisions, and last-success timestamps. It is operational evidence, not live provider probing or external entitlement approval.
-- Scheduled read-only reconciliation runs every 15 minutes by default and coalesces overlapping scheduler/manual requests. It compares paper-account equity against separately queried cash and positions; compares up to 25 open orders from the bulk listing with per-order detail reads and synchronizes local receipts/projection only from an unambiguously newer observation; and compares up to 20 current-position/open-order symbols through IEX latest-bar and historical minute-bar endpoints. Malformed values, unavailable queries, equal-time order conflicts, bar revisions, and lag remain explicit. Completed runs, discrepancies, sanitized unexpected failures, and per-discrepancy recovery outcomes are stored in `events`. `GET /api/operations/reconciliation` exposes bounded recent evidence; admin-only `POST /api/operations/reconciliation` starts a manual run. `RECONCILIATION_DISABLED=1` disables the recurring timer and `RECONCILIATION_POLL_MS` controls it with a 60-second minimum. The market comparison is independent by endpoint, not by provider, and never rewrites provider bars or submits, replaces, or cancels an order.
-- Selective retention runs daily by default in bounded 5,000-row batches and coalesces overlapping scheduler/manual requests. It deletes unreferenced strategy snapshots after 30 days while retaining the latest per-symbol snapshot for shadow, paper, and paused runs; after 90 days it replaces retained order-book depth with explicit pruning metadata containing the original payload hash, removed bytes/levels, and prune time while leaving normalized snapshot evidence and dataset hash visible. It removes repeated strategy metrics after 90 days but retains the newest sample for every run/name, removes local spans after 30 days, stale running or failed research after 24 hours/30 days, and completed provider/research evidence plus matching summary events after 365 days. A valuation parent remains while any scenario child references it, so eligible parent/child chains converge safely across runs. Invalid snapshot JSON, decision references, or scenario lineage aborts and rolls back the transaction. Decision/strategy audit chains, orders, receipts, notes, backtests, bar datasets/bars, and other operations events remain outside automatic deletion. `GET /api/operations/retention` previews policy, cutoffs, inventory, protections, and durable evidence; admin-only `POST` runs it. `RETENTION_DISABLED`, `RETENTION_POLL_MS`, per-category windows, and `RETENTION_BATCH_LIMIT` are startup-validated configuration.
+- Ordered transactional SQLite migrations, serialized backups, encrypted
+  secret envelopes, hash-chained decision records, provider/dataset quality
+  reporting, scheduled read-only reconciliation, and selective retention
+  pruning are implemented. The current schema has 15 migrations and 23
+  application tables including migration history; the governance registry maps
+  16 sources to 12 stored-output categories.
+- Reconciliation coalesces overlapping runs, compares account/position values,
+  bulk and per-order reads, and bounded IEX latest versus historical minute-bar
+  paths. It stores discrepancies and recovery outcomes without submitting,
+  replacing, or cancelling orders. It proves endpoint reconciliation, not a
+  second market-data provider or external entitlement approval.
+- Closed-beta review stores append-only supporting records, drills, windows,
+  incidents, and resolutions with exact audit hashes. Only passing evidence in
+  the newest recorded 30-day, one-to-five-participant window counts;
+  `ready_for_external_review` is the strongest local state and never external
+  approval.
+- `scripts/alpaca.sh` launches the installed Alpaca CLI through Bun's dotenv
+  parser. Its bounded read-only surface is `doctor`, `account get`, `position
+  list`, and default-open `order list`, with limited help/version output that
+  does not require credentials. It strips inherited Alpaca profile/live/debug
+  controls, forces paper mode, and rejects broker mutations, raw API access,
+  profile commands, and unknown flags before invoking the CLI. The installed
+  CLI version checked for this repository is 0.0.11; the separate
+  `smoke:order` script remains opt-in for its explicit paper mutation drill.
+- The browser uses a dark workstation system with labeled desktop navigation,
+  compact tablet navigation, active-item-centered mobile navigation, private
+  value masking, live announcements, keyboard/focus-safe confirmations,
+  option-chain coverage warnings, and shared evidence panels.
 
 ## Safety and authorization
 
-- `paper: true` is hard-coded where the Alpaca client is constructed. There is no live client or runtime switch.
-- `LIVE_TRADING_ENABLED` and `LIVE_TRADING_REVIEW_ID` are read only by the governance report to show that live requests remain blocked; they do not construct or enable a live broker client.
-- The global kill switch blocks every order surface. Reducing sells may pass exposure/turnover caps, but never bypass the kill switch.
-- Ordinary sells cannot exceed holdings. New equity shorts require a separate explicit opt-in and cannot exceed the configured short boundary.
-- Default equity order policy caps a ticket at the lesser of $2,500 or 2.5% of equity, resulting position concentration at 20%, and rolling 24-hour turnover at 10% of equity. Persisted operations policy can be stricter.
-- Working broker orders and unexpired local reservations consume cash, inventory, concentration, and turnover capacity.
-- Missing price/account data, stale strategy data, unsupported capability, invalid evidence, expired approval, malformed model output, and reconciliation uncertainty fail closed.
-- Production authorization trusts only verified proxy headers and roles: `viewer`, `researcher`, `trader`, `operator`, and `admin`.
-- Mutation bodies are bounded JSON objects, mutation origins are checked, malformed path percent-encoding returns a client error before feature routing, broker DTOs are allow-listed, output is escaped, and sensitive routes are rate limited. An empty or whitespace-only development `APP_ORIGIN` falls back to the request URL's own origin rather than disabling same-origin mutations; an explicit deployed origin remains authoritative.
-- The encrypted secret vault stores AES-256-GCM envelopes and exposes metadata only. It is not wired as the runtime provider-key source.
-- `/api/operations/data-governance` inventories 16 provider/derived sources and all 23 SQLite tables through 12 stored-output categories. Each entry records entitlement, terms status, retention, redistribution, and live-use decisions.
-- `/api/operations/data-quality` surfaces provider and stored-dataset quality evidence from local observations so degraded, throttled, stale, unobserved, warning, and failed states are visible before relying on new decisions.
-- `/api/operations/closed-beta-review` builds a versioned review packet from measured paper evidence and append-only workflow events. Supporting records, backup-export/restore/kill-switch/incident-response drill outcomes, a 30-day one-to-five-participant beta window, incident openings, and incident resolutions are transactionally paired with exact SHA-256 decision-audit entries. Only target records and passing drills inside the newest recorded beta window count; undated receipts, decisions, and reviews fail closed, invalid or duplicate records remain visible, unresolved critical/high incidents block readiness, and the 1,000-event bound fails readiness rather than silently truncating proof. The packet download route is non-cacheable. Record and resolution writes are admin-only; reads remain operator/admin. `ready_for_external_review` is the strongest local status and `externallyApproved` is always false.
-
-## Data flow
-
-Manual and advisor orders follow this boundary:
-
-```text
-Alpaca state -> deterministic analysis/simulation -> signed preview
--> explicit approval -> fresh server revalidation -> Alpaca paper order
--> reconciliation -> decision receipt -> hash-chained audit evidence
-```
-
-Strategy decisions follow this boundary:
-
-```text
-Alpaca crypto bars/snapshot -> persisted snapshot -> deterministic plugin
--> strategy risk policy -> shadow decision or approved paper draft
--> global operations policy -> Alpaca paper order -> attribution/report
-```
-
-The browser is never an execution authority. A hidden or bypassed client confirmation cannot skip the server checks.
+- `paper: true` is hard-coded wherever the Alpaca client is constructed. There
+  is no live client or runtime switch. `LIVE_TRADING_ENABLED` and
+  `LIVE_TRADING_REVIEW_ID` affect only governance reporting.
+- The global kill switch blocks every order surface. Ordinary sells cannot
+  exceed holdings; equity shorts require explicit opt-in and stay within the
+  configured boundary. Default policy caps a ticket at the lesser of $2,500 or
+  2.5% of equity, position concentration at 20%, and rolling 24-hour turnover
+  at 10% of equity; persisted policy may be stricter.
+- Working broker orders and local reservations consume capacity. Missing
+  price/account data, stale strategy data, unsupported capability, invalid
+  evidence, expired approval, malformed model output, and reconciliation
+  uncertainty fail closed.
+- Production authorization trusts only verified proxy identity and roles:
+  `viewer`, `researcher`, `trader`, `operator`, and `admin`. Mutation bodies are
+  bounded JSON objects, origins are checked, malformed path encoding fails
+  before feature routing, broker DTOs are allow-listed, output is escaped, and
+  sensitive routes are rate limited.
+- The encrypted vault exposes metadata only and is not the runtime provider-key
+  source. Governance and closed-beta reports are internal evidence and do not
+  grant legal approval, data entitlement, or live-trading authority.
 
 ## Data-quality contract
 
-- Every displayed or derived market value should identify feed/source and freshness. Unavailable entitlement is a first-class result.
-- Official records, regulated-broker observations, licensed-provider records, media signals, and derived analysis remain visibly distinct.
-- Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance, portfolio-risk, portfolio-exposure, and portfolio-snapshot root/child DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and the multi-asset market DTO distinguish provider observation/publication/effective time from retrieval and server response time; official macro evidence also records effective periods for record dates, months, quarters, and market-session calendars.
-- Media repetition is not event confirmation. Provider failure does not mean no event occurred.
-- Missing values remain missing; financial periods, units, accessions, and formulas stay attached to derived valuation output.
-- SEC SIC is labeled as SEC SIC, not GICS or ICB.
-- Stored provider output is internal-only by policy. Derived output inherits the restrictions of every upstream source.
-- Paper fills and backtests are experimental evidence. They do not model all live fees, queue position, price improvement, latency, market impact, or venue behavior.
+Every displayed or derived market value identifies source/feed and freshness.
+Official records, broker observations, licensed-provider records, media signals,
+and derived analysis remain distinct. Missing values remain missing; financial
+periods, units, accessions, and formulas stay attached to derived valuation
+output. SEC SIC is labeled SEC SIC, never GICS or ICB. Stored provider output is
+internal-only by policy, and derived output inherits every upstream restriction.
+Paper fills and backtests are experimental evidence and do not model all live
+fees, queue position, price improvement, latency, market impact, or venue
+behavior.
 
 ## Current limitations
 
-- Direct provider backtests and the Strategy Lab UI remain bounded to 90 days. Longer stored-dataset backtests require API ingestion and are not yet exposed as a browser workflow.
-- The paper-order implementation is not equivalent to paper evidence. No credentialed strategy paper order was submitted during the 2026-07-13 review; the mutating broker smoke remains explicit and opt-in.
-- Time-sliced accumulation, legacy mean reversion, legacy breakout momentum, and the order-book scout have the prospective/backtest mismatches described above. The first three need run-relative or history-reconstructed state; the scout needs historical order-book replay or a fail-closed shadow-only classification before it can support an honest paper experiment.
-- Volatility-targeted trend uses per-bar, non-annualized volatility. A target calibrated for `1Day` is not interchangeable with `1Hour` or `15Min`; comparison compatibility already requires an identical timeframe, but parameter selection and validation remain the operator's experiment responsibility.
-- Walk-forward evaluation currently uses a fixed train-return selection objective. Alternative objectives and protection against a human choosing candidates after inspecting the period remain open.
-- Stored crypto datasets make long-history inputs reproducible, but one provider is not independent corroboration and a content hash does not prove completeness, point-in-time correctness, or absence of upstream revisions.
-- Provider-health status is derived from local event evidence. Providers without recent matching observations are `unobserved`, not healthy, and the report does not prove provider entitlement, external terms approval, or live API availability.
-- Normalized provider DTOs and browser-facing time-bearing response envelopes use the explicit observation/publication/effective/retrieval/server-response taxonomy. `asOf`, `timestamp`, and `quoteAt` remain compatibility aliases where clients still consume them; they do not override the semantic fields.
-- The backend is a modular monolith, but `backend/persistence/store.ts` still composes several repository families and some feature route modules remain large. Split them only where an ownership or test boundary is clear.
-- The standard check includes direct request-boundary contracts and enforces strict TypeScript for `backend/`, `tests/`, `scripts/`, and the Playwright configuration. The coverage gate requires a 95% function and 96% line mean across deterministic modules; route, provider/model orchestration, process startup, and browser code are validated separately and are not included in that percentage. CI separately runs the maintained Chromium keyboard/focus suite. Current counts and results live in `VALIDATION.md`.
-- Option chains are capped at 120 rendered contracts and show the number displayed versus available, two-sided quote/IV/Greek coverage, and an explicit partial-data warning when model-dependent fields are absent.
-- Operational scripts are type-checked in CI, but credentialed provider and paper-order smoke behavior is exercised only when those commands are run deliberately.
-- SQLite, rate limiting, caches, market streams, and the scheduler are single-process. Scheduler work is not durable across restarts.
-- Ordered migrations through 0015, rollback/upgrade fixtures, and serialized backup restore with activity provenance and audit verification are tested. No restore has been timed against a production-sized database or performed as a closed-beta operations drill.
-- Closed-beta workflow references and notes are operator-supplied local records; the application verifies their shape, time scope, append-only audit linkage, and relationship to measured database evidence, but it does not fetch or independently authenticate the referenced external artifact. No real 30-day participant cohort or required operations drill has been completed by this implementation.
-- The governance registry is an internal decision record, not legal approval. Alpaca, Finnhub, GDELT, Treasury, FRED, BEA, SEC, BLS, OpenFIGI, and OpenAI terms still require an external entitlement review for the intended deployment.
-- Automatic retention is deliberately selective: order/decision/audit evidence, backtests, immutable bar datasets, notes, receipts, plans, account activity, portfolio snapshots, and non-research operations events remain until their separate policy changes or manual deletion. A scheduled run is local operational evidence, not proof of external legal/compliance approval or a production retention review.
-- Production hosting, real users, external compliance review, a measured paper beta, and live deployment review have not been completed.
+- Direct provider backtests and the Strategy Lab UI remain bounded to 90 days;
+  longer stored-dataset backtests require API ingestion and are not exposed as
+  a browser workflow.
+- No credentialed strategy paper order was submitted during the 2026-07-13
+  review; the mutating broker smoke remains explicit and opt-in.
+- Time-sliced accumulation, legacy mean reversion, legacy breakout momentum,
+  and the order-book scout retain the prospective/backtest mismatches above.
+  The first three need run-relative or reconstructed state; the scout needs
+  historical depth/replay or a fail-closed shadow-only classification.
+- Volatility-targeted trend uses per-bar, non-annualized volatility. A target
+  calibrated for `1Day` is not interchangeable with `1Hour` or `15Min`.
+  Comparison requires identical timeframes, while parameter selection remains
+  the operator's responsibility.
+- Walk-forward selection uses a fixed train-return objective; alternative
+  objectives and protection against post-period human selection remain open.
+- Stored datasets are reproducible but one provider is not independent
+  corroboration; a content hash does not prove completeness, point-in-time
+  correctness, or absence of upstream revisions.
+- Provider health is local event evidence. Providers without recent matching
+  observations are `unobserved`, and no report proves entitlement, terms
+  approval, or live API availability.
+- Time-bearing response contracts use the explicit observation/publication/
+  effective/retrieval/server-response taxonomy. Compatibility aliases such as
+  `asOf`, `timestamp`, and `quoteAt` do not override those meanings.
+- The backend remains a modular monolith. `backend/persistence/store.ts` and
+  some route modules remain large; split them only where ownership or a test
+  boundary is clear.
+- Strict TypeScript covers backend, tests, scripts, and Playwright configuration.
+  The 95% function and 96% line gate covers deterministic modules only;
+  orchestration, providers/models, process startup, and browser behavior are
+  validated separately.
+- Option chains cap the rendered list at 120 contracts and show displayed
+  versus available counts, quote/IV/Greek coverage, and partial-data warnings.
+- Operational scripts are type-checked, while credentialed provider and
+  paper-order smoke behavior runs only when deliberately invoked.
+- SQLite, caches, streams, rate limiting, and schedulers are single-process;
+  scheduler work is not durable across restarts.
+- Ordered migrations, rollback/upgrade fixtures, serialized backup restore,
+  and activity provenance are tested. No production-sized restore or closed-
+  beta operations drill has been completed.
+- Closed-beta references are operator-supplied. The application validates
+  shape, time scope, audit linkage, and measured evidence but does not fetch or
+  authenticate external artifacts. No real participant cohort or required
+  operations drill has been completed.
+- The governance registry is an internal decision record, not legal approval.
+  Alpaca, Finnhub, GDELT, Treasury, FRED, BEA, SEC, BLS, OpenFIGI, and OpenAI
+  terms require external entitlement review.
+- Automatic retention is selective. Orders, decisions, audits, backtests,
+  datasets, notes, receipts, plans, activities, snapshots, and non-research
+  operations events remain outside automatic deletion unless policy changes.
+- Production hosting, real users, external compliance review, a measured paper
+  beta, and live deployment review remain incomplete.
 
-These limitations are prioritized in `roadmap.md`; none should be inferred as complete from a UI panel or report endpoint.
+These limitations are prioritized in [`roadmap.md`](roadmap.md); no UI panel or
+report endpoint should be inferred to complete an external gate.
