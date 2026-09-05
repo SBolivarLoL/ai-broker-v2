@@ -8,10 +8,10 @@ This file records reproducible confidence evidence. It does not convert paper-on
 
 | Check              | Result on 2026-09-05                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `bun run check`    | Pass: 490 tests, 0 failures, 2,733 assertions across 99 files                     | DTO time-taxonomy inventory, strict TypeScript for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
+| `bun run check`    | Pass: 490 tests, 0 failures, 2,733 assertions across 99 files                     | DTO time-taxonomy inventory, strict TypeScript with unused-local checking for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
-| `bun run coverage` | Pass: 97.78% functions, 97.42% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
+| `bun run coverage` | Pass: 97.8% functions, 97.44% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 | `bun test tests/scripts/alpaca.test.ts` | Pass: 4 tests, 0 failures, 57 assertions | Bun dotenv parsing with spaces, credential mapping, forced paper mode, inherited-control stripping, missing credentials, blocked mutations, help/version without credentials, and child exit propagation |
 
@@ -519,7 +519,7 @@ bun run test:browser
 bun audit
 ```
 
-CI uses the Node 24-based `actions/checkout@v6`, pins Bun 1.2.15, installs dependencies plus Playwright's headless Chromium shell and required Linux libraries, and runs `bun run check`, `bun run eval`, and `bun run test:browser` on pushes and pull requests. Because `bun run check` invokes strict TypeScript for `backend/`, `tests/`, `scripts/`, and the Playwright configuration plus `bun run coverage`, the static, coverage, and maintained browser-interaction checks are CI gates. Failed jobs retain Playwright screenshots/traces for seven days through `actions/upload-artifact@v5`; audit, live-provider smoke checks, and ad hoc headed rendering checks are not CI gates.
+CI uses the Node 24-based `actions/checkout@v6`, pins Bun 1.2.15, installs dependencies plus Playwright's headless Chromium shell and required Linux libraries, and runs `bun run check`, `bun run eval`, and `bun run test:browser` on pushes and pull requests. Because `bun run check` invokes strict TypeScript with unused-local checking for `backend/`, `tests/`, `scripts/`, and the Playwright configuration plus `bun run coverage`, the static, coverage, and maintained browser-interaction checks are CI gates. Failed jobs retain Playwright screenshots/traces for seven days through `actions/upload-artifact@v5`; audit, live-provider smoke checks, and ad hoc headed rendering checks are not CI gates.
 
 ## Credentialed smoke checks
 

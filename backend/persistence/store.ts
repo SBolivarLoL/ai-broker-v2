@@ -22,10 +22,6 @@ import {
   SecretName,
   secretMetadata,
 } from "../features/operations/secret-vault";
-import {
-  parseStrategyProvenance,
-  type StrategyProvenance,
-} from "../features/strategies/strategy-provenance";
 import { TradeJournalEntry } from "../features/portfolio/trade-journal";
 import { createStrategyStore } from "./strategy-store";
 import { createRetentionRepository } from "./retention";

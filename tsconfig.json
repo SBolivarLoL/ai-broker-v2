@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "strict": true,
+    "noUnusedLocals": true,
     "noEmit": true,
     "module": "Preserve",
     "moduleResolution": "bundler",
