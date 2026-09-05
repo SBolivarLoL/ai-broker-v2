@@ -100,6 +100,17 @@ bun run smoke:openfigi    # live OpenFIGI identity/fallback check
 bun run smoke:comparables # live Alpaca plus SEC valuation check
 ```
 
+The Alpaca CLI commands run through `scripts/alpaca.sh`, which uses Bun's
+dotenv parser and the installed Alpaca CLI (validated locally with version
+0.0.11). The wrapper exposes only `doctor`, `account get`, `position list`,
+and the default-open `order list` diagnostic commands, plus bounded `help` and
+`version` output. It requires `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` for
+provider diagnostics, strips inherited CLI profile/live/debug settings, and
+always forces the child CLI to paper mode. It rejects order submission,
+cancellation, position closing, raw API, profile, and other commands before
+the CLI starts. The separate `smoke:order` command remains an explicit,
+paper-only mutation check.
+
 Install the browser used by the maintained interaction suite once per local
 machine with `bunx playwright install --only-shell chromium`. CI installs only
 the required headless Chromium shell and its Linux dependencies before

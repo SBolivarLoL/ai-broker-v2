@@ -1,14 +1,11 @@
 #!/bin/sh
 set -eu
 
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-: "${APCA_API_KEY_ID:?APCA_API_KEY_ID is required}"
-: "${APCA_API_SECRET_KEY:?APCA_API_SECRET_KEY is required}"
-command -v alpaca >/dev/null || { echo "Install alpacahq/tap/cli" >&2; exit 1; }
-
-export ALPACA_API_KEY="$APCA_API_KEY_ID"
-export ALPACA_SECRET_KEY="$APCA_API_SECRET_KEY"
-export ALPACA_LIVE_TRADE=false
-export ALPACA_QUIET=1
-exec alpaca "$@"
+# Let Bun parse dotenv syntax. Shell sourcing would treat values such as the
+# example SEC_USER_AGENT as commands and can also execute arbitrary shell text.
+if [ -f .env ]; then
+  exec bun --env-file=.env "$script_dir/alpaca.ts" "$@"
+fi
+exec bun "$script_dir/alpaca.ts" "$@"

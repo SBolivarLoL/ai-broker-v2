@@ -13,6 +13,7 @@ This file records reproducible confidence evidence. It does not convert paper-on
 | `bun run test:browser` | Pass: 3 tests, 0 failures across 1 Playwright file                            | Chromium keyboard/focus, table/error, destructive confirmation, closed-beta attachment, and packet-export wiring |
 | `bun run coverage` | Pass: 98.03% functions, 97.39% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
+| `bun test tests/scripts/alpaca.test.ts` | Pass: 4 tests, 0 failures, 57 assertions | Bun dotenv parsing with spaces, credential mapping, forced paper mode, inherited-control stripping, missing credentials, blocked mutations, help/version without credentials, and child exit propagation |
 
 Coverage is not application-wide. `scripts/check-coverage.ts` averages Bun's per-module results for deterministic modules and excludes route composition, runtime/provider/model orchestration, process startup, and the browser. Those boundaries are covered through direct contracts, targeted integration tests, or separate browser validation instead of the percentage gate. `tsconfig.json` includes `backend/`, `tests/`, `scripts/`, and `playwright.config.ts`, but static checking does not execute credentialed provider or paper-order smoke behavior.
 
@@ -193,6 +194,16 @@ OpenAI request, order, policy, retention, or broker mutation.
 - Browser/computer-use validation is reserved for rendering, layout, accessibility, responsive behavior, and interaction wiring. It should not be used to populate or verify backend state that can be exercised through functions or HTTP.
 - The maintained Playwright suite owns stable keyboard/focus interaction wiring against committed assets and isolated API fixtures. It does not claim backend, provider, entitlement, or broker behavior.
 - Credentialed real-data checks own current provider/account reachability and end-to-end integration evidence. They remain explicit and read-only by default. Deterministic CI fixtures remain necessary for malformed, stale, throttled, rejected, and mutation-boundary coverage; they must never be described as an operator backtest or current provider evidence.
+
+The Alpaca CLI boundary is covered by `bun test tests/scripts/alpaca.test.ts`
+using a temporary working directory and fake `alpaca` executable. The fixture
+loads the example SEC contact containing spaces through Bun's dotenv parser,
+checks APCA-to-CLI credential mapping without retaining the APCA names in the
+child environment, forces `ALPACA_LIVE_TRADE=false`, strips inherited profile
+and debug controls, blocks `order submit` before invocation, permits help and
+version without credentials, and propagates a diagnostic child's exit code.
+No broker endpoint or real order was contacted; the installed CLI version
+inspected locally for command help was 0.0.11.
 
 ## Confidence by area
 
