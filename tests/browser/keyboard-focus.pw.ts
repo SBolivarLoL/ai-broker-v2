@@ -218,6 +218,158 @@ async function installApiFixtures(page: Page) {
   return mutations;
 }
 
+type ResearchRequest = {
+  path: string;
+  symbol: string | null;
+  period: string | null;
+};
+
+function companyMarketFixture(symbol: string) {
+  const price = symbol === "MSFT" ? 420 : 220;
+  const bars = [
+    {
+      timestamp: "2026-07-11T20:00:00.000Z",
+      open: price - 2,
+      high: price + 1,
+      low: price - 3,
+      close: price - 1,
+      volume: 1_000_000,
+    },
+    {
+      timestamp: "2026-07-12T20:00:00.000Z",
+      open: price - 1,
+      high: price + 2,
+      low: price - 2,
+      close: price,
+      volume: 1_100_000,
+    },
+  ];
+  return {
+    company: {
+      symbol,
+      name: `${symbol} fixture company`,
+      exchange: "NASDAQ",
+      tradable: true,
+      fractionable: true,
+      shortable: true,
+      marginable: true,
+    },
+    quote: {
+      price,
+      bid: price - 0.05,
+      ask: price + 0.05,
+      spreadBps: 2.4,
+      quality: "market_closed",
+      quoteAt: generatedAt,
+    },
+    stats: {
+      dayChangePercent: 1.2,
+      periodReturnPercent: 4.5,
+      periodHigh: price + 5,
+      periodLow: price - 8,
+      relativeVolume: 1.1,
+      currentVolume: 1_100_000,
+      averageVolume20d: 1_000_000,
+    },
+    benchmark: {
+      symbol: "SPY",
+      quality: "complete",
+      relativeStrengthPercent: 0.8,
+      returnPercent: 3.7,
+      bars,
+    },
+    session: { phase: "closed" },
+    bars,
+    news: [],
+    asOf: generatedAt,
+  };
+}
+
+async function installResearchLoadingFixtures(
+  page: Page,
+  {
+    gdeltFailureAttempts = [],
+    delayedCompanySymbol = null,
+    delayedSecSymbol = null,
+    failingCompanyPeriods = [],
+  }: {
+    gdeltFailureAttempts?: number[];
+    delayedCompanySymbol?: string | null;
+    delayedSecSymbol?: string | null;
+    failingCompanyPeriods?: string[];
+  } = {},
+) {
+  const requests: ResearchRequest[] = [];
+  let gdeltAttempts = 0;
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url()),
+      symbol = url.searchParams.get("symbol")?.toUpperCase() || null,
+      researchPaths = new Set([
+        "/api/company/market",
+        "/api/research/openfigi",
+        "/api/research/sec",
+        "/api/research/gdelt",
+        "/api/research/finnhub",
+        "/api/research/macro",
+      ]);
+    if (!researchPaths.has(url.pathname)) return route.fallback();
+    requests.push({
+      path: url.pathname,
+      symbol,
+      period: url.searchParams.get("period"),
+    });
+    if (url.pathname === "/api/company/market") {
+      if (failingCompanyPeriods.includes(url.searchParams.get("period") || ""))
+        return fulfillJson(route, { error: "Fixture company market unavailable" }, 503);
+      if (symbol === delayedCompanySymbol)
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      return fulfillJson(route, companyMarketFixture(symbol || "AAPL"));
+    }
+    if (url.pathname === "/api/research/openfigi")
+      return fulfillJson(route, {
+        status: "unavailable",
+        keyStatus: "anonymous",
+        selected: null,
+        candidates: [],
+        warnings: [],
+        asOf: generatedAt,
+      });
+    if (url.pathname === "/api/research/sec") {
+      if (symbol === delayedSecSymbol)
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      return fulfillJson(route, { sources: [], asOf: generatedAt });
+    }
+    if (url.pathname === "/api/research/gdelt") {
+      gdeltAttempts += 1;
+      if (gdeltFailureAttempts.includes(gdeltAttempts))
+        return fulfillJson(route, { error: "Fixture GDELT unavailable" }, 503);
+      return fulfillJson(route, {
+        available: true,
+        windowDays: 7,
+        articles: [],
+        warnings: [],
+        asOf: generatedAt,
+      });
+    }
+    if (url.pathname === "/api/research/finnhub")
+      return fulfillJson(route, {
+        status: "unavailable",
+        configured: false,
+        warnings: [],
+        asOf: generatedAt,
+      });
+    return fulfillJson(route, {
+      coverage: {},
+      indicators: [],
+      regime: { summary: "Fixture macro context", dimensions: [] },
+      warnings: [],
+      disclosures: [],
+      asOf: generatedAt,
+    });
+  });
+  return requests;
+}
+
 test("keyboard navigation, table filtering, and error announcements remain operable", async ({
   page,
 }) => {
@@ -311,6 +463,139 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   await expect(status).toContainText("Add at least two backtest IDs");
   await expect(status).toBeVisible();
   await expect(compare).toBeFocused();
+  expect(pageErrors).toEqual([]);
+});
+
+test("research reactivation retries a provider that failed during explicit refresh", async ({
+  page,
+}) => {
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await installApiFixtures(page);
+  const requests = await installResearchLoadingFixtures(page, {
+    gdeltFailureAttempts: [2],
+  });
+  await page.goto("/#research");
+
+  await expect(page.locator("#gdelt-news")).toContainText(
+    "No headline-relevant GDELT media signals",
+  );
+  await page.getByRole("button", { name: "View company" }).click();
+  await expect(page.locator("#gdelt-news")).toContainText(
+    "Fixture GDELT unavailable",
+  );
+  await expect(page.locator("#company-title")).toContainText("AAPL");
+  await page.getByRole("button", { name: "Overview" }).click();
+  await page.getByRole("button", { name: "Research" }).click();
+  await expect(page.locator("#gdelt-news")).toContainText(
+    "No headline-relevant GDELT media signals",
+  );
+
+  const requestCount = (path: string) =>
+    requests.filter((request) => request.path === path).length;
+  expect(requestCount("/api/research/gdelt")).toBe(3);
+  expect(requestCount("/api/company/market")).toBe(2);
+  expect(requestCount("/api/research/openfigi")).toBe(2);
+  expect(requestCount("/api/research/sec")).toBe(2);
+  expect(requestCount("/api/research/finnhub")).toBe(2);
+  expect(requestCount("/api/research/macro")).toBe(2);
+  expect(pageErrors).toEqual([]);
+});
+
+test("company period changes leave an in-flight SEC response current", async ({
+  page,
+}) => {
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await installApiFixtures(page);
+  const requests = await installResearchLoadingFixtures(page, {
+    delayedSecSymbol: "AAPL",
+  });
+  await page.goto("/#research");
+  await expect
+    .poll(
+      () =>
+        requests.filter(
+          (request) =>
+            request.path === "/api/research/sec" && request.symbol === "AAPL",
+        ).length,
+    )
+    .toBe(1);
+
+  await page.locator('#company-periods button[data-period="1M"]').click();
+  await expect(page.locator("#company-title")).toContainText("AAPL");
+  await expect(page.locator("#edgar-evidence")).toContainText(
+    "This research run did not return SEC filing evidence",
+  );
+  expect(
+    requests.filter((request) => request.path === "/api/research/sec"),
+  ).toHaveLength(1);
+  expect(
+    requests.filter((request) => request.path === "/api/company/market"),
+  ).toHaveLength(2);
+  expect(pageErrors).toEqual([]);
+});
+
+test("research reactivation retries a failed company-period request only", async ({
+  page,
+}) => {
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await installApiFixtures(page);
+  const requests = await installResearchLoadingFixtures(page, {
+    failingCompanyPeriods: ["1M"],
+  });
+  await page.goto("/#research");
+  await expect(page.locator("#company-title")).toContainText("AAPL");
+
+  await page.locator('#company-periods button[data-period="1M"]').click();
+  await expect(page.locator("#company-metrics")).toContainText(
+    "Fixture company market unavailable",
+  );
+  await page.getByRole("button", { name: "Overview" }).click();
+  await page.getByRole("button", { name: "Research" }).click();
+  await expect(page.locator("#company-title")).toContainText("AAPL");
+
+  const requestCount = (path: string) =>
+    requests.filter((request) => request.path === path).length;
+  expect(requestCount("/api/company/market")).toBe(3);
+  expect(requests.filter((request) => request.period === "1M")).toHaveLength(1);
+  expect(requestCount("/api/research/openfigi")).toBe(1);
+  expect(requestCount("/api/research/sec")).toBe(1);
+  expect(requestCount("/api/research/gdelt")).toBe(1);
+  expect(requestCount("/api/research/finnhub")).toBe(1);
+  expect(requestCount("/api/research/macro")).toBe(1);
+  expect(pageErrors).toEqual([]);
+});
+
+test("research loading ignores an older symbol response", async ({ page }) => {
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await installApiFixtures(page);
+  const requests = await installResearchLoadingFixtures(page, {
+    delayedCompanySymbol: "AAPL",
+  });
+  await page.goto("/#research");
+  await expect
+    .poll(
+      () =>
+        requests.filter(
+          (request) =>
+            request.path === "/api/company/market" && request.symbol === "AAPL",
+        ).length,
+    )
+    .toBe(1);
+
+  await page.getByLabel("Company ticker").fill("MSFT");
+  await page.getByRole("button", { name: "Run AI analysis" }).click();
+  await expect(page.locator("#company-title")).toContainText(
+    "MSFT fixture company",
+  );
+  await page.waitForTimeout(600);
+  await expect(page.locator("#company-title")).toContainText(
+    "MSFT fixture company",
+  );
+  await expect(page.locator("#company-title")).not.toContainText("AAPL");
   expect(pageErrors).toEqual([]);
 });
 

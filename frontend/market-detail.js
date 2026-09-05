@@ -5,6 +5,8 @@ const compactNumber = new Intl.NumberFormat("en-US", {
 });
 let companyPeriod = "3M",
   companyBenchmark = "SPY",
+  companyMarketKey = null,
+  companyButtonRequest = null,
   companyStream,
   companyStreamSymbol = "",
   companyStreamLastAt = 0,
@@ -132,10 +134,19 @@ async function loadCompanyMarket(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
   period = companyPeriod,
   benchmark = companyBenchmark,
+  { refresh = false, request = null } = {},
 ) {
   if (!symbol) return;
+  const key = `${symbol}:${period}:${benchmark}`;
+  if (!refresh && key === companyMarketKey) return;
+  companyMarketKey = null;
   resetComparableTable(symbol);
-  const button = $("#company-button");
+  const button = $("#company-button"),
+    buttonRequest = request || {},
+    isCurrent = () => companyButtonRequest === buttonRequest &&
+      $("#research-symbol").value.trim().toUpperCase() === symbol &&
+      isResearchLoadRequestCurrent(request);
+  companyButtonRequest = buttonRequest;
   button.disabled = true;
   button.textContent = "Loading…";
   try {
@@ -146,6 +157,7 @@ async function loadCompanyMarket(
       s = data.stats,
       c = data.company,
       b = data.benchmark;
+    if (!isCurrent()) return;
     companyPeriod = period;
     companyBenchmark = b.symbol;
     companyCoreSession = ["open", "core", "continuous"].includes(
@@ -239,13 +251,20 @@ async function loadCompanyMarket(
           )
           .join("")
       : '<div class="empty">No recent Alpaca news was available. This does not mean there are no material developments.</div>';
+    companyMarketKey = key;
   } catch (error) {
-    $("#company-metrics").innerHTML =
-      `<div class="empty">${esc(error.message)}</div>`;
-    notify(error.message);
+    if (isCurrent()) {
+      $("#company-metrics").innerHTML =
+        `<div class="empty">${esc(error.message)}</div>`;
+      notify(error.message);
+    }
+    throw error;
   } finally {
-    button.disabled = false;
-    button.textContent = "View company";
+    if (companyButtonRequest === buttonRequest) {
+      companyButtonRequest = null;
+      button.disabled = false;
+      button.textContent = "View company";
+    }
   }
 }
 let openFigiIdentitySymbol = null;
@@ -283,20 +302,25 @@ function renderOpenFigiIdentity(data) {
 }
 async function loadOpenFigiIdentity(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
+  { refresh = false, request = null } = {},
 ) {
-  if (!symbol || symbol === openFigiIdentitySymbol) return;
+  if (!symbol || (!refresh && symbol === openFigiIdentitySymbol)) return;
+  openFigiIdentitySymbol = null;
   const root = $("#openfigi-identity");
   root.innerHTML = '<div class="empty spin">Loading OpenFIGI identity…</div>';
   try {
     const data = await api(
       `/api/research/openfigi?symbol=${encodeURIComponent(symbol)}`,
     );
+    if (!isResearchLoadRequestCurrent(request)) return;
     root.innerHTML = renderOpenFigiIdentity(data);
     openFigiIdentitySymbol = symbol;
   } catch (error) {
-    $("#openfigi-asof").textContent =
-      "OpenFIGI identity unavailable · cross-provider joins remain symbol-scoped";
-    root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    if (isResearchLoadRequestCurrent(request)) {
+      $("#openfigi-asof").textContent =
+        "OpenFIGI identity unavailable · cross-provider joins remain symbol-scoped";
+      root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    }
     throw error;
   }
 }
@@ -320,20 +344,25 @@ function renderGdeltSignals(data) {
 }
 async function loadGdeltSignals(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
+  { refresh = false, request = null } = {},
 ) {
-  if (!symbol || symbol === gdeltSignalSymbol) return;
+  if (!symbol || (!refresh && symbol === gdeltSignalSymbol)) return;
+  gdeltSignalSymbol = null;
   const root = $("#gdelt-news");
   root.innerHTML = '<div class="empty spin">Loading GDELT coverage…</div>';
   try {
     const data = await api(
       `/api/research/gdelt?symbol=${encodeURIComponent(symbol)}`,
     );
+    if (!isResearchLoadRequestCurrent(request)) return;
     root.innerHTML = renderGdeltSignals(data);
     gdeltSignalSymbol = symbol;
   } catch (error) {
-    $("#gdelt-asof").textContent =
-      "GDELT coverage unavailable · media signal, not verified fact";
-    root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    if (isResearchLoadRequestCurrent(request)) {
+      $("#gdelt-asof").textContent =
+        "GDELT coverage unavailable · media signal, not verified fact";
+      root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    }
     throw error;
   }
 }
@@ -382,8 +411,10 @@ function renderFinnhubEnrichment(data) {
 }
 async function loadFinnhubEnrichment(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
+  { refresh = false, request = null } = {},
 ) {
-  if (!symbol || symbol === finnhubEnrichmentSymbol) return;
+  if (!symbol || (!refresh && symbol === finnhubEnrichmentSymbol)) return;
+  finnhubEnrichmentSymbol = null;
   const root = $("#finnhub-enrichment");
   root.innerHTML =
     '<div class="empty spin">Loading optional Finnhub enrichment…</div>';
@@ -391,12 +422,15 @@ async function loadFinnhubEnrichment(
     const data = await api(
       `/api/research/finnhub?symbol=${encodeURIComponent(symbol)}`,
     );
+    if (!isResearchLoadRequestCurrent(request)) return;
     root.innerHTML = renderFinnhubEnrichment(data);
     finnhubEnrichmentSymbol = symbol;
   } catch (error) {
-    $("#finnhub-asof").textContent =
-      "Finnhub enrichment unavailable · SEC remains authoritative";
-    root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    if (isResearchLoadRequestCurrent(request)) {
+      $("#finnhub-asof").textContent =
+        "Finnhub enrichment unavailable · SEC remains authoritative";
+      root.innerHTML = `<div class="warnings"><div>${esc(error.message)}</div></div>`;
+    }
     throw error;
   }
 }
@@ -408,21 +442,22 @@ new MutationObserver(() => {
     logo.alt = `${$("#company-title").textContent} logo`;
   }
 }).observe($("#company-title"), { childList: true });
-$("#company-button").onclick = () =>
-  Promise.allSettled([
-    loadCompanyMarket(),
-    loadOpenFigiIdentity(),
-    loadSecEvidence(),
-    loadGdeltSignals(),
-    loadFinnhubEnrichment(),
-    loadMacroContext(),
-  ]);
+$("#company-button").onclick = () => loadResearchWorkspace({ refresh: true });
 $("#company-periods").onclick = (event) => {
   const button = event.target.closest("button[data-period]");
-  if (button) loadCompanyMarket(undefined, button.dataset.period);
+  if (button) {
+    const symbol = $("#research-symbol").value.trim().toUpperCase();
+    loadCompanyMarket(symbol, button.dataset.period, companyBenchmark, {
+      refresh: true,
+    }).catch(() => {});
+  }
 };
-$("#company-benchmark").onchange = (event) =>
-  loadCompanyMarket(undefined, undefined, event.target.value);
+$("#company-benchmark").onchange = (event) => {
+  const symbol = $("#research-symbol").value.trim().toUpperCase();
+  loadCompanyMarket(symbol, companyPeriod, event.target.value, {
+    refresh: true,
+  }).catch(() => {});
+};
 let optionData = null,
   optionsLoaded = false,
   optionsLoading = null;

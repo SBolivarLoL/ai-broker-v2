@@ -4,56 +4,42 @@
  * Cards load independently; expensive view-specific calls are deferred until
  * their workspace is opened directly.
  */
-let activatedResearchSymbol = null,
-  researchActivationPromise = null;
-function ensureResearchWorkspaceLoaded() {
-  const symbol = $("#research-symbol").value.trim().toUpperCase();
-  if (!symbol) return Promise.resolve();
-  if (symbol === activatedResearchSymbol)
-    return researchActivationPromise || Promise.resolve();
-  activatedResearchSymbol = symbol;
-  const request = Promise.allSettled([
-    safeLoad(
-      "Company market",
-      () => loadCompanyMarket(symbol),
-      "#company-metrics",
-      "Company quote, chart and news data are temporarily unavailable.",
-    ),
-    safeLoad(
-      "OpenFIGI identity",
-      () => loadOpenFigiIdentity(symbol),
-      "#openfigi-identity",
-      "OpenFIGI identity mapping is temporarily unavailable.",
-    ),
-    safeLoad(
-      "SEC evidence",
-      () => loadSecEvidence(symbol),
-      "#edgar-evidence",
-      "Official SEC evidence is temporarily unavailable.",
-    ),
-    safeLoad(
-      "GDELT signals",
-      () => loadGdeltSignals(symbol),
-      "#gdelt-news",
-      "Broad public-web media signals are temporarily unavailable.",
-    ),
-    safeLoad(
-      "Finnhub enrichment",
-      () => loadFinnhubEnrichment(symbol),
-      "#finnhub-enrichment",
-      "Optional Finnhub enrichment is temporarily unavailable.",
-    ),
-    safeLoad(
-      "Macro context",
-      loadMacroContext,
-      "#macro-context",
-      "Official macro context is temporarily unavailable.",
-    ),
-  ]);
-  researchActivationPromise = request;
-  return request.finally(() => {
-    if (researchActivationPromise === request) researchActivationPromise = null;
+let researchWorkspacePromise = null,
+  researchWorkspaceRequest = null;
+function loadResearchWorkspace({
+  symbol = $("#research-symbol").value,
+  refresh = false,
+} = {}) {
+  symbol = String(symbol).trim().toUpperCase();
+  if (!symbol) return Promise.resolve([]);
+  if (
+    !refresh &&
+    researchWorkspacePromise &&
+    researchWorkspaceRequest?.symbol === symbol &&
+    researchWorkspaceRequest.isCurrent()
+  )
+    return researchWorkspacePromise;
+  const request = beginResearchLoadRequest(symbol),
+    options = { refresh, request },
+    promise = Promise.allSettled([
+      loadCompanyMarket(symbol, companyPeriod, companyBenchmark, options),
+      loadOpenFigiIdentity(symbol, options),
+      loadSecEvidence(symbol, options),
+      loadGdeltSignals(symbol, options),
+      loadFinnhubEnrichment(symbol, options),
+      loadMacroContext(options),
+    ]);
+  researchWorkspaceRequest = request;
+  researchWorkspacePromise = promise;
+  return promise.finally(() => {
+    if (researchWorkspacePromise === promise) {
+      researchWorkspacePromise = null;
+      researchWorkspaceRequest = null;
+    }
   });
+}
+function ensureResearchWorkspaceLoaded() {
+  return loadResearchWorkspace();
 }
 addEventListener("workspaceactivated", (event) => {
   if (event.detail.view === "research") ensureResearchWorkspaceLoaded();

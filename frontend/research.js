@@ -123,17 +123,20 @@ function renderMacroContext(data) {
   return `${calculationCoveragePanel("Official macro context", data.quality)}<div class="macro-coverage">${coverage}</div><p>${esc(data.regime?.summary || "Official macro context is currently unavailable.")}</p><div class="macro-indicators">${indicators || '<div class="empty">No official macro observations are currently available.</div>'}</div><div class="macro-regime">${dimensions}</div>${warnings}${disclosures}`;
 }
 let macroContextLoaded = false;
-async function loadMacroContext() {
-  if (macroContextLoaded) return;
+async function loadMacroContext({ refresh = false, request = null } = {}) {
+  if (!refresh && macroContextLoaded) return;
+  macroContextLoaded = false;
   const root = $("#macro-context");
   root.innerHTML =
     '<div class="empty spin">Loading official macro sources…</div>';
   try {
     const data = await api("/api/research/macro");
+    if (!isResearchLoadRequestCurrent(request)) return;
     root.innerHTML = renderMacroContext(data);
     macroContextLoaded = true;
   } catch (error) {
-    root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+    if (isResearchLoadRequestCurrent(request))
+      root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
     throw error;
   }
 }
@@ -196,8 +199,10 @@ function renderEdgarEvidence(data) {
 let secEvidenceSymbol = null;
 async function loadSecEvidence(
   symbol = $("#research-symbol").value.trim().toUpperCase(),
+  { refresh = false, request = null } = {},
 ) {
-  if (!symbol || symbol === secEvidenceSymbol) return;
+  if (!symbol || (!refresh && symbol === secEvidenceSymbol)) return;
+  secEvidenceSymbol = null;
   const root = $("#edgar-evidence");
   root.innerHTML =
     '<div class="empty spin">Loading official SEC filings and company facts…</div>';
@@ -205,10 +210,12 @@ async function loadSecEvidence(
     const data = await api(
       `/api/research/sec?symbol=${encodeURIComponent(symbol)}`,
     );
+    if (!isResearchLoadRequestCurrent(request)) return;
     root.innerHTML = renderEdgarEvidence(data);
     secEvidenceSymbol = symbol;
   } catch (error) {
-    root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+    if (isResearchLoadRequestCurrent(request))
+      root.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
     throw error;
   }
 }
@@ -409,12 +416,7 @@ $("#research-form").onsubmit = async (event) => {
   event.preventDefault();
   const button = $("#research-button"),
     symbol = $("#research-symbol").value.trim().toUpperCase();
-  loadCompanyMarket(symbol).catch(() => {});
-  loadOpenFigiIdentity(symbol).catch(() => {});
-  loadSecEvidence(symbol).catch(() => {});
-  loadGdeltSignals(symbol).catch(() => {});
-  loadFinnhubEnrichment(symbol).catch(() => {});
-  loadMacroContext().catch(() => {});
+  loadResearchWorkspace({ symbol, refresh: true });
   try {
     button.disabled = true;
     button.textContent = "Analyzing…";

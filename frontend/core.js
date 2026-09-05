@@ -239,6 +239,26 @@ async function safeLoad(name, fn, target, detail) {
     return null;
   }
 }
+let researchLoadGeneration = 0;
+function beginResearchLoadRequest(symbol) {
+  const normalized = String(symbol || "")
+    .trim()
+    .toUpperCase();
+  const generation = ++researchLoadGeneration;
+  return {
+    symbol: normalized,
+    generation,
+    isCurrent() {
+      return (
+        generation === researchLoadGeneration &&
+        $("#research-symbol").value.trim().toUpperCase() === normalized
+      );
+    },
+  };
+}
+function isResearchLoadRequestCurrent(request) {
+  return !request || request.isCurrent();
+}
 async function api(path, options) {
   const response = await fetch(path, options);
   if (response.status === 204) return null;
