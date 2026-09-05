@@ -374,6 +374,30 @@ function renderClosedBetaReview(data) {
     `${evidence.targetWindowDays}-day minimum · measured ${new Date(data.generatedAt).toLocaleString()} · external approval: no`;
   $("#closed-beta-review-summary").innerHTML =
     `<div class="metric"><strong>${esc(`${summary.measuredTargetsPassing}/${summary.totalTargets}`)}</strong><span class="muted">Measured targets passing</span></div><div class="metric"><strong>${esc(`${supportAttached}/${summary.totalTargets}`)}</strong><span class="muted">Targets supported inside beta window</span></div><div class="metric"><strong>${esc(`${drillsPassed}/${data.drills.required.length}`)}</strong><span class="muted">In-window drills passed</span></div><div class="metric"><strong>${esc(summary.unresolvedCriticalHighCount)}</strong><span class="muted">Open critical/high incidents</span></div>`;
+  const missingInputs = [
+      summary.targetsMissingSupportingRecords.length
+        ? `${summary.targetsMissingSupportingRecords.length} target${summary.targetsMissingSupportingRecords.length === 1 ? " lacks" : "s lack"} an in-window supporting record`
+        : "",
+      summary.missingDrills.length
+        ? `${summary.missingDrills.length} required drill${summary.missingDrills.length === 1 ? " lacks" : "s lack"} passing evidence`
+        : "",
+      summary.unresolvedCriticalHighCount
+        ? `${summary.unresolvedCriticalHighCount} critical/high incident${summary.unresolvedCriticalHighCount === 1 ? " remains open" : "s remain open"}`
+        : "",
+      data.invalidRecords.length
+        ? `${data.invalidRecords.length} invalid workflow record${data.invalidRecords.length === 1 ? " needs correction" : "s need correction"}`
+        : "",
+    ].filter(Boolean),
+    nextAction = summary.targetsMissingSupportingRecords.length
+      ? "Open review details and attach in-window target evidence."
+      : summary.missingDrills.length
+        ? "Open review details and record each required drill."
+        : summary.unresolvedCriticalHighCount
+          ? "Open review details and resolve the critical/high incidents."
+          : summary.readyForExternalReview
+            ? "Export the review packet for the next external review step."
+            : "Open review details to inspect the remaining workflow evidence.";
+  $("#closed-beta-blocker").innerHTML = `<strong>Missing inputs: ${esc(missingInputs.length ? `${missingInputs.join("; ")}.` : "none recorded.")}</strong><span>Consequence: ${esc(summary.readyForExternalReview ? "The packet is locally ready for external review; external approval is still not established." : "The paper-beta review is not ready for external review.")}</span><span>Next action: ${esc(nextAction)}</span>`;
   const selectedTarget = $("#closed-beta-support-target").value;
   $("#closed-beta-support-target").innerHTML = data.targetDetails
     .map(

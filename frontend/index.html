@@ -401,25 +401,34 @@
           <div class="metrics" id="closed-beta-review-summary">
             <div class="empty">Loading review readiness…</div>
           </div>
-          <div id="closed-beta-evidence">
-            <div class="empty">Loading beta evidence…</div>
+          <div class="closed-beta-blocker" id="closed-beta-blocker">
+            <div class="empty">Assessing missing beta evidence…</div>
           </div>
-          <div class="closed-beta-workflow-grid">
-            <section>
-              <h4>Required drills</h4>
-              <div id="closed-beta-drills" class="closed-beta-records"></div>
-            </section>
-            <section>
-              <h4>Beta window</h4>
-              <div id="closed-beta-window" class="closed-beta-records"></div>
-            </section>
-            <section>
-              <h4>Incidents</h4>
-              <div id="closed-beta-incidents" class="closed-beta-records"></div>
-            </section>
-          </div>
-          <div id="closed-beta-workflow-warnings"></div>
-          <details class="closed-beta-entry">
+          <details class="closed-beta-administration" id="closed-beta-administration">
+            <summary>
+              <span>Review evidence and workflow details</span>
+              <span class="muted">Targets, drills, records, and incident controls</span>
+            </summary>
+            <div class="closed-beta-administration-body">
+              <div id="closed-beta-evidence">
+                <div class="empty">Loading beta evidence…</div>
+              </div>
+              <div class="closed-beta-workflow-grid">
+                <section>
+                  <h4>Required drills</h4>
+                  <div id="closed-beta-drills" class="closed-beta-records"></div>
+                </section>
+                <section>
+                  <h4>Beta window</h4>
+                  <div id="closed-beta-window" class="closed-beta-records"></div>
+                </section>
+                <section>
+                  <h4>Incidents</h4>
+                  <div id="closed-beta-incidents" class="closed-beta-records"></div>
+                </section>
+              </div>
+              <div id="closed-beta-workflow-warnings"></div>
+              <details class="closed-beta-entry">
             <summary>Attach target evidence</summary>
             <form class="ticket beta-record-form" id="closed-beta-support-form">
               <label
@@ -462,8 +471,8 @@
               ></label>
               <button class="primary" type="submit">Attach evidence</button>
             </form>
-          </details>
-          <details class="closed-beta-entry">
+              </details>
+              <details class="closed-beta-entry">
             <summary>Record an operations drill</summary>
             <form class="ticket beta-record-form" id="closed-beta-drill-form">
               <label
@@ -515,8 +524,8 @@
               ></label>
               <button class="primary" type="submit">Record drill</button>
             </form>
-          </details>
-          <details class="closed-beta-entry">
+              </details>
+              <details class="closed-beta-entry">
             <summary>Record the paper-beta window</summary>
             <form class="ticket beta-record-form" id="closed-beta-window-form">
               <label
@@ -574,8 +583,8 @@
               ></label>
               <button class="primary" type="submit">Record beta window</button>
             </form>
-          </details>
-          <details class="closed-beta-entry">
+              </details>
+              <details class="closed-beta-entry">
             <summary>Open an incident</summary>
             <form class="ticket beta-record-form" id="closed-beta-incident-form">
               <label
@@ -621,12 +630,14 @@
               ></label>
               <button class="danger" type="submit">Open incident</button>
             </form>
+              </details>
+              <div class="muted closed-beta-limit">
+                Operator references are internal labels, not verified artifacts.
+                A complete packet is ready for external review only; it is never
+                legal, entitlement, deployment, or live-trading approval.
+              </div>
+            </div>
           </details>
-          <div class="muted closed-beta-limit">
-            Operator references are internal labels, not verified artifacts.
-            A complete packet is ready for external review only; it is never
-            legal, entitlement, deployment, or live-trading approval.
-          </div>
         </section>
       </div>
     </div>
