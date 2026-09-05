@@ -217,6 +217,14 @@ export function createApp({
       }
     }
     try {
+      // Route parameters are decoded by individual feature routes. Validate the
+      // complete path first so malformed client encoding cannot become a
+      // generic sanitized provider failure.
+      decodeURIComponent(url.pathname);
+    } catch {
+      return json({ error: "Request path must use valid percent-encoding" }, 400);
+    }
+    try {
       if (url.pathname === "/")
         return new Response(Bun.file(indexPath), {
           headers: { ...securityHeaders, "cache-control": "no-store" },

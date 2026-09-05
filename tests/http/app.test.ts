@@ -733,6 +733,41 @@ test("mutation origin and request body limits fail before route work", async () 
   expect(await oversized.json()).toEqual({ error: "Request body is too large" });
 });
 
+test("API routes reject non-object JSON and malformed path encoding before route work", async () => {
+  const app = testApp();
+  for (const [path, body] of [
+    ["/api/orders", "null"],
+    ["/api/strategy/backtests", '"not an object"'],
+    ["/api/strategy/backtests", "[]"],
+  ]) {
+    const response = await app.fetch(new Request(`http://local${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Request body must be a JSON object",
+    });
+  }
+  expect(app.orderAttempts).toHaveLength(0);
+  expect(app.cryptoBarRequests).toHaveLength(0);
+
+  const malformedPath = await app.fetch(
+    new Request("http://local/api/strategy/datasets/%ZZ"),
+  );
+  expect(malformedPath.status).toBe(400);
+  expect(await malformedPath.json()).toEqual({
+    error: "Request path must use valid percent-encoding",
+  });
+
+  const validPath = await app.fetch(
+    new Request("http://local/api/strategy/datasets/%25"),
+  );
+  expect(validPath.status).toBe(404);
+  expect(await validPath.json()).toEqual({ error: "Strategy dataset not found" });
+});
+
 test("strategy routes reject invalid configuration without provider calls", async () => {
   const app = testApp();
   const backtest = await app.fetch(new Request("http://local/api/strategy/backtests", {
