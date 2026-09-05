@@ -26,7 +26,6 @@ import {
   type RebalanceMarketEvidence,
 } from "./rebalance-response";
 import {
-  riskSnapshot,
   rollingTurnover,
 } from "../../shared/risk";
 import { portfolioRiskDto } from "./risk-response";

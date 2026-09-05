@@ -17,10 +17,6 @@ export type OptimizerPosition = { symbol: string; marketValue: number; closes: n
 const round = (value: number, digits = 4) => Number(value.toFixed(digits));
 const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 const returns = (values: number[]) => values.slice(1).map((value, index) => value / values[index]! - 1).filter(Number.isFinite);
-const variance = (values: number[]) => {
-  const average = mean(values);
-  return values.length > 1 ? values.reduce((sum, value) => sum + (value - average) ** 2, 0) / (values.length - 1) : 0;
-};
 const covariance = (left: number[], right: number[]) => {
   const length = Math.min(left.length, right.length), a = left.slice(-length), b = right.slice(-length), am = mean(a), bm = mean(b);
   return length > 1 ? a.reduce((sum, value, index) => sum + (value - am) * (b[index]! - bm), 0) / (length - 1) : 0;
