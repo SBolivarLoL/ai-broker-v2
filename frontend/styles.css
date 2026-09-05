@@ -2410,6 +2410,37 @@ select.field {
   gap: 12px;
   margin-top: 16px;
 }
+.closed-beta-blocker,
+.closed-beta-administration {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+.closed-beta-blocker {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid var(--accent);
+}
+.closed-beta-blocker strong,
+.closed-beta-blocker span {
+  overflow-wrap: anywhere;
+}
+.closed-beta-administration > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.closed-beta-administration > summary .muted {
+  font-weight: 400;
+  text-align: right;
+}
+.closed-beta-administration-body {
+  margin-top: 14px;
+}
 .closed-beta-workflow-grid > section,
 .closed-beta-target,
 .closed-beta-entry {

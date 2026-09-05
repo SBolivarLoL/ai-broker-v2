@@ -556,7 +556,8 @@ The following read-only checks were run:
   initial confirm focus, danger treatment, forward/reverse focus wrapping,
   Escape cancellation with zero mutation requests, trigger-focus restoration,
   and a second explicit keyboard confirmation before exactly one fixture POST.
-  The closed-beta fixture opens the supporting-record form, submits it through
+  The closed-beta fixture opens the native review-details disclosure with the
+  keyboard, then opens the supporting-record form, submits it through
   the shared confirmation dialog, verifies the exact bounded POST and rendered
   record, then downloads and verifies the versioned packet filename.
   The static server and fixtures read no `.env`, database, provider, account,

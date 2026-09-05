@@ -371,6 +371,21 @@ test("closed-beta workflow attaches evidence and exports the review packet", asy
   await expect(
     page.getByRole("heading", { name: "Paper beta review" }),
   ).toBeVisible();
+  await expect(page.locator("#closed-beta-blocker")).toContainText(
+    "Missing inputs: 1 target lacks an in-window supporting record; 4 required drills lack passing evidence.",
+  );
+  await expect(page.locator("#closed-beta-blocker")).toContainText(
+    "Consequence: The paper-beta review is not ready for external review.",
+  );
+  await expect(page.locator("#closed-beta-blocker")).toContainText(
+    "Next action: Open review details and attach in-window target evidence.",
+  );
+  const administration = page.locator("#closed-beta-administration");
+  const administrationSummary = administration.locator(":scope > summary");
+  await expect(administration).not.toHaveAttribute("open", "");
+  await administrationSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(administration).toHaveAttribute("open", "");
   await expect(page.locator("#closed-beta-evidence")).toContainText(
     "No in-window supporting artifact reference attached",
   );
