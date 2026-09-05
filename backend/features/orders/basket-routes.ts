@@ -1,3 +1,4 @@
+import { getOrderPrice, assertFreshOrderPrice, type OrderPriceEvidence } from "./market-price";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import {
   ClientError,
@@ -33,6 +34,7 @@ type BasketRouteDependencies = {
   allow: RateLimit;
   previewSecret: string;
   getMarketClock: () => Promise<any>;
+  now?: () => Date;
 };
 
 /** Handles atomic basket previews and independent paper-broker leg submissions. */
@@ -43,6 +45,7 @@ export function createBasketRoutes({
   allow,
   previewSecret,
   getMarketClock,
+  now = () => new Date(),
 }: BasketRouteDependencies) {
   return async function handleBasketRequest(
     request: Request,
@@ -78,17 +81,17 @@ export function createBasketRoutes({
           getMarketClock(),
           Promise.all(
             basket.legs.map(async (leg) => {
-              const [asset, price, marketSnapshot] = await Promise.all([
+              const [asset, priceEvidence, marketSnapshot] = await Promise.all([
                 alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
                   symbolOrAssetId: leg.symbol,
                 }),
-                alpaca.marketData.getLatestPrice(leg.symbol),
+                getOrderPrice(alpaca.marketData, leg.symbol, now),
                 alpaca.marketData.stocks.stockSnapshotSingle({
                   symbol: leg.symbol,
                   feed: "iex",
                 }),
               ]);
-              return { ...leg, asset, price, marketSnapshot };
+              return { ...leg, asset, price: priceEvidence.price, priceEvidence, marketSnapshot };
             }),
           ),
         ]);
@@ -97,6 +100,7 @@ export function createBasketRoutes({
       if (recentOrders.length >= 500)
         throw new Error("The complete order window could not be verified");
       for (const leg of marketLegs) {
+        assertFreshOrderPrice(leg.priceEvidence, now());
         if (!leg.asset.tradable || leg.asset._class !== "us_equity")
           return json(
             { error: `${leg.symbol} is not a tradable US stock or ETF` },
@@ -117,7 +121,8 @@ export function createBasketRoutes({
             400,
           );
       }
-      const pricedLegs = marketLegs.map(({ symbol, side, qty, price }) => ({
+      const pricedLegs = marketLegs.map(({ symbol, side, qty, price, priceEvidence }) => ({
+        priceEvidence,
         symbol,
         side,
         qty,
@@ -191,9 +196,10 @@ export function createBasketRoutes({
           },
           422,
         );
-      const expiresAt = Date.now() + 120_000;
+      const expiresAt = now().getTime() + 120_000;
       return json({
         allowed: true,
+        priceEvidence: pricedLegs.map((leg) => leg.priceEvidence),
         simulation,
         operationalPolicies,
         liquidity,
@@ -244,12 +250,13 @@ export function createBasketRoutes({
         side: "buy" | "sell";
         qty: number;
         price: number;
+        priceEvidence: OrderPriceEvidence;
       }[] = [];
       let reservationKeys: string[] = [];
       let freshSimulation;
       let freshOperationalPolicies: OperationsPolicyEvaluation[] = [];
       try {
-        preview = verifyRebalanceBasketPreview(previewToken, previewSecret);
+        preview = verifyRebalanceBasketPreview(previewToken, previewSecret, now().getTime());
         const [account, positions, recentOrders, checkedLegs] =
           await Promise.all([
             alpaca.trading.account.getAccount(),
@@ -257,12 +264,13 @@ export function createBasketRoutes({
             alpaca.trading.orders.getAllOrders({ status: "all", limit: 500 }),
             Promise.all(
               preview.legs.map(async (leg) => {
-                const [asset, price] = await Promise.all([
+                const [asset, priceEvidence] = await Promise.all([
                   alpaca.trading.assets.getV2AssetsSymbolOrAssetId({
                     symbolOrAssetId: leg.symbol,
                   }),
-                  alpaca.marketData.getLatestPrice(leg.symbol),
+                  getOrderPrice(alpaca.marketData, leg.symbol, now),
                 ]);
+                const price = priceEvidence.price;
                 if (!asset.tradable || asset._class !== "us_equity")
                   throw conflict(
                     `${leg.symbol} is no longer tradable`,
@@ -295,6 +303,7 @@ export function createBasketRoutes({
                   side: leg.side,
                   qty: leg.qty,
                   price,
+                  priceEvidence,
                 };
               }),
             ),
@@ -303,6 +312,7 @@ export function createBasketRoutes({
           throw new Error("Account risk data unavailable");
         if (recentOrders.length >= 500)
           throw new Error("The complete order window could not be verified");
+        for (const leg of checkedLegs) assertFreshOrderPrice(leg.priceEvidence, now());
         freshLegs = checkedLegs;
         const brokerPending = await runtime.pendingBrokerOrders(
           recentOrders,
@@ -348,6 +358,7 @@ export function createBasketRoutes({
             422,
           );
         }
+        for (const leg of freshLegs) assertFreshOrderPrice(leg.priceEvidence, now());
         const reservation = store.reserveRiskBasket(
           idempotencyKey,
           freshLegs,
@@ -414,6 +425,7 @@ export function createBasketRoutes({
         const leg = freshLegs[index]!,
           clientOrderId = `${idempotencyKey.slice(0, 40)}-${index}`;
         try {
+          assertFreshOrderPrice(leg.priceEvidence, now());
           let order;
           try {
             order = await alpaca.trading.orders.market({
@@ -500,7 +512,7 @@ export function createBasketRoutes({
         ),
         status: response.status,
         results,
-        createdAt: new Date().toISOString(),
+        createdAt: now().toISOString(),
       });
       store.event("order.basket.submitted", actor, {
         receiptId,

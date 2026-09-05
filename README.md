@@ -81,6 +81,8 @@ Feature routes are independently owned, persistence uses ordered migrations, and
 
 See [`docs/VALIDATION.md`](docs/VALIDATION.md) for evidence and scope. Coverage is not application-wide: orchestration, the browser, and the process entry are outside the percentage gate, and credentialed smoke behavior is not exercised in CI.
 
+Equity and basket paper orders require an explicitly identified IEX trade observed within 60 seconds, checked again at confirmation. Missing, future-dated, or older prices block execution even outside the core market session. This intentionally limits off-hours paper ordering.
+
 ## Commands
 
 ```sh
