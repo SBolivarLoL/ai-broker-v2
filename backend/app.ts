@@ -47,6 +47,7 @@ export type AppDependencies = {
   env?: AppEnvironment;
   indexPath?: string;
   setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
+  clearIntervalFn?: (handle: unknown) => void;
   now?: () => Date;
 };
 
@@ -57,13 +58,22 @@ export function createApp({
   env = process.env,
   indexPath = "frontend/index.html",
   setIntervalFn = setInterval,
+  clearIntervalFn = (handle) =>
+    clearInterval(handle as ReturnType<typeof setInterval>),
   now = () => new Date(),
 }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
   const allow = rateLimiter();
-  const market = createMarketService({ alpaca, store, allow, now });
+  const lifecycle = { setIntervalFn, clearIntervalFn };
+  const market = createMarketService({
+    alpaca,
+    store,
+    allow,
+    now,
+    ...lifecycle,
+  });
   const strategies = createStrategyRuntime(alpaca, store, codeIdentity);
-  const orderRuntime = createOrderRuntime(alpaca, store, now);
+  const orderRuntime = createOrderRuntime(alpaca, store, now, lifecycle);
   const reconciliation = createReconciliationService({
     alpaca,
     store,
@@ -345,22 +355,33 @@ export function createApp({
     }
   };
   let started = false;
+  let runtimeGeneration = 0;
+  const runtimeIntervals: unknown[] = [];
+
+  function schedule(callback: () => void, milliseconds: number) {
+    runtimeIntervals.push(setIntervalFn(callback, milliseconds));
+  }
+
   function startRuntime() {
     if (started) return;
     started = true;
+    const generation = ++runtimeGeneration;
     // Network streams and timers start explicitly so importing createApp stays
     // side-effect free in tests and command-line tooling.
     market.start();
     void orderRuntime
       .start()
-      .then(() => capturePortfolioSnapshot())
+      .then(() => {
+        if (started && generation === runtimeGeneration)
+          return capturePortfolioSnapshot();
+      })
       .catch((error) =>
         console.error(
           "startup recovery failed",
           error instanceof Error ? error.message : error,
         ),
       );
-    setIntervalFn(
+    schedule(
       () =>
         void capturePortfolioSnapshot().catch((error) =>
           console.error(
@@ -373,12 +394,12 @@ export function createApp({
     if (env.STRATEGY_SCHEDULER_DISABLED !== "1") {
       const pollMs = Number(env.STRATEGY_SCHEDULER_POLL_MS ?? 60_000);
       if (Number.isFinite(pollMs) && pollMs >= 10_000)
-        setIntervalFn(() => void strategies.pollScheduler(), pollMs);
+        schedule(() => void strategies.pollScheduler(), pollMs);
     }
     if (env.RECONCILIATION_DISABLED !== "1") {
       const pollMs = Number(env.RECONCILIATION_POLL_MS ?? 15 * 60_000);
       if (Number.isFinite(pollMs) && pollMs >= 60_000)
-        setIntervalFn(
+        schedule(
           () =>
             void reconciliation
               .run("scheduler", "reconciliation-scheduler")
@@ -394,7 +415,7 @@ export function createApp({
     if (env.RETENTION_DISABLED !== "1") {
       const pollMs = Number(env.RETENTION_POLL_MS ?? 24 * 60 * 60_000);
       if (Number.isFinite(pollMs) && pollMs >= 60 * 60_000)
-        setIntervalFn(
+        schedule(
           () =>
             void retention.run("scheduler", "retention-scheduler").catch(
               (error) =>
@@ -408,5 +429,30 @@ export function createApp({
     }
   }
 
-  return { fetch, startRuntime };
+  function stopRuntime() {
+    if (!started) return;
+    started = false;
+    runtimeGeneration++;
+    let failure: unknown;
+    for (const interval of runtimeIntervals.splice(0)) {
+      try {
+        clearIntervalFn(interval);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    try {
+      market.stop();
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      orderRuntime.stop();
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure) throw failure;
+  }
+
+  return { fetch, startRuntime, stopRuntime };
 }

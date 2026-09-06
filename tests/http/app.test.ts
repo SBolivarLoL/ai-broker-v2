@@ -55,6 +55,8 @@ type FakeAlpacaOptions = {
 function fakeAlpaca(options: FakeAlpacaOptions = {}) {
   let stockConnects = 0;
   let orderStreamConnects = 0;
+  let stockDisconnects = 0;
+  let orderStreamDisconnects = 0;
   const orderAttempts: any[] = [];
   const cancellationAttempts: string[] = [];
   const replacementAttempts: any[] = [];
@@ -69,13 +71,17 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     onDisconnect(callback: (...args: any[]) => void) { orderStreamCallbacks.disconnect = callback; },
     onError(callback: (...args: any[]) => void) { orderStreamCallbacks.error = callback; },
     onTradeUpdate(callback: (...args: any[]) => void) { orderStreamCallbacks.trade = callback; },
+    send() {},
     subscribeTradeUpdates() {},
     connect() { orderStreamConnects++; },
+    disconnect() { orderStreamDisconnects++; },
   };
   const stockStream = {
     onStateChange() {}, onConnect() {}, onDisconnect() {}, onError() {}, onQuote() {}, onBar() {},
     subscribeForQuotes() {}, subscribeForBars() {}, unsubscribeFromQuotes() {}, unsubscribeFromBars() {},
+    send() {},
     connect() { stockConnects++; },
+    disconnect() { stockDisconnects++; },
   };
   const placeOrder = async (input: any, orderClass = "simple") => {
     orderAttempts.push(input);
@@ -251,6 +257,8 @@ function fakeAlpaca(options: FakeAlpacaOptions = {}) {
     alpaca,
     stockConnects: () => stockConnects,
     orderStreamConnects: () => orderStreamConnects,
+    stockDisconnects: () => stockDisconnects,
+    orderStreamDisconnects: () => orderStreamDisconnects,
     orderAttempts,
     cancellationAttempts,
     replacementAttempts,
@@ -279,7 +287,7 @@ function testApp(
   // Relaxed auth is opt-in; default test apps to the development/test path so
   // demo-identity contracts hold unless a test supplies its own NODE_ENV.
   const resolvedEnv = { NODE_ENV: "test", ...env };
-  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0, now }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, activityRequests: fake.activityRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
+  return { ...createApp({ alpaca: fake.alpaca, store, codeIdentity, env: resolvedEnv, setIntervalFn: () => 0, now }), store, stockConnects: fake.stockConnects, orderStreamConnects: fake.orderStreamConnects, stockDisconnects: fake.stockDisconnects, orderStreamDisconnects: fake.orderStreamDisconnects, orderAttempts: fake.orderAttempts, cancellationAttempts: fake.cancellationAttempts, replacementAttempts: fake.replacementAttempts, optionActionAttempts: fake.optionActionAttempts, cryptoBarRequests: fake.cryptoBarRequests, activityRequests: fake.activityRequests, emitOrderStreamState: fake.emitOrderStreamState, emitTradeUpdate: fake.emitTradeUpdate };
 }
 
 const productionEnv = {
@@ -439,25 +447,43 @@ test("runtime starts once and reconciles terminal trade stream updates", async (
   expect(app.store.getReceipt(order.receiptId)).toMatchObject({ orderId: order.id, status: "filled", updatedAt: expect.any(String) });
   expect(app.store.activeRiskReservations()).toEqual([]);
   expect(app.store.events(10, "order.stream.update")).toMatchObject([{ payload: { event: "fill", orderId: order.id, clientOrderId: "stream-reconcile", status: "filled" } }]);
+
+  app.stopRuntime();
+  app.stopRuntime();
+  expect(app.orderStreamDisconnects()).toBe(1);
+  expect(app.stockDisconnects()).toBe(1);
+  app.startRuntime();
+  await Bun.sleep(0);
+  expect(app.orderStreamConnects()).toBe(2);
+  expect(app.stockConnects()).toBe(2);
+  app.stopRuntime();
 });
 
 test("injected env, not process.env, controls runtime schedulers", async () => {
   const intervals: number[] = [];
+  const cleared: unknown[] = [];
+  let nextHandle = 0;
   const setIntervalFn = (_callback: () => void, milliseconds: number) => {
     intervals.push(milliseconds);
-    return 0;
+    return nextHandle++;
   };
+  const clearIntervalFn = (handle: unknown) => cleared.push(handle);
   const store = createStore(":memory:");
   stores.push(store);
 
-  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1", RECONCILIATION_DISABLED: "1", RETENTION_DISABLED: "1" }, setIntervalFn });
+  const disabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_DISABLED: "1", RECONCILIATION_DISABLED: "1", RETENTION_DISABLED: "1" }, setIntervalFn, clearIntervalFn });
   disabled.startRuntime();
-  expect(intervals).toEqual([15 * 60_000]);
+  expect(intervals).toEqual([20_000, 30_000, 15 * 60_000]);
+  disabled.stopRuntime();
+  expect(cleared).toEqual([2, 0, 1]);
 
   intervals.length = 0;
-  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000", RECONCILIATION_POLL_MS: "120000", RETENTION_POLL_MS: "3600000" }, setIntervalFn });
+  cleared.length = 0;
+  const enabled = createApp({ alpaca: fakeAlpaca().alpaca, store, codeIdentity, env: { STRATEGY_SCHEDULER_POLL_MS: "30000", RECONCILIATION_POLL_MS: "120000", RETENTION_POLL_MS: "3600000" }, setIntervalFn, clearIntervalFn });
   enabled.startRuntime();
-  expect(intervals).toEqual([15 * 60_000, 30_000, 120_000, 3_600_000]);
+  expect(intervals).toEqual([20_000, 30_000, 15 * 60_000, 30_000, 120_000, 3_600_000]);
+  enabled.stopRuntime();
+  expect(cleared).toEqual([5, 6, 7, 8, 3, 4]);
 });
 
 test("runtime retention scheduler prunes through the composed store boundary", async () => {

@@ -32,6 +32,14 @@ second pagination loop or an SDK-wide wrapper. Small evidence adapters remain
 where a route needs source, freshness, or coverage metadata around the SDK
 result.
 
+The stream compatibility guard in `stream-control.ts` wraps the installed
+SDK 0.2.0 send/connect and socket send/ping boundaries. It contains only the
+exact `readyState 0 (CONNECTING)` error; unrelated errors propagate and uncaught
+exceptions remain fatal. This relies on SDK internals, so the installed-SDK
+fixture checks authentication and automatic resubscription across reconnects.
+Missing expected stream methods fail initialization visibly. Recheck this
+boundary when updating the SDK.
+
 ## Diagnostic CLI
 
 The repository's `scripts/alpaca.sh` launcher runs the installed [Alpaca CLI](https://github.com/alpacahq/cli)

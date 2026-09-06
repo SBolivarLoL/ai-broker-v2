@@ -24,7 +24,9 @@ function fakeMarketService(
     subscribeForBars() {},
     unsubscribeFromQuotes() {},
     unsubscribeFromBars() {},
+    send() {},
     connect() {},
+    disconnect() {},
   };
   const alpaca = {
     marketData: {

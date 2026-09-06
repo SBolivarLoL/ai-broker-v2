@@ -65,6 +65,8 @@ type MarketServiceDependencies = {
   store: Store;
   allow: RateLimit;
   now?: () => Date;
+  setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
+  clearIntervalFn?: (handle: unknown) => void;
 };
 
 /** Owns market caches and HTTP translation, delegating the stock-stream lifecycle. */
@@ -73,6 +75,8 @@ export function createMarketService({
   store,
   allow,
   now = () => new Date(),
+  setIntervalFn,
+  clearIntervalFn,
 }: MarketServiceDependencies) {
   let assetCatalog: {
     expiresAt: number;
@@ -108,7 +112,10 @@ export function createMarketService({
     source: MultiAssetDtoInput & { retrievedAt: string };
   } | null = null;
 
-  const stockStream = createStockStreamService(alpaca);
+  const stockStream = createStockStreamService(alpaca, {
+    setIntervalFn,
+    clearIntervalFn,
+  });
 
   async function getClock() {
     if (clockCache && clockCache.expiresAt > Date.now())
@@ -742,6 +749,7 @@ export function createMarketService({
   }
 
   const start = () => stockStream.start();
+  const stop = () => stockStream.stop();
 
-  return { getClock, handleRequest, start };
+  return { getClock, handleRequest, start, stop };
 }
