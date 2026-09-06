@@ -1,16 +1,22 @@
 # Validation record
 
-Last reviewed against `main` commit `20602b7`: 2026-09-05.
+Last reviewed against `main` commit `a2c477c`: 2026-09-06.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
 ## Current automated evidence
 
-| Check              | Result on 2026-09-05                                                              | Scope                                                                                             |
+Final integration used Bun 1.2.15 and `bun install --frozen-lockfile`. The checks
+below passed on 2026-09-06 against the code now merged at `a2c477c`; this final
+reconciliation changes documentation only. The Bun, focused eval, and browser
+layers overlap and must not be added as independent coverage. The September
+remediation made no credentialed provider/model request or real order.
+
+| Check              | Result on 2026-09-06                                                              | Scope                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `bun run check`    | Pass: 495 tests, 0 failures, 2,777 assertions across 100 files                     | DTO time-taxonomy inventory, strict TypeScript with unused-local checking for `backend/`, `tests/`, and `scripts/`, all Bun tests, and the coverage floor |
 | `bun run eval`     | Pass: 44 tests, 0 failures, 197 assertions across 7 files                         | Broker safety, order state, security, agent grounding, and research trust boundaries              |
-| `bun run test:browser` | Pass on 2026-09-05: 7 tests, 0 failures across 1 Playwright file              | Chromium keyboard/focus, table/error, research refresh/retry, independent period-request and superseded-symbol handling, destructive confirmation, closed-beta attachment, and packet-export wiring |
+| `bun run test:browser` | Pass on 2026-09-06: 7 tests, 0 failures across 1 Playwright file              | Chromium keyboard/focus, table/error, research refresh/retry, independent period-request and superseded-symbol handling, destructive confirmation, closed-beta attachment, and packet-export wiring |
 | `bun run coverage` | Pass: 97.82% functions, 97.46% lines against 95% function and 96% line thresholds | Mean coverage across imported deterministic TypeScript modules                                    |
 | `bun audit`        | Pass: no known vulnerabilities                                                    | Locked dependency graph at audit time                                                             |
 | `bun test tests/scripts/alpaca.test.ts` | Pass: 4 tests, 0 failures, 57 assertions | Bun dotenv parsing with spaces, credential mapping, forced paper mode, inherited-control stripping, missing credentials, blocked mutations, help/version without credentials, and child exit propagation |
@@ -24,7 +30,7 @@ The September order-price contracts exercise explicit symbol/feed selection, sep
 
 The 2026-09-05 research-loading fixtures exercised the production browser scripts without provider or model calls. After a successful initial GDELT result, an explicit refresh failed only that provider; reactivating Research retried GDELT while retaining the other successful provider loads. A failed company-period request likewise retried only company market data after reactivation. A delayed SEC response remained renderable while a company-period request completed, and a separate delayed company response could not overwrite a newer MSFT selection.
 
-## Live Alpaca and Strategy Lab evidence
+## Historical live Alpaca and Strategy Lab evidence (2026-07-13)
 
 The 2026-07-13 11:47 CEST review used the local ignored `.env` without printing a credential, account identifier, balance, position, order, or market price.
 
@@ -37,7 +43,7 @@ The 2026-07-13 11:47 CEST review used the local ignored `.env` without printing 
 | Seven-day BTC/USD historical probe | 168 `1Hour` bars, from `2026-07-06T10:00:00.000Z` through `2026-07-13T09:00:00.000Z`, source `Alpaca crypto historical bars`, feed `us` | Current real crypto history is reachable and non-empty | Completeness beyond the returned window, independent corroboration, or future availability |
 | Real-data Strategy Lab flow with in-memory SQLite | Backtest HTTP 201 and persisted; linked shadow run HTTP 201; manual shadow tick HTTP 200; one current snapshot; decision `hold`; zero orders | The actual Alpaca history/snapshot path composes end to end with persistence and shadow evaluation without mock operator data | Paper approval, broker order submission, a profitable result, or a scheduled/long-duration run |
 
-The read-only evidence resolves the earlier local “account unavailable” symptom: the current `.env` and paper credentials are usable. No order was submitted. A credentialed strategy paper-order smoke remains deliberately unperformed because it is mutating and needs an explicit strategy, protocol, budget, and approval decision.
+Those read-only checks resolved the earlier local “account unavailable” symptom at the time. They do not establish current credential validity or provider availability. No order was submitted. A credentialed strategy paper-order smoke remains deliberately unperformed because it is mutating and needs an explicit strategy, protocol, budget, and approval decision.
 
 A separate deterministic probe compared sequential plugin evaluation with the fresh-plugin-per-runtime-tick boundary. For one controlled history, legacy `mean-reversion` and `breakout-momentum` each held target exposure `1` in sequential evaluation but returned `0` from a fresh instance at the same final bar. `time-sliced-accumulation` returned full target `1` on a first prospective evaluation over a 20-bar history with ten slices. `order-book-liquidity-scout` returned target `0` and `waiting for order-book liquidity snapshot` when given the same bar-only market context used by ordinary backtests. These are demonstrated behavioral gaps, not hypothetical risks.
 
@@ -178,16 +184,16 @@ domain rows and conclusion impact before provider results, with no console
 error. The pass used configured read-only account/provider access but made no
 OpenAI request, order, policy, retention, or broker mutation.
 
-## Repository review evidence
+## Repository review evidence (2026-09-06)
 
 | Inventory     | Reviewed result                                                                                                                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Documentation | Eight tracked Markdown files: project guidance, root onboarding, five product/architecture records under `docs/`, and one design-options index |
-| TypeScript    | 109 backend modules, 13 TypeScript operational/test-support scripts, 98 TypeScript files under `tests/`, and one Playwright configuration |
-| Concentration | `backend/app.ts` 404 lines; `backend/persistence/store.ts` 1,003 lines; browser behavior split across nine shell/style/script assets |
+| Documentation | Nine tracked Markdown files: project guidance, onboarding, six product/architecture records under `docs/`, and one historical design-options index |
+| TypeScript | 111 backend modules, 14 TypeScript operational/test-support scripts, 101 TypeScript files under `tests/`, and one Playwright configuration |
+| Concentration | `backend/app.ts` 458 lines; `backend/persistence/store.ts` 999 lines; `strategy-backtest.ts` 1,543 lines; browser behavior split across nine assets |
 | Persistence   | 15 migrations; 23 tables including migration history                                                                               |
 | Governance    | 16 sources; 12 stored-output categories; every table assigned once                                                                 |
-| Git baseline  | `main`, `dev`, `origin/main`, and `origin/dev` at `5d7eb32`; no open pull request at change start                                  |
+| Git baseline | `main`, `dev`, `origin/main`, and `origin/dev` reconciled at `a2c477c`; no open pull request at this documentation change start |
 
 ## Test-layer policy
 
@@ -223,7 +229,7 @@ inspected locally for command help was 0.0.11.
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
 | HTTP/API composition        | Moderate                                           | Dependency-injected `createApp`, in-memory SQLite, fake Alpaca, exact post-PDT account DTO, watchlist mutation/workspace contracts, common contracts, strategy lineage flow, primary order routes, recovery retry, scheduled/manual reconciliation reporting, and selected concurrency tests                                                                                                                                                                                                                     | Stream callbacks and secondary provider mutation paths remain incomplete                                                                  |
 | Operational scripts         | Good static confidence                             | Standard TypeScript/CI check plus a regression assertion that `scripts/` remains included; bounded smoke commands exist                                                                                                                                                                                                                                                                                                                                                                                     | Most provider behavior requires credentials and is not executed in CI                                                                     |
-| Browser UI                  | Maintained interaction plus targeted responsive rendering confidence | CI runs three isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, volatility-targeted, Donchian-ATR, and regime-filtered mean-reversion fields/presets, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, explicit confirmation, closed-beta evidence attachment, and packet export. Headed passes cover Company Research, Strategy comparison, and the closed-beta review at desktop/mobile widths without page-level overflow | No maintained visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
+| Browser UI                  | Maintained interaction plus targeted responsive rendering confidence | CI runs seven isolated Chromium tests for keyboard navigation/current-page semantics, order-table filtering, error live regions, volatility-targeted, Donchian-ATR, and regime-filtered mean-reversion fields/presets, destructive-dialog focus wrapping, Escape cancellation, focus restoration, danger styling, explicit confirmation, closed-beta evidence attachment, packet export, research retry after provider/chart failures, independent chart requests, and superseded-symbol responses. Headed passes cover Company Research, Strategy comparison, and the closed-beta review at desktop/mobile widths without page-level overflow | No maintained visual-regression suite; the CI fixtures validate browser wiring rather than backend/provider behavior |
 | Production operations       | Audited local workflow plus fixture restore proof   | Readiness, backup export, incident packet, policy, auth, governance, append-only closed-beta review/packet contracts, exact audit linkage, and serialized restore tests                                                                                                                                                                                                                                                                                                                                       | No production-sized or real closed-beta restore drill, deployment, participant cohort, authenticated supporting artifacts, or external approval |
 
 ## Full documentation and repository audit

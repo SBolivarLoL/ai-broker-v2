@@ -2,6 +2,9 @@
 
 AI Broker is a Bun application with a browser frontend, a paper-trading backend, and SQLite persistence. Live trading is intentionally unavailable.
 
+See [Alpaca integration boundaries](alpaca.md) for SDK, diagnostic CLI, optional
+MCP, and stream compatibility ownership.
+
 ## Project boundaries
 
 ```text
@@ -42,15 +45,15 @@ flowchart TD
     T --> SH
 ```
 
-`server.ts` owns process startup; `app.ts` owns application wiring. `backend/http/` owns transport-wide policy. Feature route modules translate HTTP requests into feature calls; the remaining feature modules own calculations, validation, and policy. Integrations translate external provider data. Persistence owns durable state and imports feature types only where the stored contract requires them.
+`server.ts` owns process startup; `app.ts` owns application wiring. `backend/http/` owns transport-wide policy. Feature route modules translate HTTP requests into feature calls; the remaining feature modules own calculations, validation, and policy. Integrations translate external provider data. Persistence owns durable state and imports feature contracts where stored validation requires them.
 
 ## Chosen system model
 
-AI Broker is a **modular monolith with ports-and-adapters boundaries**. This is the right fit for a personal broker: one deployable process keeps order validation, risk reservation, persistence, and audit writes close enough to reason about atomically, while feature and integration boundaries prevent the codebase from becoming another flat monolith.
+AI Broker is a **modular monolith**. This is the right fit for a personal broker: one deployable process keeps order validation, risk reservation, persistence, and audit writes close enough to reason about atomically, while feature and integration boundaries prevent the codebase from becoming another flat monolith.
 
 Microservices would add network failure modes and distributed transactions without helping a single-account workload. Split deployment units only when independently measured scaling, isolation, or availability requirements justify them.
 
-The execution path must preserve this order:
+Interactive order workflows preserve this order:
 
 ```mermaid
 flowchart LR
@@ -64,12 +67,14 @@ flowchart LR
     B --> E["Persist receipt and audit evidence"]
 ```
 
-No route extraction may reorder or bypass that pipeline.
+No route extraction may reorder or bypass that pipeline. Approved strategy
+automation follows its separate pre-registered protocol and server-owned
+readiness controls; agents cannot create execution authority.
 
 ## Change rules
 
 - Put code in the feature that owns the behavior. Move it to `shared/` only after a second independent consumer exists.
-- Keep provider-specific payload handling in `integrations/`; expose normalized values to features.
+- Keep provider-wide translation in `integrations/`; keep feature-specific evidence and policy with the owning feature. Reuse direct SDK helpers where no translation is needed.
 - Keep provider fixture provenance and redaction metadata versioned under `tests/fixtures/providers/`; restricted raw responses and credentials never cross into committed fixtures.
 - Comment safety constraints, provider quirks, and non-obvious decisions. Do not comment syntax that already explains itself.
 - Keep tests in the matching `tests/` boundary and run `bun run check` before merging.

@@ -1,6 +1,6 @@
 # Implemented features
 
-Last reviewed against `main` commit `5d7eb32`: 2026-07-13.
+Last reviewed against `main` commit `a2c477c`: 2026-09-06.
 
 This file describes behavior implemented in the repository. Planned work belongs
 in [`roadmap.md`](roadmap.md); reproducible evidence belongs in
@@ -262,6 +262,11 @@ fees, queue position, price improvement, latency, market impact, or venue
 behavior.
 
 ## Current limitations
+
+- A pending non-equity market order without a validated candidate price blocks
+  new risk reservations until it can be valued or resolves. The application
+  returns `pending_order_price_unavailable`; it never values crypto or options
+  through the stock endpoint.
 
 - Direct provider backtests and the Strategy Lab UI remain bounded to 90 days;
   longer stored-dataset backtests require API ingestion and are not exposed as

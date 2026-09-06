@@ -10,7 +10,7 @@ with `paper: true`. The boundary between the application Alpaca client, the
 diagnostic CLI, and the optional upstream MCP project is documented in
 [`docs/architecture/alpaca.md`](docs/architecture/alpaca.md).
 
-Code baseline reviewed: `main` at `5d7eb32` on 2026-07-13.
+Code baseline reviewed: `main` at `a2c477c` on 2026-09-06.
 
 ## Quick start
 
