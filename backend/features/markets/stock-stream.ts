@@ -1,10 +1,23 @@
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
 import { securityHeaders } from "../../http/http";
+import { containAlpacaSocketRace } from "../../integrations/alpaca/stream-control";
 import { localResponseTimeFields } from "../../shared/time-provenance";
 import { streamBarDto, streamQuoteDto } from "./market-stream";
 
+type StreamLifecycleDependencies = {
+  setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
+  clearIntervalFn?: (handle: unknown) => void;
+};
+
 /** Owns one shared Alpaca stock stream and fans it out to bounded SSE subscribers. */
-export function createStockStreamService(alpaca: Alpaca) {
+export function createStockStreamService(
+  alpaca: Alpaca,
+  {
+    setIntervalFn = setInterval,
+    clearIntervalFn = (handle) =>
+      clearInterval(handle as ReturnType<typeof setInterval>),
+  }: StreamLifecycleDependencies = {},
+) {
   const stockUpdates = alpaca.marketData.stockStream({
     feed: "iex",
     reconnect: true,
@@ -22,6 +35,11 @@ export function createStockStreamService(alpaca: Alpaca) {
   let state = "connecting";
   let nextSubscriberId = 1;
   let started = false;
+  let heartbeat: unknown | null = null;
+
+  containAlpacaSocketRace(stockUpdates, (error) => {
+    console.error("stock stream websocket not ready", error.message);
+  });
 
   function send(
     controller: ReadableStreamDefaultController<Uint8Array>,
@@ -96,11 +114,6 @@ export function createStockStreamService(alpaca: Alpaca) {
   });
   stockUpdates.onConnect(() => {
     state = "authenticated";
-    const symbols = [...symbolReferences.keys()];
-    if (symbols.length) {
-      stockUpdates.subscribeForQuotes(symbols);
-      stockUpdates.subscribeForBars(symbols);
-    }
     broadcast({ kind: "status", state, ...localResponseTimeFields(new Date()) });
   });
   stockUpdates.onDisconnect(() => {
@@ -155,17 +168,72 @@ export function createStockStreamService(alpaca: Alpaca) {
   function start() {
     if (started) return;
     started = true;
-    stockUpdates.connect();
-    setInterval(() => {
-      for (const [id, subscriber] of subscribers) {
-        try {
-          subscriber.controller.enqueue(encoder.encode(": heartbeat\n\n"));
-        } catch {
-          remove(id);
+    try {
+      stockUpdates.connect();
+      heartbeat = setIntervalFn(() => {
+        for (const [id, subscriber] of subscribers) {
+          try {
+            subscriber.controller.enqueue(encoder.encode(": heartbeat\n\n"));
+          } catch {
+            remove(id);
+          }
         }
+      }, 20_000);
+    } catch (error) {
+      started = false;
+      try {
+        stockUpdates.disconnect();
+      } catch (cleanupError) {
+        console.error("stock stream cleanup failed", cleanupError);
       }
-    }, 20_000);
+      throw error;
+    }
   }
 
-  return { open, size: () => subscribers.size, start };
+  function stop() {
+    if (!started && heartbeat === null) return;
+    started = false;
+    const subscribedSymbols = [...symbolReferences.keys()];
+    let failure: unknown;
+    if (heartbeat !== null) {
+      const interval = heartbeat;
+      heartbeat = null;
+      try {
+        clearIntervalFn(interval);
+      } catch (error) {
+        failure = error;
+      }
+    }
+    try {
+      stockUpdates.disconnect();
+    } catch (error) {
+      failure ??= error;
+    }
+    if (subscribedSymbols.length) {
+      try {
+        stockUpdates.unsubscribeFromQuotes(subscribedSymbols);
+      } catch (error) {
+        failure ??= error;
+      }
+      try {
+        stockUpdates.unsubscribeFromBars(subscribedSymbols);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    state = "disconnected";
+    const openSubscribers = [...subscribers.values()];
+    subscribers.clear();
+    symbolReferences.clear();
+    for (const subscriber of openSubscribers) {
+      try {
+        subscriber.controller.close();
+      } catch {
+        // The browser may already have closed its side of the SSE stream.
+      }
+    }
+    if (failure) throw failure;
+  }
+
+  return { open, size: () => subscribers.size, start, stop };
 }

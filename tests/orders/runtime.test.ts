@@ -131,3 +131,63 @@ test("mixed-asset pending orders never use the stock endpoint for unsupported va
   expect(calls).toBe(0);
  } finally {store.close();}
 });
+
+test("order runtime disconnects polling and reuses one stream across restart", async () => {
+  let connects = 0;
+  let disconnects = 0;
+  let subscriptions = 0;
+  const intervals: unknown[] = [];
+  const cleared: unknown[] = [];
+  const stream = {
+    onStateChange() {},
+    onConnect() {},
+    onDisconnect() {},
+    onError() {},
+    onTradeUpdate() {},
+    send() {},
+    subscribeTradeUpdates() {
+      subscriptions++;
+    },
+    connect() {
+      connects++;
+    },
+    disconnect() {
+      disconnects++;
+    },
+  };
+  const alpaca = {
+    trading: {
+      stream: () => stream,
+      orders: { getAllOrders: async () => [] },
+    },
+  } as unknown as Alpaca;
+  const store = createStore(":memory:");
+  const runtime = createOrderRuntime(alpaca, store, () => new Date(), {
+    setIntervalFn: (_callback, milliseconds) => {
+      const handle = { milliseconds };
+      intervals.push(handle);
+      return handle;
+    },
+    clearIntervalFn: (handle) => cleared.push(handle),
+  });
+
+  await runtime.start();
+  await runtime.start();
+  expect(connects).toBe(1);
+  expect(subscriptions).toBe(1);
+  expect(intervals).toEqual([{ milliseconds: 30_000 }]);
+
+  runtime.stop();
+  runtime.stop();
+  expect(disconnects).toBe(1);
+  expect(cleared).toEqual(intervals);
+
+  await runtime.start();
+  expect(connects).toBe(2);
+  expect(subscriptions).toBe(1);
+  expect(intervals).toHaveLength(2);
+  runtime.stop();
+  expect(disconnects).toBe(2);
+  expect(cleared).toEqual(intervals);
+  store.close();
+});

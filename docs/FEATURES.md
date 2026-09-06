@@ -189,6 +189,14 @@ checks these interactions against isolated fixtures.
 
 ### Operations and UI
 
+- Runtime start/stop is idempotent. Shutdown clears owned intervals, disconnects
+  Alpaca streams, removes their stock subscriptions, and closes market SSE
+  subscribers. `SIGINT` and `SIGTERM` also stop the HTTP listener. Work already
+  in flight is not cancelled; SQLite stays open for the process lifetime so
+  those jobs can settle. A narrow SDK compatibility guard contains its known
+  connecting-socket race; other errors propagate normally. Jobs are not durable
+  across restarts.
+
 - Ordered transactional SQLite migrations, serialized backups, encrypted
   secret envelopes, hash-chained decision records, provider/dataset quality
   reporting, scheduled read-only reconciliation, and selective retention

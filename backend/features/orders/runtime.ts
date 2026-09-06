@@ -1,6 +1,7 @@
 import { conflict } from "../../http/http";
 import { getOrderPrice, assertFreshOrderPrice } from "./market-price";
 import type { Alpaca } from "@alpacahq/alpaca-ts-alpha";
+import { containAlpacaSocketRace } from "../../integrations/alpaca/stream-control";
 import type { createStore } from "../../persistence/store";
 import {
   riskReservationStatusForBrokerStatus,
@@ -10,16 +11,27 @@ import { managedOrderDto, OrderTracker } from "./order-management";
 import type { Preview } from "./orders";
 
 type Store = ReturnType<typeof createStore>;
+type RuntimeLifecycleDependencies = {
+  setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
+  clearIntervalFn?: (handle: unknown) => void;
+};
 
 /** Owns broker order state, recovery, placement, and trade-update reconciliation. */
 export function createOrderRuntime(
   alpaca: Alpaca,
   store: Store,
   now = () => new Date(),
+  {
+    setIntervalFn = setInterval,
+    clearIntervalFn = (handle) =>
+      clearInterval(handle as ReturnType<typeof setInterval>),
+  }: RuntimeLifecycleDependencies = {},
 ) {
   const tracker = new OrderTracker();
   let recoveryRequest: Promise<void> | null = null;
   let started = false;
+  let updates: ReturnType<Alpaca["trading"]["stream"]> | null = null;
+  let recoveryTimer: unknown | null = null;
 
   function reconcile(order: any) {
     // Broker order ids are canonical after acceptance. During the brief
@@ -233,50 +245,87 @@ export function createOrderRuntime(
   async function start() {
     if (!started) {
       started = true;
-      const updates = alpaca.trading.stream({
-        reconnect: true,
-        maxReconnectSec: 30,
-      });
-      updates.onStateChange((state) => tracker.setStreamState(state));
-      updates.onConnect(() => {
-        tracker.setStreamState("authenticated");
-        updates.subscribeTradeUpdates();
-      });
-      updates.onDisconnect(() => tracker.setStreamState("disconnected"));
-      updates.onError((error) => {
-        tracker.setStreamState("error", error);
-        console.error("order stream error", error);
-      });
-      updates.onTradeUpdate((update) => {
-        const retrievedAt = now();
-        tracker.update(
-          update.order,
-          retrievedAt,
-          update.timestamp ?? retrievedAt,
-        );
-        reconcile(update.order);
-        store.event("order.stream.update", "alpaca-stream", {
-          event: update.event,
-          orderId: update.order.id,
-          clientOrderId: update.order.clientOrderId,
-          symbol: update.order.symbol,
-          status: update.order.status,
-          timestamp: update.timestamp,
-        });
-      });
-      updates.connect();
-      // Streaming updates are fastest, while polling repairs missed events
-      // after disconnects or process restarts.
-      setInterval(() => {
-        void recover().catch((error) =>
-          console.error(
-            "order recovery failed",
-            error instanceof Error ? error.message : error,
-          ),
-        );
-      }, 30_000);
+      try {
+        if (!updates) {
+          updates = alpaca.trading.stream({
+            reconnect: true,
+            maxReconnectSec: 30,
+          });
+          containAlpacaSocketRace(updates, (error) => {
+            console.error("order stream websocket not ready", error.message);
+          });
+          updates.onStateChange((state) => tracker.setStreamState(state));
+          updates.onConnect(() => tracker.setStreamState("authenticated"));
+          updates.onDisconnect(() => tracker.setStreamState("disconnected"));
+          updates.onError((error) => {
+            tracker.setStreamState("error", error);
+            console.error("order stream error", error);
+          });
+          updates.onTradeUpdate((update) => {
+            const retrievedAt = now();
+            tracker.update(
+              update.order,
+              retrievedAt,
+              update.timestamp ?? retrievedAt,
+            );
+            reconcile(update.order);
+            store.event("order.stream.update", "alpaca-stream", {
+              event: update.event,
+              orderId: update.order.id,
+              clientOrderId: update.order.clientOrderId,
+              symbol: update.order.symbol,
+              status: update.order.status,
+              timestamp: update.timestamp,
+            });
+          });
+          // Register before connecting so the SDK's authenticated resubscribe
+          // path owns both initial subscription and reconnects.
+          updates.subscribeTradeUpdates();
+        }
+        updates.connect();
+        // Streaming updates are fastest, while polling repairs missed events
+        // after disconnects or process restarts.
+        recoveryTimer = setIntervalFn(() => {
+          void recover().catch((error) =>
+            console.error(
+              "order recovery failed",
+              error instanceof Error ? error.message : error,
+            ),
+          );
+        }, 30_000);
+      } catch (error) {
+        started = false;
+        try {
+          updates?.disconnect();
+        } catch (cleanupError) {
+          console.error("order stream cleanup failed", cleanupError);
+        }
+        throw error;
+      }
     }
     return recover();
+  }
+
+  function stop() {
+    if (!started && recoveryTimer === null) return;
+    started = false;
+    let failure: unknown;
+    if (recoveryTimer !== null) {
+      const interval = recoveryTimer;
+      recoveryTimer = null;
+      try {
+        clearIntervalFn(interval);
+      } catch (error) {
+        failure = error;
+      }
+    }
+    try {
+      updates?.disconnect();
+    } catch (error) {
+      failure ??= error;
+    }
+    tracker.setStreamState("disconnected");
+    if (failure) throw failure;
   }
 
   return {
@@ -288,5 +337,6 @@ export function createOrderRuntime(
     placePreviewedOrder,
     optionOrderMarketData,
     start,
+    stop,
   };
 }
