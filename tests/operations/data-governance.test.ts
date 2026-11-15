@@ -12,7 +12,7 @@ const expectedTables = [
 
 test("builds data licensing and subscription governance report", () => {
   const report = buildDataGovernanceReport("2026-06-26T10:00:00.000Z");
-  expect(report.summary).toMatchObject({ totalSources: 16, availableSources: 9, storedOutputCategories: 12 });
+  expect(report.summary).toMatchObject({ totalSources: 17, availableSources: 9, storedOutputCategories: 13 });
   expect(report.summary.blockedForLivePromotion).toContain("alpaca_stock_sip");
   expect(report.summary.blockedForLivePromotion).toContain("alpaca_fixed_income_broker_api");
   expect(report.sources.find(source => source.id === "alpaca_news_benzinga")).toMatchObject({

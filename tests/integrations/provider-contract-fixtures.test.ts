@@ -82,7 +82,7 @@ describe("recorded and redacted provider fixture inventory", () => {
       .flatMap(({ fixture }) => fixture.sourceIds)
       .toSorted();
     const governedExternalIds = DATA_GOVERNANCE_SOURCES
-      .filter((source) => source.id !== "local_derived_analytics")
+      .filter((source) => source.entitlement !== "internal_only")
       .map((source) => source.id)
       .toSorted();
 
