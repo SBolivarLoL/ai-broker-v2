@@ -302,6 +302,51 @@ Walk-forward fold winners are evaluation evidence. The ordinary full-period resu
 
 Backtest artifacts are immutable and actor-scoped at retrieval. Run creation checks the exact strategy definition, plugin version, feature schema, dataset hash, and Git commit against the selected backtest. A server restarted on a different commit must produce a new reviewed backtest even when the visible parameters are unchanged.
 
+## Kronos model evidence
+
+Strategy Lab → **Model evidence** shows a preregistered 30-day BTC/USD study.
+The collector uses 64 consecutive completed hourly bars from the Alpaca Crypto
+Data API US feed. It records a forecast of the current hour's close between
+minute 02 and before minute 25 UTC. Repeated runs preserve the first observation.
+
+Forecast MAE is expressed in basis points of the last known close. Persistence
+predicts that close and stays in cash. Momentum extrapolates the previous
+hour's return. The Kronos and momentum rules go long only when the predicted
+return exceeds 40 bp. Always-long enters every matched window. Simulated
+entries use the minute-30 bar open and exits use the next hour's minute-00
+bar open. Both minute bars require provider-reported trades. These prices
+are execution proxies. The same rules are scored at 40 bp and 80 bp round-trip
+costs. Drawdown uses completed round trips. A single point forecast supplies
+no probability calibration.
+
+The collector fetches outcomes starting at minute 20 of the following hour
+and expires missing outcomes 24 hours after the forecast hour opened. The
+scorecard compares matched windows and reports gaps separately. Review
+requires the complete window and at least 336 matches. Results are descriptive.
+
+Configure `KRONOS_PYTHON` (executable), `KRONOS_SOURCE` (clean checkout),
+`KRONOS_MODEL` and `KRONOS_TOKENIZER` (local weight directories). The source
+and weights are pinned in `scripts/kronos-shadow/pins.json`. The worker runs
+offline without inherited broker credentials. The collector uses the public
+market data endpoint subject to its data terms.
+
+```sh
+bun scripts/kronos-shadow.ts probe
+bun scripts/kronos-shadow.ts init
+bun scripts/kronos-shadow.ts watch
+bun scripts/kronos-shadow.ts report
+```
+
+Use `tick` for a one-shot scheduler instead of `watch`. Stop the worker or
+disable the scheduled task to pause. Collection requires an available host during
+the capture window. Set the same optional `KRONOS_SHADOW_DIR` for the app and
+collector, or start both from the repository root. The default is
+`data/model-evidence/btc-usd-kronos-hourly-v1`. Include this directory in
+internal research backups. Each forecast retains its captured inputs, receipt
+time and hash. Outcomes link to the original forecast hash.
+`GET /api/strategy/model-evidence` returns the aggregate scorecard. The study
+has no broker order path.
+
 ## Shadow runs and traces
 
 Creating a run requires the `backtestId` of a matching reviewed artifact and stores that link with strategy/config/policy versions, exact Git commit, feature-schema version, query window, provider/feed, and dataset hash. A changed strategy definition requires another backtest. Legacy records and dirty working-tree artifacts remain readable but are explicitly non-comparable and cannot be ticked or approved.

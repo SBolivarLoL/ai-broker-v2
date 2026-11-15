@@ -459,7 +459,7 @@ test("keyboard navigation, table filtering, and error announcements remain opera
   const compare = page.getByRole("button", { name: "Compare backtests" });
   await compare.focus();
   await page.keyboard.press("Enter");
-  const status = page.getByRole("status");
+  const status = page.locator("#toast").and(page.getByRole("status"));
   await expect(status).toContainText("Add at least two backtest IDs");
   await expect(status).toBeVisible();
   await expect(compare).toBeFocused();

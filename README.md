@@ -98,6 +98,9 @@ run.
   calibration. Four strategies fail closed at paper boundaries until their
   prospective state/depth inputs match their backtests; three newer strategies
   remain evidence-gated.
+- **Model evidence:** Strategy Lab compares the local Kronos-mini BTC/USD
+  shadow study with simple baselines. See the
+  [collection and scoring guide](docs/STRATEGY_LAB.md#kronos-model-evidence).
 - **Operations and UI:** Ordered SQLite migrations, backups, encrypted secret
   envelopes, hash-chained audit records, provider/dataset quality reports,
   reconciliation, selective retention, closed-beta review packets, and a

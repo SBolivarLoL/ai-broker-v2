@@ -1642,6 +1642,12 @@ select.field {
   border-collapse: collapse;
   font-size: 12px;
 }
+.model-evidence-table {
+  min-width: 640px;
+}
+.model-evidence-table th:first-child {
+  width: 145px;
+}
 .valuation-table th,
 .valuation-table td {
   padding: 12px 10px;

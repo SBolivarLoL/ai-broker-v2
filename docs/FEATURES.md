@@ -186,6 +186,11 @@ checks these interactions against isolated fixtures.
 
 ### Strategy Lab
 
+- The Model evidence panel shows the BTC/USD Kronos shadow study, coverage,
+  forecast provenance, matched baseline metrics and review requirements.
+  The collector uses Alpaca US crypto bars and retains file-backed forecast
+  and outcome records. See [study operation](STRATEGY_LAB.md#kronos-model-evidence).
+
 - Twelve deterministic crypto strategies support immutable backtests, actor-
   scoped long-history datasets, rolling/anchored train-only walk-forward
   evaluation, untouched holdouts, regime slices, trade metrics, bootstrap
@@ -231,7 +236,7 @@ checks these interactions against isolated fixtures.
   reporting, scheduled read-only reconciliation, and selective retention
   pruning are implemented. The current schema has 15 migrations and 23
   application tables including migration history; the governance registry maps
-  16 sources to 12 stored-output categories.
+  17 sources to 13 stored-output categories.
 - Reconciliation coalesces overlapping runs, compares account/position values,
   bulk and per-order reads, and bounded IEX latest versus historical minute-bar
   paths. It stores discrepancies and recovery outcomes without submitting,
