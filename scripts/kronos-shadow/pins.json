@@ -1,0 +1,19 @@
+{
+  "revision": "67b630e67f6a18c9e9be918d9b4337c960db1e9a",
+  "model": {
+    "id": "NeoQuasar/Kronos-mini",
+    "revision": "f4e68697d9d5aed55cef5c96aabc3376bcad9f81",
+    "sha256": {
+      "config.json": "70daca2cb11e3a979dd6b8ac12ee08e2aace877acf28f5b8dfb4fe5609736201",
+      "model.safetensors": "a7d5f37e2e9fbd9891f7d7d4f72574512dd1f704fee14223e0a8cd0fbf54197c"
+    }
+  },
+  "tokenizer": {
+    "id": "NeoQuasar/Kronos-Tokenizer-2k",
+    "revision": "26966d0035065a0cae0ebad7af8ece35bc1fb51c",
+    "sha256": {
+      "config.json": "0b30a443affb03e05a876a083857de9164f899feb7b4d261da02c485c9a3e3b6",
+      "model.safetensors": "b97ec46b3b72160509e289183eaf7bdf5f0dac5bb9b49522f6d46638a99a8717"
+    }
+  }
+}

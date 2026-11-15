@@ -7,6 +7,67 @@ let strategyRuns = [],
   activeTraceId = null,
   latestStrategyBacktestId = null,
   recentStrategyBacktestIds = [];
+
+async function loadModelEvidence() {
+  const status = $("#model-evidence-status");
+  const body = $("#model-evidence");
+  const refresh = $("#model-evidence-refresh");
+  if (refresh.disabled) return;
+  refresh.disabled = true;
+  try {
+    const evidence = await api("/api/strategy/model-evidence");
+    const counts = evidence.coverage;
+    const window = evidence.window;
+    const labels = {
+      not_started: "Study setup pending",
+      scheduled: "Study scheduled",
+      collecting: "Collecting shadow observations",
+      settling: "Waiting for final outcomes",
+      window_ended: "Study window ended",
+    };
+    const number = (value, suffix) =>
+      value == null ? "—" : esc(value.toFixed(2) + suffix);
+    const date = (value) => new Date(value).toLocaleString();
+    status.textContent = labels[evidence.status] || "Study status unavailable";
+    const forecast = evidence.latestForecast;
+    body.innerHTML = `
+      ${window ? `<p class="muted">Study window ${esc(date(window.starts))} to ${esc(date(window.ends))}</p>` : ""}
+      <p>${esc(counts.matched)} matched · ${esc(counts.pending)} awaiting outcome ·
+        ${esc(counts.missed)} missed forecast · ${esc(counts.outcomeMissing)} missing outcome · ${esc(counts.invalid)} invalid</p>
+      ${forecast ? `<p>Latest forecast <strong>${esc(money.format(forecast.predictedClose))}</strong>
+        <span class="muted">· Target hour ${esc(date(forecast.targetHour))} · Recorded ${esc(date(forecast.recorded))}</span></p>` : ""}
+      <div class="valuation-table-wrap" tabindex="0" role="region" aria-label="Model and baseline comparison">
+        <table class="valuation-table model-evidence-table">
+          <thead><tr><th scope="col">Model / baseline</th><th scope="col">Forecast MAE</th>
+            <th scope="col">Net return</th><th scope="col">Stressed return</th>
+            <th scope="col">Max drawdown</th><th scope="col">Round trips</th></tr></thead>
+          <tbody>${evidence.comparisons.map(row => `<tr><th scope="row">${esc(row.label)}</th>
+            <td>${number(row.forecastMaeBps, " bp")}</td><td>${number(row.netReturnPct, "%")}</td>
+            <td>${number(row.stressedReturnPct, "%")}</td><td>${number(row.maxDrawdownPct, "%")}</td>
+            <td>${esc(row.roundTrips)}</td></tr>`).join("")}</tbody>
+        </table>
+      </div>
+      <p class="muted">Matched windows only. Simulated round trips include
+        ${esc(evidence.protocol.roundTripBps)} bp of costs, or ${esc(evidence.protocol.stressRoundTripBps)} bp under stress.
+        Drawdown uses completed round trips.</p>
+      <details><summary>Study provenance and evidence requirements</summary>
+        <p>${esc(evidence.protocol.source)} · ${esc(evidence.protocol.feed)} feed · ${esc(evidence.protocol.contextHours)} completed hours per forecast</p>
+        <p>Model <code>${esc(evidence.protocol.modelRevision.slice(0, 12))}</code> ·
+          Tokenizer <code>${esc(evidence.protocol.tokenizerRevision.slice(0, 12))}</code> ·
+          Source <code>${esc(evidence.protocol.sourceRevision.slice(0, 12))}</code></p>
+        ${forecast ? `<p>Latest input received ${esc(date(forecast.retrieved))} · SHA-256 <code>${esc(forecast.inputHash.slice(0, 12))}</code></p>` : ""}
+        <ul>${evidence.blockers.map(item => `<li>${esc(item)}</li>`).join("")}</ul>
+      </details>`;
+  } catch {
+    status.textContent = body.hasChildNodes()
+      ? "Refresh failed. Showing the previous evidence."
+      : "Study evidence could not be loaded. Try Refresh evidence.";
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+$("#model-evidence-refresh").addEventListener("click", loadModelEvidence);
 const strategyLabels = {
   cash: "Cash baseline",
   "buy-and-hold": "Buy and hold",
@@ -1316,13 +1377,19 @@ $("#strategy-refresh").onclick = () =>
   loadStrategyRuns().catch((error) => notify(error.message));
 document
   .querySelector('[data-view="strategies"]')
+  .addEventListener("click", loadModelEvidence);
+document
+  .querySelector('[data-view="strategies"]')
   .addEventListener("click", () =>
     loadStrategyRuns().catch((error) => notify(error.message)),
   );
 addEventListener("hashchange", () => {
-  if (location.hash === "#strategies")
+  if (location.hash === "#strategies") {
+    void loadModelEvidence();
     loadStrategyRuns().catch((error) => notify(error.message));
+  }
 });
+if (location.hash === "#strategies") queueMicrotask(loadModelEvidence);
 if (location.hash === "#strategies")
   queueMicrotask(() =>
     loadStrategyRuns().catch((error) => notify(error.message)),

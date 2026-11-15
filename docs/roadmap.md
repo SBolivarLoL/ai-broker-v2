@@ -261,6 +261,12 @@ The former `LATER_FEATURES.md` and `future-improvements.md` inventories are full
 
 Implemented does not imply production-approved. See `FEATURES.md` for exact limitations and `VALIDATION.md` for current evidence.
 
+## Model evidence
+
+- Implemented the BTC/USD Kronos shadow scorecard and prospective collector.
+- [ ] Review the full observation window and matched baselines before drawing a
+  model-quality conclusion. See [study operation](STRATEGY_LAB.md#kronos-model-evidence).
+
 ## Definition of done
 
 Every future item must answer:

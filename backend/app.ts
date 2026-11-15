@@ -35,6 +35,7 @@ import type { createStore } from "./persistence/store";
 import { authorizeRoute } from "./http/authorize-route";
 import { ClientError, json, securityHeaders } from "./http/http";
 import { handleStrategyRequest } from "./features/strategies/routes";
+import { defaultStudyDirectory, modelEvidenceScorecard } from "./features/strategies/model-evidence";
 import { createStrategyRuntime } from "./features/strategies/runtime";
 import type { CodeIdentity } from "./features/strategies/strategy-provenance";
 
@@ -304,6 +305,11 @@ export function createApp({
       if (operationsResponse) return operationsResponse;
       const marketResponse = await market.handleRequest(request, url, actor);
       if (marketResponse) return marketResponse;
+      if (url.pathname === "/api/strategy/model-evidence" && request.method === "GET") {
+        if (!allow(`${actor}:model-evidence`, 30))
+          return json({ error: "Too many model evidence requests" }, 429);
+        return json(await modelEvidenceScorecard(env.KRONOS_SHADOW_DIR ?? defaultStudyDirectory, now().getTime()));
+      }
       const strategyResponse = await handleStrategyRequest(request, url, {
         alpaca,
         store,
