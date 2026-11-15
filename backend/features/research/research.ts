@@ -261,7 +261,7 @@ export function replayCompanyResearch(value: unknown) {
 }
 
 let sharedSecClient: SecEdgarClient | null = null;
-function secEdgarClient() {
+export function secEdgarClient() {
   sharedSecClient ??= new SecEdgarClient({ userAgent: secUserAgentFromEnv() });
   return sharedSecClient;
 }

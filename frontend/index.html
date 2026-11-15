@@ -127,6 +127,18 @@
           </article>
         </div>
       </section>
+      <section class="card portfolio-briefing" aria-labelledby="briefing-title">
+        <div class="portfolio-briefing-header">
+          <div>
+            <h2 id="briefing-title">Portfolio briefing</h2>
+            <div class="muted" id="portfolio-briefing-status" role="status"></div>
+          </div>
+          <button class="ghost" id="portfolio-briefing-refresh" type="button">Refresh briefing</button>
+        </div>
+        <div id="portfolio-briefing" aria-busy="true">
+          <div class="empty">Loading paper portfolio changes…</div>
+        </div>
+      </section>
       <div class="grid">
         <section class="card">
           <h2>Market</h2>
@@ -751,6 +763,24 @@
               <div class="empty">Loading SEC filings…</div>
             </div>
           </div>
+        </section>
+        <section class="card wide" aria-labelledby="disclosure-title">
+          <div class="portfolio-briefing-header">
+            <div>
+              <h2 id="disclosure-title">Public disclosures</h2>
+              <p class="muted">SEC Form 13F reports show holdings as of quarter end.</p>
+            </div>
+            <button class="ghost" id="disclosures-refresh" type="button">Refresh disclosures</button>
+          </div>
+          <div id="disclosures-status" class="muted" role="status"></div>
+          <div id="disclosures-feed"></div>
+          <details class="scenario-details">
+            <summary>How the paper test works</summary>
+            <p class="muted">The test uses the largest reported common-stock holding among AAPL, AXP, KO, MSFT and TSLA. It compares a simulated buy and sell with SPY in the first core session that opens more than 15 minutes after recording. Both use IEX first and last minute prices with 10 basis points of assumed round-trip costs.</p>
+          </details>
+          <h3>Paper tests</h3>
+          <div id="disclosures-trials"></div>
+          <div id="disclosures-result" role="status" aria-atomic="true"></div>
         </section>
         <section class="card wide">
           <div class="section-head">
@@ -2495,6 +2525,7 @@
   <script src="/strategies.js"></script>
   <script src="/market-detail.js"></script>
   <script src="/research.js"></script>
+  <script src="/disclosures.js"></script>
   <script src="/data-quality.js"></script>
   <script src="/app.js"></script>
 </html>

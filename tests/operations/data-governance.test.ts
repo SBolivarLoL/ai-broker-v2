@@ -4,7 +4,7 @@ import { buildDataGovernanceReport } from "../../backend/features/operations/dat
 const expectedTables = [
   "schema_migrations", "events", "submissions", "receipts", "risk_reservations", "plans",
   "trade_journal_entries", "operations_policy", "encrypted_secrets", "decision_audit_log",
-  "account_activities", "research_runs", "portfolio_snapshots", "strategy_backtests", "strategy_runs",
+  "account_activities", "research_runs", "portfolio_snapshots", "disclosure_paper_trials", "strategy_backtests", "strategy_runs",
   "strategy_bar_datasets", "strategy_bars",
   "strategy_data_snapshots", "strategy_decisions", "strategy_orders", "strategy_metrics",
   "strategy_notes", "strategy_audit_log",
@@ -12,7 +12,7 @@ const expectedTables = [
 
 test("builds data licensing and subscription governance report", () => {
   const report = buildDataGovernanceReport("2026-06-26T10:00:00.000Z");
-  expect(report.summary).toMatchObject({ totalSources: 17, availableSources: 9, storedOutputCategories: 13 });
+  expect(report.summary).toMatchObject({ totalSources: 17, availableSources: 9, storedOutputCategories: 14 });
   expect(report.summary.blockedForLivePromotion).toContain("alpaca_stock_sip");
   expect(report.summary.blockedForLivePromotion).toContain("alpaca_fixed_income_broker_api");
   expect(report.sources.find(source => source.id === "alpaca_news_benzinga")).toMatchObject({

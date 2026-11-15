@@ -213,8 +213,8 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     id: "sec_edgar",
     category: "fundamentals",
     provider: "U.S. SEC EDGAR",
-    coverage: ["company submissions", "XBRL company facts", "10-K", "10-Q", "8-K", "SEC SIC"],
-    currentUse: ["company fundamentals", "filing evidence", "material-event monitoring", "industry classification"],
+    coverage: ["company submissions", "XBRL company facts", "10-K", "10-Q", "8-K", "13F", "SEC SIC"],
+    currentUse: ["company fundamentals", "filing evidence", "material-event monitoring", "industry classification", "disclosure feed and prospective paper research"],
     entitlement: "available",
     approvedUse: ["Internal research with accession, CIK, observation and retrieval provenance"],
     restrictions: ["Identify the application and monitored contact in SEC_USER_AGENT.", "Stay below the SEC fair-access request limit and cache bounded requests.", "Do not treat a filing published later as point-in-time evidence for an earlier date."],
@@ -225,7 +225,7 @@ export const DATA_GOVERNANCE_SOURCES: DataGovernanceSource[] = [
     retentionDecision: "persist_with_provenance",
     redistributionDecision: "attribution_required",
     liveUseDecision: "external_review_required",
-    storedOutputIds: ["research_runs", "portfolio_snapshots"],
+    storedOutputIds: ["research_runs", "portfolio_snapshots", "disclosure_paper_trials"],
   },
   {
     id: "treasury_fiscal_data",
@@ -368,6 +368,7 @@ export const STORED_OUTPUT_CATEGORIES: StoredOutputCategory[] = [
   { id: "broker_account_ledger", tables: ["account_activities"], contents: ["paper fills", "cash activity", "corporate-action evidence"], sourceIds: ["alpaca_paper_trading"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
   { id: "research_runs", tables: ["research_runs"], contents: ["model output", "research metrics", "provider evidence and limitations", "generated company research with canonical replay hashes", "point-in-time comparable valuation and user-assumption scenario reports with canonical replay hashes"], sourceIds: ["alpaca_equity_iex", "alpaca_news_benzinga", "gdelt_doc_2", "finnhub_free_enrichment", "openfigi_v3", "sec_edgar", "treasury_fiscal_data", "bls_public_data", "fred_api", "bea_data_api", "openai_api", "local_derived_analytics"], retentionDecision: "selective_automatic_pruning_with_lineage_protection", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
   { id: "portfolio_snapshots", tables: ["portfolio_snapshots"], contents: ["daily paper portfolio snapshot", "risk and exposure evidence"], sourceIds: ["alpaca_paper_trading", "alpaca_equity_iex", "sec_edgar", "local_derived_analytics"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
+  { id: "disclosure_paper_trials", tables: ["disclosure_paper_trials"], contents: ["SEC filing identity, timing and information-table hash", "fixed paper rule and simulated candidate"], sourceIds: ["sec_edgar"], retentionDecision: "until_manual_deletion", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
   { id: "strategy_experiments", tables: ["strategy_backtests", "strategy_bar_datasets", "strategy_bars", "strategy_runs", "strategy_data_snapshots", "strategy_decisions", "strategy_orders", "strategy_metrics", "strategy_notes", "strategy_audit_log"], contents: ["immutable backtests and provenance", "versioned normalized crypto bars and dataset-quality evidence", "strategy configuration", "market snapshots and bounded order-book depth", "decisions", "paper orders", "metrics", "notes", "hash-chained audit"], sourceIds: ["alpaca_paper_trading", "alpaca_crypto_data", "local_derived_analytics"], retentionDecision: "selective_automatic_pruning_with_lineage_protection", redistributionDecision: "internal_only", liveUseDecision: "paper_only" },
 ];
 

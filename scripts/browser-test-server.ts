@@ -16,6 +16,7 @@ const assets = new Map([
   ["/strategies.js", "strategies.js"],
   ["/market-detail.js", "market-detail.js"],
   ["/research.js", "research.js"],
+  ["/disclosures.js", "disclosures.js"],
   ["/data-quality.js", "data-quality.js"],
   ["/app.js", "app.js"],
 ]);

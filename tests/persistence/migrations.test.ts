@@ -11,6 +11,7 @@ import {
   parseCryptoDatasetRequest,
 } from "../../backend/features/strategies/strategy-datasets";
 import { normalizeActivity } from "../../backend/features/portfolio/ledger";
+import { disclosurePaperRule } from "../../backend/features/research/disclosures";
 
 function temporaryDatabase(name: string) {
   const directory = mkdtempSync(join(tmpdir(), "ai-broker-migration-"));
@@ -78,7 +79,8 @@ test("upgrades an 0011 database fixture without losing legacy rows", () => {
     legacy.close();
 
     const upgraded = createStore(filename);
-    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0015", expected: true });
+    expect(upgraded.schemaMigrations().at(-1)).toMatchObject({ id: "0016", expected: true });
+    expect(upgraded.disclosurePaperTrials("legacy-user")).toEqual([]);
     expect(upgraded.activities()).toMatchObject([{
       id: "legacy-fill",
       symbol: "AAPL",
@@ -205,11 +207,22 @@ test("restores a serialized backup with migrations and audit chains intact", () 
       qty: "1",
       price: "100",
     }, "2026-01-03T10:00:00.000Z")]);
+    const trial = {
+      accession: "0001104659-26-126785", filer: "ARK Investment Management",
+      reportDate: "2026-09-30", acceptedAt: "2026-11-13T17:00:19.000Z",
+      recordedAt: "2026-11-16T14:22:00.000Z",
+      filingUrl: "https://www.sec.gov/filing", tableUrl: "https://www.sec.gov/table",
+      tableHash: canonicalHash("fixture-table"), symbol: "TSLA", reportedValueUsd: 1_000,
+      rule: disclosurePaperRule,
+    };
+    expect(source.recordDisclosurePaperTrial("restore-test", trial)).toBe(true);
     const backup = source.databaseBackup();
     source.close();
     writeFileSync(restoredFilename, backup.bytes);
 
     const restored = createStore(restoredFilename);
+    expect(restored.getDisclosurePaperTrial("restore-test", trial.accession)).toEqual(trial);
+    expect(restored.recordDisclosurePaperTrial("restore-test", { ...trial, recordedAt: "2026-11-17T14:22:00.000Z" })).toBe(false);
     expect(restored.getStrategyRun("restore-run")).toMatchObject({ status: "shadow", configHash: "sha256:restore", backtestId: "restore-backtest", comparable: true });
     expect(restored.getStrategyBacktest("restore-backtest")).toMatchObject({ actor: "restore-test", provenance: { datasetHash: provenance.datasetHash } });
     expect(restored.getStrategyBarDataset("restore-dataset")).toMatchObject({ actor: "restore-test", bars: [{ symbol: "BTC/USD" }, { symbol: "BTC/USD" }] });

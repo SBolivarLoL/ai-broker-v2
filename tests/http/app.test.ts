@@ -529,7 +529,7 @@ test("data-governance API exposes provider and stored-output decisions", async (
   const response = await testApp().fetch(new Request("http://local/api/operations/data-governance"));
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
-    summary: { totalSources: 17, storedOutputCategories: 13 },
+    summary: { totalSources: 17, storedOutputCategories: 14 },
     sources: expect.arrayContaining([expect.objectContaining({ id: "openai_api", liveUseDecision: "external_review_required" })]),
     storedOutputs: expect.arrayContaining([expect.objectContaining({ id: "strategy_experiments", redistributionDecision: "internal_only" })]),
   });

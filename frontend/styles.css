@@ -216,6 +216,72 @@ select {
   color: var(--muted);
 }
 
+.portfolio-briefing {
+  margin-bottom: 16px;
+}
+.portfolio-briefing-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+.briefing-equity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.briefing-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 16px 28px;
+}
+.briefing-columns h3 {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+}
+.briefing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.briefing-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+.briefing-developments li {
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.briefing-columns p {
+  margin-bottom: 0;
+}
+.disclosure-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.disclosure-row a {
+  overflow-wrap: anywhere;
+}
+#disclosures-result:not(:empty) {
+  margin-top: 12px;
+}
+@media (max-width: 720px) {
+  .briefing-columns {
+    grid-template-columns: 1fr;
+  }
+}
 .grid {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;

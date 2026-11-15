@@ -37,6 +37,13 @@ bun start
 
 Open `http://localhost:3000`. Set `PORT` to use another port.
 
+Open **Overview → Portfolio briefing** to review paper-account equity
+change, open-position P&L and recent sourced developments. Open
+**Markets → Public disclosures** for SEC 13F filings and the forward paper
+test. Use **Start paper test** on an eligible filing, then **Check result**
+after the next eligible core session. See [Features](docs/FEATURES.md) for
+the rule, data requirements, and coverage.
+
 The minimum local configuration is:
 
 ```dotenv

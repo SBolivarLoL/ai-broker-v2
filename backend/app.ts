@@ -24,6 +24,9 @@ import { buildPortfolioSnapshot } from "./features/portfolio/portfolio-snapshot"
 import { handlePortfolioRequest } from "./features/portfolio/routes";
 import { riskSnapshot } from "./shared/risk";
 import { handleResearchRequest } from "./features/research/routes";
+import { handleDisclosureRequest } from "./features/research/disclosure-routes";
+import type { DisclosureSource } from "./features/research/disclosures";
+import { secEdgarClient } from "./features/research/research";
 import {
   authContextFor,
   rateLimiter,
@@ -50,6 +53,7 @@ export type AppDependencies = {
   setIntervalFn?: (callback: () => void, milliseconds: number) => unknown;
   clearIntervalFn?: (handle: unknown) => void;
   now?: () => Date;
+  disclosureSource?: () => DisclosureSource;
 };
 
 export function createApp({
@@ -62,6 +66,7 @@ export function createApp({
   clearIntervalFn = (handle) =>
     clearInterval(handle as ReturnType<typeof setInterval>),
   now = () => new Date(),
+  disclosureSource = secEdgarClient,
 }: AppDependencies) {
   const previewSecret = env.PREVIEW_SECRET ?? "";
   const allow = rateLimiter();
@@ -200,6 +205,7 @@ export function createApp({
       ["frontend/data-quality.js", "text/javascript; charset=utf-8"],
     ],
     ["/app.js", ["frontend/app.js", "text/javascript; charset=utf-8"]],
+    ["/disclosures.js", ["frontend/disclosures.js", "text/javascript; charset=utf-8"]],
   ] as const);
   const fetch = async (request: Request) => {
     const url = new URL(request.url);
@@ -334,6 +340,10 @@ export function createApp({
         now,
       });
       if (portfolioResponse) return portfolioResponse;
+      const disclosureResponse = await handleDisclosureRequest(request, url, {
+        alpaca, store, actor, allow, source: disclosureSource, now,
+      });
+      if (disclosureResponse) return disclosureResponse;
       const researchResponse = await handleResearchRequest(request, url, {
         alpaca,
         store,

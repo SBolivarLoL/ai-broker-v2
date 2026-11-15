@@ -4,6 +4,26 @@ Last reviewed against `main` commit `a2c477c`: 2026-09-06.
 
 This file records reproducible confidence evidence. It does not convert paper-only code, a report endpoint, or a checklist into production approval.
 
+## Portfolio briefing and 13F disclosure tests · 2026-11-16
+
+- `bun test tests/http/briefing-disclosures.test.ts` verifies the app routes,
+  partial filing coverage, filing-date and receipt cutoffs, option exclusion,
+  an early-close session, matched raw IEX minute prices, modeled costs,
+  isolation by actor, and idempotent registration. The migration fixtures
+  cover upgrading and restoring paper test records.
+- A public EDGAR smoke read four submissions each for Berkshire Hathaway and
+  ARK Investment Management and recorded an isolated forward TSLA vs SPY
+  trial for accession `0001104659-26-126785`. It exercised the actual SEC
+  information-table parser and registration path. The price comparison was
+  verified with controlled market-data fixtures. A completed session using
+  credentialed Alpaca data is outstanding.
+- The local Windows full check reproduced eight failures on untouched
+  `402187b`: four temporary SQLite cleanup locks and four POSIX shell CLI
+  tests. TypeScript, time taxonomy, and the focused broker evaluation
+  passed locally.
+
+## Kronos shadow scorecard
+
 The Kronos scorecard regression tests exercise authenticated HTTP composition
 in the test environment, completed-bar selection, immutable forecast writes,
 late/future data rejection, outcome linkage, matched baselines and cost stress.
@@ -230,7 +250,7 @@ inspected locally for command help was 0.0.11.
 | Risk and portfolio math     | High at module level                               | Unit, regression, portfolio system tests, and scheduled account/position reconciliation contracts                                                                                                                                                                                                                                                                                                                                                                                                           | No credentialed scheduled reconciliation over a long account history                                                                      |
 | Order policy and signatures | High for modules and primary order routes          | Direct primary order, mutation, option action, strategy paper, concurrent-capacity, recovery, and terminal stream-update contracts                                                                                                                                                                                                                                                                                                                                                                          | Credentialed real broker drills remain opt-in                                                                                             |
 | Strategy decisions          | High for deterministic modules; mixed for prospective equivalence | Strict configuration/default tests plus immutable versioned datasets, walk-forward/holdout evidence, trade metrics, uncertainty, comparison, paper policy, observability, replay, direct API tests, and the fresh real-data backtest-to-shadow check | No long paper cohort or credentialed strategy order; time-sliced accumulation, legacy mean reversion, breakout momentum, and the order-book scout have documented prospective/backtest mismatches |
-| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0015, legacy upgrade fixture, account-activity provenance restore, immutable dataset/backtest constraints, persisted historical valuation/scenario/company-research replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                                                        |
+| Persistence and audit       | Good for current schema                            | Ordered transactional migrations through 0016, legacy upgrade fixture, account-activity and disclosure-test provenance restore, immutable dataset/backtest constraints, persisted historical valuation/scenario/company-research replay, rollback/mismatch checks, serialized restore, hash chains, ledger, journal, policy, and export tests | No production-sized restore timing or closed-beta operations drill                                                                        |
 | Provider normalization      | Good with recorded/redacted fixtures and targeted live reads | A versioned manifest covers all 15 external governance source IDs; contract tests execute malformed, partial, throttled, revised, and timestamp-edge payloads across Alpaca, SEC, official macro, GDELT, Finnhub, OpenFIGI, and application-owned OpenAI schemas. Every canonical-evidence constructor must explicitly declare all five time meanings, the five provider research reports expose calculation-level coverage, and the static DTO inventory rejects unclassified time-bearing exports | CI fixtures and one read-only browser pass cannot prove current entitlement or long-term provider stability; historical classification remains unavailable |
 | Data governance and quality | Complete code inventory, selective enforcement, external review open | Unit and direct API tests cover 17 sources, 13 output categories, all 23 SQLite tables, references, terms URLs, fail-closed live-use decisions, provider-health status, actor-scoped strategy dataset quality stats, and transactional retention for named high-growth records with lineage protection | Internal classifications and the local retention policy are not legal or data-entitlement approval; durable records outside the named high-growth categories remain deliberately unpruned |
 | Agents                      | Guardrails tested, runtime partially covered       | Output schemas, citation/numeric checks, counter-thesis, Q&A validation, canonical cited-plan snapshots, provider/model-free company-research reevaluation, deterministic replay hashes, and SQLite/API persistence | Live model/tool orchestration paths have lower coverage and require credentials                                                           |
@@ -820,7 +840,7 @@ It uses an intentionally unreachable limit, looks up the exact client order ID, 
 - Comparable strategy records require an immutable matching backtest and record exact Git/dirty state, plugin/feature/policy versions, query window, provider/feed, and normalized input hashes. Legacy or dirty records cannot be ticked or approved.
 - Missing or stale strategy data cannot pass by absence.
 - Decision and strategy audit verification fails when a stored hash chain is inconsistent.
-- Migration identity drift stops startup, failed migration DDL and history roll back together, the 0011 fixture upgrades through 0015 without inventing activity provenance, and serialized restores preserve account-activity time fields plus both audit chains.
+- Migration identity drift stops startup, failed migration DDL and history roll back together, the 0011 fixture upgrades through 0016 without inventing activity provenance, and serialized restores preserve account-activity time fields, disclosure test inputs, and both audit chains.
 - Every current SQLite table belongs to exactly one stored-output category; every external source is blocked or requires external review for live use.
 - Provider-health and stored-dataset quality reports expose local event and immutable dataset evidence, but do not imply entitlement approval or successful live provider probes.
 - Canonical evidence, crypto Strategy Lab market DTOs, asset-search and single-symbol quote responses, account-activity root/row/summary/quality DTOs, market monitoring DTOs, company-market root/child DTOs, market workspace root/watchlist/asset/discovery/calendar DTOs, portfolio-performance, portfolio-risk, portfolio-exposure, portfolio-scenario, portfolio-rebalance, portfolio-snapshot root/child, and portfolio-optimizer root/proposal/weight/input/quality DTOs, option-chain and option-portfolio Greek DTOs, equity quote/bar stream DTOs, and multi-asset market DTOs preserve retrieval/server-response timestamps separately from provider observation/publication/effective timestamps; official macro evidence records effective periods for dated, monthly, quarterly, and market-session calendar observations.

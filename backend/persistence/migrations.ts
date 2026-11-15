@@ -400,6 +400,21 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
       ]);
     },
   },
+  {
+    id: "0016",
+    name: "prospective disclosure paper trials",
+    checksum: "sha256:prospective-disclosure-paper-trials-v1",
+    up(db) {
+      db.run(`CREATE TABLE disclosure_paper_trials (
+        actor TEXT NOT NULL,
+        accession TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        PRIMARY KEY(actor, accession)
+      )`);
+      db.run("CREATE INDEX disclosure_paper_trials_recent ON disclosure_paper_trials(actor, recorded_at DESC)");
+    },
+  },
 ];
 
 export function migrateDatabase(

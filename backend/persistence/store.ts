@@ -857,6 +857,22 @@ export function createStore(filename = "data/app.db") {
           .all(limit) as { payload: string }[]
       ).map((row) => JSON.parse(row.payload));
     },
+    getDisclosurePaperTrial(actor: string, accession: string) {
+      const row = db.query<{ payload: string }, [string, string]>(
+        "SELECT payload FROM disclosure_paper_trials WHERE actor = ? AND accession = ?",
+      ).get(actor, accession);
+      return row ? JSON.parse(row.payload) as import("../features/research/disclosures").DisclosurePaperTrial : null;
+    },
+    recordDisclosurePaperTrial(actor: string, trial: import("../features/research/disclosures").DisclosurePaperTrial) {
+      return db.query(`INSERT INTO disclosure_paper_trials (actor, accession, recorded_at, payload)
+        VALUES (?, ?, ?, ?) ON CONFLICT(actor, accession) DO NOTHING`)
+        .run(actor, trial.accession, trial.recordedAt, JSON.stringify(trial)).changes === 1;
+    },
+    disclosurePaperTrials(actor: string) {
+      return db.query<{ payload: string }, [string]>(
+        "SELECT payload FROM disclosure_paper_trials WHERE actor = ? ORDER BY recorded_at DESC, accession LIMIT 20",
+      ).all(actor).map(row => JSON.parse(row.payload) as import("../features/research/disclosures").DisclosurePaperTrial);
+    },
     ...strategyStore,
     ...retentionRepository,
     decisionAudit,

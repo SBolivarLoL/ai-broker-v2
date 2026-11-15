@@ -20,8 +20,8 @@ The browser exposes seven workspaces:
 
 | Workspace | Implemented behavior |
 | --- | --- |
-| Home | Paper account, holdings, operations policy, kill switch, closed-beta review, and order entry. |
-| Markets | Session, watchlists, movers, most-active stocks, monitored news/events, 8-K alerts, and multi-asset capability status. |
+| Home | Portfolio briefing, paper account, holdings, operations policy, kill switch, closed-beta review, and order entry. |
+| Markets | Session, watchlists, movers, most-active stocks, monitored news/events, 8-K alerts, SEC 13F disclosures, forward paper tests, and multi-asset capability status. |
 | Portfolio | Risk, performance, FIFO ledger, exposure, scenarios, optimizer proposals, constrained rebalance plans, trade journal, receipts, and order management. |
 | Strategies | Crypto backtests, shadow/scheduled runs, protocol-gated paper approvals, manual tickets, traces, metrics, alerts, performance, attribution, reviews, and reports. |
 | Research | Company market data, SEC, macro, OpenFIGI, GDELT, optional Finnhub, comparables, scenario valuation, and AI company research. |
@@ -96,6 +96,14 @@ checks these interactions against isolated fixtures.
 
 ### Portfolio intelligence
 
+- `GET /api/portfolio/briefing` reads Alpaca paper account equity and prior-close
+  equity, ranks up to five open positions by absolute broker-reported intraday
+  unrealized P&L, and links up to four sourced holding headlines from the prior
+  24 hours. The news request covers at most 20 held symbols. Coverage and
+  unavailable fields are shown explicitly. Headlines are context for a thesis
+  review. Equity changes can also reflect fills and cash activity. The UI
+  loads the briefing on Overview activation and supports an explicit refresh.
+
 - Cashflow-adjusted performance, benchmark attribution, drawdown, volatility,
   Sharpe-style metrics, and persisted daily snapshots.
 - FIFO accounting covers fills, fees, dividends, interest, transfers, splits,
@@ -118,6 +126,27 @@ checks these interactions against isolated fixtures.
   malformed cannot become a draft.
 
 ### Research and AI
+
+- **Public disclosures.** `GET /api/research/disclosures` returns up to four
+  official 13F holdings reports, notices, or amendments per tracked SEC filer
+  (Berkshire Hathaway and ARK Investment Management). Quarter end, filing
+  date, exact acceptance time when available, source check time, and the
+  SEC document are distinct fields. Coverage is institutional 13F only.
+- **Forward equity paper test.** `POST /api/research/disclosures/paper` takes an
+  accession from the feed. It records the latest unamended original holdings
+  report for a tracked filer if SEC accepted it within seven days. The rule
+  aggregates reported common-share values by known CUSIP and selects the largest
+  eligible position among AAPL, AXP, KO, MSFT and TSLA. The record freezes the
+  filing, information-table hash, selected symbol, and server-recorded time by
+  actor and accession. Duplicate starts return the original record.
+  `GET /api/research/disclosures/paper?accession=…` compares the selected
+  stock against SPY in the first NASDAQ core session opening more than 15
+  minutes after recording. It waits for the session close plus 15 minutes,
+  then reads both securities' exact opening and final core-minute raw IEX bars.
+  Returns include 5 basis points of assumed friction per side. Missing or
+  ambiguous data leaves the result unavailable. The calculator reads market
+  data and produces simulated returns without access to an order path. Checking
+  the result again recomputes it from the latest returned bars.
 
 - SEC EDGAR provides declared-identity requests, caching, retry/backoff,
   serialized fair-access requests, filing sections, company facts, trends, SIC,
