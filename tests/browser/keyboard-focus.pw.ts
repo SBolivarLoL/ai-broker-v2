@@ -635,7 +635,7 @@ test("destructive confirmation traps focus, cancels safely, and restores focus",
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(trigger).toHaveAccessibleName("Clear kill switch");
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator("#toast")).toContainText(
     "Global kill switch activated",
   );
   expect(mutations).toEqual([
@@ -684,7 +684,7 @@ test("closed-beta workflow attaches evidence and exports the review packet", asy
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Confirm" }).click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator("#toast")).toContainText(
     "Target evidence recorded",
   );
   await expect(page.locator("#closed-beta-evidence")).toContainText(

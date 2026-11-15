@@ -43,9 +43,13 @@ function ensureResearchWorkspaceLoaded() {
 }
 addEventListener("workspaceactivated", (event) => {
   if (event.detail.view === "research") ensureResearchWorkspaceLoaded();
+  if (event.detail.view === "home") loadPortfolioBriefing();
+  if (event.detail.view === "markets") loadDisclosures();
 });
 
 Promise.allSettled([
+  !location.hash || location.hash === "#home" ? loadPortfolioBriefing() : null,
+  location.hash === "#markets" ? loadDisclosures() : null,
   location.hash === "#options"
     ? safeLoad(
         "Options",

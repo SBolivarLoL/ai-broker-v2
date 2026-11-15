@@ -2,6 +2,65 @@
  * Portfolio risk, exposure, scenarios, optimization, rebalance, ledger, order,
  * advisor-plan, and trade-journal UI.
  */
+async function loadPortfolioBriefing() {
+  const panel = $("#portfolio-briefing"),
+    status = $("#portfolio-briefing-status"),
+    refresh = $("#portfolio-briefing-refresh");
+  if (refresh.disabled) return;
+  refresh.disabled = true;
+  panel.setAttribute("aria-busy", "true");
+  status.textContent = "Updating paper portfolio briefing…";
+  try {
+    const data = await api("/api/portfolio/briefing");
+    const fmt = (value) => data.currency && /^[A-Z]{3}$/.test(data.currency)
+      ? new Intl.NumberFormat(undefined, {
+          style: "currency", currency: data.currency, signDisplay: "exceptZero",
+        }).format(value)
+      : new Intl.NumberFormat(undefined, { signDisplay: "exceptZero", maximumFractionDigits: 2 }).format(value);
+    const pnl = (value) => `<strong class="private-value ${value > 0 ? "gain" : value < 0 ? "loss" : ""}">${esc(fmt(value))}</strong>`;
+    const { coverage } = data;
+    const equity = data.equityChange === null
+      ? '<span class="muted">Prior-close equity is unavailable.</span>'
+      : `${pnl(data.equityChange)} ${data.equityChangePercent === null ? "" : `<span class="private-value muted">(${esc(pct(data.equityChangePercent))})</span>`}`;
+    const positionDetail = coverage.positions === 0
+      ? "No open positions in Alpaca Paper."
+      : data.contributors.length ? "" : coverage.withIntradayPnl
+        ? "No nonzero intraday P&L reported for measured positions."
+        : "Alpaca has not supplied usable intraday position P&L.";
+    const contextDetail = coverage.news === "unavailable"
+      ? "Holding headlines are unavailable. Refresh to retry."
+      : coverage.news === "no_positions"
+        ? "Recent headlines appear when the paper account holds positions."
+        : "No sourced headlines in the past 24 hours for the positions checked.";
+    panel.innerHTML = `
+      <p class="briefing-equity">Equity change since prior close ${equity}</p>
+      <div class="briefing-columns">
+        <div>
+          <h3>Largest open-position moves</h3>
+          ${data.contributors.length ? `<ul class="briefing-list">${data.contributors.map((row) =>
+            `<li><strong>${esc(row.symbol)}</strong>${pnl(row.pnl)}</li>`).join("")}</ul>`
+            : `<p class="muted">${esc(positionDetail)}</p>`}
+          <p class="muted">${esc(coverage.withIntradayPnl)}/${esc(coverage.positions)} positions with broker intraday unrealized P&amp;L. Equity change may also reflect fills and cash activity.</p>
+        </div>
+        <div>
+          <h3>Recent developments to review</h3>
+          ${data.developments.length ? `<ul class="briefing-list briefing-developments">${data.developments.map((item) =>
+            `<li><a href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener noreferrer">${esc(item.headline)}</a><span class="muted">${esc(item.symbols.join(", "))} · ${esc(item.source)} · ${esc(new Date(item.publishedAt).toLocaleString())}</span></li>`).join("")}</ul>`
+            : `<p class="muted">${esc(contextDetail)}</p>`}
+          <p class="muted">24-hour news window · ${esc(coverage.checkedForNews)}/${esc(coverage.positions)} positions checked. News gives context for reviewing your thesis.</p>
+        </div>
+      </div>`;
+    status.textContent = `${data.accountSource} · retrieved ${new Date(data.retrievedAt).toLocaleString()}`;
+  } catch {
+    panel.innerHTML = '<p class="empty">Paper account data is unavailable. Refresh the briefing to retry.</p>';
+    status.textContent = "Briefing unavailable";
+  } finally {
+    panel.setAttribute("aria-busy", "false");
+    refresh.disabled = false;
+  }
+}
+$("#portfolio-briefing-refresh").addEventListener("click", loadPortfolioBriefing);
+
 $("#stress").insertAdjacentHTML(
   "afterend",
   '<div class="metrics" id="advanced-risk"></div><div id="risk-contribution"></div>',

@@ -7,6 +7,7 @@ import {
   portfolioPerformanceDto,
 } from "./analytics";
 import type { CurrentPortfolioExposure } from "./exposure-service";
+import { buildPortfolioBriefing } from "./briefing";
 import { ledgerSummary, type LedgerCategory } from "./ledger";
 import {
   buildPortfolioOptimizerReport,
@@ -69,6 +70,12 @@ export async function handlePortfolioRequest(
   const { alpaca, store, actor, allow } = context;
   const env = context.env ?? process.env;
   const now = context.now ?? (() => new Date());
+
+  if (url.pathname === "/api/portfolio/briefing" && request.method === "GET") {
+    if (!allow(`portfolio-briefing:${actor}`, 12))
+      return json({ error: "Too many briefing requests. Try again in a minute." }, 429);
+    return json(await buildPortfolioBriefing(alpaca, now));
+  }
 
   if (url.pathname === "/api/account/activities" && request.method === "GET") {
     const allowedCategories = new Set<LedgerCategory>([

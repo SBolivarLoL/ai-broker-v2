@@ -134,6 +134,7 @@ type SecSubmissions = {
       reportDate: string[];
       form: string[];
       primaryDocument: string[];
+      acceptanceDateTime?: string[];
     };
   };
 };
@@ -550,12 +551,59 @@ export class SecEdgarClient {
     return (await this.companyResult(symbol)).value;
   }
 
-  private submissionsResult(company: SecCompany) {
+  private submissionsResult(company: Pick<SecCompany, "cik">) {
     return this.requestResult<SecSubmissions>(`https://data.sec.gov/submissions/CIK${company.cik}.json`, "json", this.jsonCacheTtlMs);
   }
 
   async submissions(company: SecCompany) {
     return (await this.submissionsResult(company)).value;
+  }
+
+  /** Recent 13F submissions by filer CIK, including notices and amendments. */
+  async institutionalDisclosures(cik: string) {
+    if (!/^\d{10}$/.test(cik) || Number(cik) <= 0)
+      throw new Error("Invalid SEC filer CIK");
+    const result = await this.submissionsResult({ cik });
+    const recent = result.value.filings.recent;
+    const records = recent.form.flatMap((form, index) => {
+      if (!/^13F-(HR|NT)(\/A)?$/.test(form)) return [];
+      const accession = recent.accessionNumber[index];
+      const filingDate = recent.filingDate[index];
+      const reportDate = recent.reportDate[index];
+      const accepted = recent.acceptanceDateTime?.[index];
+      if (typeof accession !== "string" || !/^\d{10}-\d{2}-\d{6}$/.test(accession) ||
+        typeof filingDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(filingDate)) return [];
+      const acceptedAt = typeof accepted === "string" &&
+        /(?:Z|[+-]\d{2}:\d{2})$/.test(accepted) && Number.isFinite(Date.parse(accepted))
+        ? new Date(accepted).toISOString() : null;
+      const directory = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll("-", "")}`;
+      return [{
+        cik, accession, form, filingDate,
+        reportDate: typeof reportDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(reportDate) ? reportDate : null,
+        acceptedAt,
+        url: `${directory}/${accession}-index.htm`,
+        primaryDocument: recent.primaryDocument[index] ?? "",
+      }];
+    });
+    return { name: result.value.name, checkedAt: result.retrievedAt, records };
+  }
+
+  /** Resolve the raw information table using the SEC directory, never a caller URL. */
+  async institutionalHoldings(cik: string, accession: string, primaryDocument: string) {
+    if (!/^\d{10}$/.test(cik) || Number(cik) <= 0 || !/^\d{10}-\d{2}-\d{6}$/.test(accession))
+      throw new Error("Invalid SEC filing identifiers");
+    const directory = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll("-", "")}`;
+    const { value } = await this.requestResult<{
+      directory: { item: { name: string }[] };
+    }>(`${directory}/index.json`, "json", this.filingCacheTtlMs);
+    const primaryFile = primaryDocument.split("/").at(-1);
+    const candidates = value.directory.item.filter(({ name }) =>
+      typeof name === "string" && /^[a-z0-9_-]+\.xml$/i.test(name) && name !== primaryFile,
+    );
+    if (candidates.length !== 1) throw new Error("SEC information table is missing or ambiguous");
+    const url = `${directory}/${candidates[0]!.name}`;
+    const table = await this.requestResult<string>(url, "text", this.filingCacheTtlMs);
+    return { xml: table.value, url, checkedAt: table.retrievedAt, contentHash: hashText(table.value) };
   }
 
   async companyFacts(company: SecCompany) {

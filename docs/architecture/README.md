@@ -320,6 +320,13 @@ market input `referencePrice`; `research.js` labels either the latest returned
 price or historical daily close explicitly and renders missing company, metric,
 freshness, and scenario-output impact through the shared coverage vocabulary.
 
+The public-disclosure route reuses the SEC client for filer submissions and
+immutable raw information tables. The portfolio briefing remains a separate
+account-and-news read. The forward disclosure test persists one input record
+per actor/accession in `disclosure_paper_trials`. Its evaluator consumes the
+Alpaca calendar and raw IEX bars and returns a simulated comparison. The
+disclosure module has no dependency on the orders or Strategy Lab runtimes.
+
 Generated company research uses the same persisted `research_runs` boundary
 without a migration. `research/research.ts` freezes the bounded model output,
 canonical evidence array, original evaluation metrics, run/symbol/model
